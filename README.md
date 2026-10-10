@@ -27,6 +27,8 @@ en Android-app, opdrachtregel, simulator en Home Assistant. Het protocol staat i
    p56 (CLI) ────┘                               p56-sim (virtual fans) ───┘
 ```
 
+<p align="center"><img src="ha/docs/panel.jpg" width="820" alt="P56 Studio: text on the round display, with the fan's own picture layout below"></p>
+
 ## Download
 
 [Releases](https://github.com/trackerr/p56-studio/releases): Windows installer,
