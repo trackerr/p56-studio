@@ -1,106 +1,261 @@
+<div align="center">
+
+<img src="docs/logo.png" width="112" alt="P56 Studio logo">
+
 # P56 Studio
 
-Open-source replacement for the **Holoscope** app for P56 / Holoscope POV "hologram"
-fans, written in Rust. Windows and Android app, command line, simulator, and a
-Home Assistant add-on + integration, all on one protocol core.
+**The open-source replacement for the Holoscope app.**<br>
+Control P56 / Holoscope POV hologram fans from Windows, Android, the command line or Home Assistant.
+Local, fast, no account, no cloud.
 
-*Nederlands: open-source vervanger van de Holoscope-app voor P56-hologramfans: Windows-
-en Android-app, opdrachtregel, simulator en Home Assistant. Het protocol staat in
-[PROTOCOL.md](PROTOCOL.md).*
+[![CI](https://github.com/trackerr/p56-studio/actions/workflows/ci.yml/badge.svg)](https://github.com/trackerr/p56-studio/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/trackerr/p56-studio?color=22d3ee)](https://github.com/trackerr/p56-studio/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/trackerr/p56-studio/total?color=22d3ee)](https://github.com/trackerr/p56-studio/releases)
+![Platforms](https://img.shields.io/badge/platforms-Windows%20%C2%B7%20Android%20%C2%B7%20Linux-555)
+![Rust](https://img.shields.io/badge/made%20with-Rust-dea584?logo=rust)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-| Part | Folder | What |
-|---|---|---|
-| `p56-core` | `crates/p56-core` | protocol, picture conversion (polar warp, JPEG), networking; see [PROTOCOL.md](PROTOCOL.md) |
-| `p56-service` | `crates/p56-service` | everything the apps do (upload, cast, text rendering, settings) behind one command API |
-| P56 Studio | `app/` | Windows and Android app (Tauri 2 + React/shadcn UI) |
-| `p56` | `crates/p56-cli` | command line |
-| `p56-sim` | `crates/p56-sim` | simulated fan(s) for testing without hardware, with a web view |
-| `p56-server` | `crates/p56-server` | headless server: HTTP API, live events, the web UI; used by the Home Assistant add-on |
-| Home Assistant | `ha/` | add-on `p56_pov_display` + integration `p56_pov`, published as [home-assistant-p56](https://github.com/trackerr/home-assistant-p56) |
+[![Download for Windows](https://img.shields.io/badge/Download-Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/trackerr/p56-studio/releases/latest)
+[![Download for Android](https://img.shields.io/badge/Download-Android-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/trackerr/p56-studio/releases/latest)
+[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-add--on-18BCF2?style=for-the-badge&logo=homeassistant&logoColor=white)](https://github.com/trackerr/home-assistant-p56)
 
+<img src="docs/screenshots/cast.jpg" width="860" alt="P56 Studio casting a live test card to a fan">
+
+</div>
+
+---
+
+## ✨ Features
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+**🎛️ Full control**<br>
+Power, play/pause, brightness (16 steps), picture angle, colour mode, repeat, breathing light,
+autostart, group master, volume, rename, delete, format and factory reset.
+
+**🖼️ Upload anything**<br>
+Photos, GIFs and video (decoded right in the app), or just type a **text**: it is word-wrapped
+and sized to fit the round display.
+
+**📡 Live cast**<br>
+Stream a test card, your media, a video, your **camera** or your **screen** to one or more fans
+at ~15 fps, with nothing stored on the fan.
+
+</td>
+<td width="50%" valign="top">
+
+**👀 True preview**<br>
+See exactly what the fan will show, both as the round picture and as the fan's own polar
+layout, before you send it.
+
+**📶 Network setup**<br>
+Rename the fan, change its hotspot, put it on your Wi-Fi (router mode), manage Bluetooth.
+
+**🏠 Home Assistant**<br>
+An add-on and integration: text, notifications, camera snapshots and prices on the fan from
+your automations. [Learn more →](https://github.com/trackerr/home-assistant-p56)
+
+</td>
+</tr>
+</table>
+
+## 📸 Screenshots
+
+<table>
+<tr>
+<td width="62%"><img src="docs/screenshots/media.jpg" alt="Media tab with a text on the round preview"><br><sub><b>Media</b>: text, photo, GIF or video, with the round preview and the fan's own picture layout</sub></td>
+<td width="38%" rowspan="2" align="center"><img src="docs/screenshots/phone.png" width="260" alt="P56 Studio on a phone"><br><sub>The same app on <b>Android</b></sub></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/fan.jpg" alt="Fan tab with all controls"><br><sub><b>Fan</b>: every setting of the fan in one place</sub></td>
+</tr>
+</table>
+
+---
+
+## 🚀 Get started
+
+### Windows
+
+1. Download **`P56.Studio_…_x64-setup.exe`** from the [latest release](https://github.com/trackerr/p56-studio/releases/latest) and install it.
+2. Connect the PC to the fan's Wi-Fi hotspot, or put the PC and the fan on the same router.
+3. **Close Holoscope**: only one program can serve a fan at a time.
+4. Start **P56 Studio**. Windows asks to open the firewall the first time: allow it for private networks.
+5. The fan appears by itself.
+
+### Android
+
+1. Download **`P56-Studio-…-android.apk`** from the [latest release](https://github.com/trackerr/p56-studio/releases/latest) and open it (allow installing from your browser if asked).
+2. Join the fan's Wi-Fi hotspot (or the same router) and open **P56 Studio**.
+
+The app keeps using the fan's Wi-Fi even though it has no internet, and keeps the screen on while you cast.
+
+### Home Assistant
+
+Install the add-on and integration from **[trackerr/home-assistant-p56](https://github.com/trackerr/home-assistant-p56)**:
+one-click install buttons, a sidebar panel with this app, and actions like `p56_pov.show_text`.
+
+> **Fan not showing up?** Check that both devices are on the same network, that Holoscope is closed,
+> and that the firewall allows UDP 8988 and TCP 6666. You can also enter the fan's IP in the **App** tab (*IP of the fan*).
+
+---
+
+## 🧪 No fan? Use the simulator
+
+`p56-sim` behaves exactly like a real fan on your network, so you can try everything without hardware.
+
+```bash
+p56-sim                      # one simulated P56
+p56-sim --count 3            # three fans
 ```
-          ┌──────────── p56-core (protocol, transcoding, link) ────────────┐
-          │                                                                │
-   p56-service ──┬── P56 Studio (Windows, Android)                         │
-                 ├── p56-server ── Home Assistant add-on ── integration    │
-                 │                                                         │
-   p56 (CLI) ────┘                               p56-sim (virtual fans) ───┘
-```
 
-<p align="center"><img src="ha/docs/panel.jpg" width="820" alt="P56 Studio: text on the round display, with the fan's own picture layout below"></p>
+Open P56 Studio and the simulated fan connects by itself. **http://localhost:8099/** shows what
+it displays, its settings and any protocol errors.
 
-## Download
+## ⌨️ Command line
 
-[Releases](https://github.com/trackerr/p56-studio/releases): Windows installer,
-Android APK, `p56` command line, `p56-server` for Linux (x86_64/aarch64, static).
+<details>
+<summary><b>p56</b>: every feature from a terminal or script</summary>
 
-## Using the app
-
-1. Connect the PC or phone to the fan's Wi-Fi, or put both on the same router.
-2. Start **P56 Studio** and close Holoscope (only one program can serve a fan).
-3. Windows asks to open the firewall on first start: allow it (private network).
-4. The fan appears by itself. If not: tab **App** → enter the fan's IP.
-
-Tabs: **Fan** (power, brightness, angle, colour, repeat, breath light, autostart),
-**Playlist** (play, rename, delete), **Media** (photo, GIF, video or text),
-**Cast** (test card, media, video, camera, screen), **Network** (name, hotspot,
-router, Bluetooth). The round preview shows what the fan will display.
-
-## Without a fan: the simulator
-
-```
-p56-sim                 # behaves like a P56 on UDP 8988
-```
-
-Then open P56 Studio (or `p56 info`): the simulated fan connects by itself.
-http://localhost:8099/ shows what the fan displays, its settings and any protocol
-errors. `p56-sim --count 3` simulates three fans; `--fragment` splits answers.
-
-## Command line
-
-```
-p56 info
-p56 upload photo.jpg --slot 1      # also .gif and (with ffmpeg) video
-p56 cast test --seconds 10
+```bash
+p56 info                              # all fans with their status
+p56 upload photo.jpg --slot 1         # also .gif, and video when ffmpeg is installed
+p56 cast test --seconds 10            # live test card
 p56 brightness 12
 p56 angle -45
-p56 router MyWifi password
+p56 name Woonkamer
+p56 router MyWifi mypassword          # put the fan on your Wi-Fi
 p56 --help
 ```
 
-## Home Assistant
+Options for all commands: `--target <fan-ip>:8988` (reach a fan directly), `--fan <n>` / `--all` (several fans), `--type <fan type>`, `--wait <seconds>`.
+</details>
 
-See [ha/README.md](ha/README.md): the add-on runs `p56-server` (panel with the full
-web app, HTTP API) and the integration adds light, switches, selects, sensors, a
-text field, notifications, an image entity and the actions `p56_pov.show_text` /
-`p56_pov.show_image`.
+## 🌐 Server
 
-`p56-server` also runs on its own: `p56-server --http-port 8765` (add `--simulate`
-for a virtual fan), then open http://localhost:8765/.
+`p56-server` runs the same engine headless, with an HTTP API, live events and this web app:
 
-## Building
-
-```
-cargo build --release --workspace                  # p56, p56-sim, p56-server, P56 Studio
-cd app/ui && pnpm install && pnpm run bundle       # only after UI changes → app/src/index.html
-cd app && npx tauri build                          # Windows installer
-powershell -File scripts/android.ps1 build         # Android APK (see the script for the SDK setup)
+```bash
+p56-server --http-port 8765            # add --simulate for a virtual fan
 ```
 
-Release signing of the APK reads `app/src-tauri/gen/android/keystore.properties`
-(not in git).
+Then open **http://localhost:8765/**. It powers the Home Assistant add-on; static Linux builds
+(x86_64 and aarch64) are in every release.
 
-## Tests
+<details>
+<summary>API in short</summary>
 
+| Request | What it does |
+| --- | --- |
+| `GET /api/state` | Connected fans, status and playlists |
+| `POST /api/show` | Show text or a picture: `{"text": "Hello", "show_seconds": 30}` |
+| `POST /api/call/<command>` | Any app command, e.g. `control` `{"id": 1, "action": "off"}` |
+| `GET /api/events` | Live events (server-sent events) |
+| `GET /api/shown/<mac>` | PNG of what the fan was last sent |
+
+Full reference: [add-on documentation](ha/p56_pov_display/DOCS.md#http-api-port-8765).
+</details>
+
+---
+
+## 🔌 Supported fans
+
+| Fan types (as reported by the fan) | Status |
+| --- | --- |
+| **8** (P56), 1, 2, 3, 4, 5, 11, 14, 17 | ✅ Supported (JPEG picture format) |
+| 6, 7, 12, 13, 15 | ⚠️ Sent in the older Holoscope.exe format; newer firmware may ignore it |
+| others | ❌ Not implemented yet |
+
+The protocol was worked out from the Holoscope app and is documented in
+[PROTOCOL.md](PROTOCOL.md) (Dutch). Everything is tested against the built-in simulator.
+
+## 🏗️ How it fits together
+
+```mermaid
+flowchart LR
+    core["p56-core<br/><sub>protocol · picture conversion · network</sub>"]
+    service["p56-service<br/><sub>upload · cast · text · settings</sub>"]
+    app["P56 Studio<br/><sub>Windows · Android</sub>"]
+    server["p56-server<br/><sub>HTTP API · web app</sub>"]
+    ha["Home Assistant<br/><sub>add-on + integration</sub>"]
+    cli["p56<br/><sub>command line</sub>"]
+    sim["p56-sim<br/><sub>virtual fans</sub>"]
+    fan(("POV fan"))
+
+    core --> service
+    service --> app
+    service --> server --> ha
+    core --> cli
+    core --> sim
+    app -. "UDP 8988 / TCP 6666" .- fan
 ```
-cargo test --workspace                             # unit, simulator, CLI, server
-powershell -File scripts/gauntlet.ps1 -Rounds 20   # everything repeated until something fails
-node e2e/app-e2e.mjs                               # the real app against the simulator (CDP)
-cd ha && pytest                                    # Home Assistant integration against p56-server
+
+<details>
+<summary>Repository layout</summary>
+
+| Folder | What |
+| --- | --- |
+| [`crates/p56-core`](crates/p56-core) | Protocol, picture conversion (polar warp, JPEG), network link |
+| [`crates/p56-service`](crates/p56-service) | Everything the apps do, behind one command API |
+| [`app/`](app) | P56 Studio: Tauri 2 shell + React/shadcn UI (`app/ui`) |
+| [`crates/p56-cli`](crates/p56-cli) | `p56` command line |
+| [`crates/p56-sim`](crates/p56-sim) | Simulated fans with a web view |
+| [`crates/p56-server`](crates/p56-server) | Headless server for Home Assistant and other hosts |
+| [`ha/`](ha) | Home Assistant add-on and integration ([published separately](https://github.com/trackerr/home-assistant-p56)) |
+| [`e2e/`](e2e), [`scripts/`](scripts) | End-to-end tests, gauntlet loop, Android build |
+</details>
+
+## 🛠️ Build and test
+
+<details>
+<summary>Build from source</summary>
+
+Requirements: Rust (stable), Node 20 + pnpm; for Android the SDK/NDK (see `scripts/android.ps1`).
+
+```bash
+cargo build --release --workspace                 # p56, p56-sim, p56-server, P56 Studio
+cd app/ui && pnpm install && pnpm run bundle      # after UI changes → app/src/index.html
+cd app && npx tauri build                         # Windows installer
+powershell -File scripts/android.ps1 build        # Android APK
 ```
 
-## License
+Release signing of the APK reads `app/src-tauri/gen/android/keystore.properties` (not in git).
+</details>
 
-MIT. Not affiliated with the maker of the fans or of Holoscope. The protocol was
-worked out for interoperability with hardware you own; no vendor code or binaries
-are included.
+<details>
+<summary>Run the tests</summary>
+
+```bash
+cargo test --workspace                            # unit, simulator, CLI and server tests
+powershell -File scripts/gauntlet.ps1 -Rounds 20  # everything, repeated until something fails
+node e2e/app-e2e.mjs                              # the real app against the simulator
+cd ha && pytest                                   # Home Assistant integration against p56-server
+```
+
+GitHub Actions runs the Rust tests, the UI build and the Home Assistant tests on every push,
+and builds all release files from a version tag.
+</details>
+
+<details>
+<summary>🇳🇱 <b>Nederlands — snel aan de slag</b></summary>
+
+P56 Studio vervangt de Holoscope-app voor P56-hologramfans.
+
+1. Download de **Windows-installer** of de **Android-APK** bij de [nieuwste release](https://github.com/trackerr/p56-studio/releases/latest).
+2. Verbind je pc of telefoon met de wifi van de fan (of zet beide op dezelfde router) en sluit Holoscope.
+3. Start P56 Studio: de fan verschijnt vanzelf. Windows vraagt de eerste keer om de firewall te openen: kies **Toestaan**.
+
+Geen fan bij de hand? Start `p56-sim` voor een virtuele fan. Voor Home Assistant: zie
+[home-assistant-p56](https://github.com/trackerr/home-assistant-p56). Het protocol staat in [PROTOCOL.md](PROTOCOL.md).
+</details>
+
+---
+
+<div align="center">
+
+**MIT licensed** · Not affiliated with the maker of the fans or of Holoscope.<br>
+The protocol was worked out for interoperability with hardware you own; no vendor code or binaries are included.
+
+</div>
