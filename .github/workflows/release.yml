@@ -16,7 +16,7 @@ jobs:
       matrix:
         arch: [x86_64, aarch64]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.arch }}-unknown-linux-musl
@@ -24,7 +24,7 @@ jobs:
         with:
           key: ${{ matrix.arch }}
       # Static binaries, linked with rust-lld (see .cargo/config.toml): no C toolchain needed.
-      - run: cargo build --release -p p56-server -p p56-cli --target ${{ matrix.arch }}-unknown-linux-musl
+      - run: cargo build --release -p p56-server -p p56 --target ${{ matrix.arch }}-unknown-linux-musl
       - run: |
           mkdir out
           cp target/${{ matrix.arch }}-unknown-linux-musl/release/p56-server out/p56-server-${{ matrix.arch }}-linux-musl
@@ -40,7 +40,7 @@ jobs:
     name: Windows (P56 Studio installer + CLI)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: pnpm/action-setup@v4
@@ -54,7 +54,7 @@ jobs:
         working-directory: app
       - run: npx tauri build
         working-directory: app
-      - run: cargo build --release -p p56-cli -p p56-sim
+      - run: cargo build --release -p p56 -p p56-sim
       - shell: pwsh
         run: |
           New-Item -ItemType Directory out | Out-Null

@@ -13,7 +13,7 @@ jobs:
   hassfest:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: home-assistant/actions/hassfest@master
 
   hacs:
@@ -26,7 +26,7 @@ jobs:
   addon:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: frenck/action-addon-linter@v2
         with:
           path: ./p56_pov_display
@@ -34,7 +34,7 @@ jobs:
   tests:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: p56-server from the p56-studio release
         run: |
           version=$(sed -n 's/^  P56_VERSION: "\(.*\)"/\1/p' p56_pov_display/build.yaml)

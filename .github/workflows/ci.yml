@@ -13,7 +13,7 @@ jobs:
     name: Rust tests (core, CLI, simulator, server)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       # The Tauri app needs WebKitGTK on Linux; it is built in the release workflow on Windows.
@@ -28,7 +28,7 @@ jobs:
     name: Web UI build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4
         with:
           version: 10
@@ -45,7 +45,7 @@ jobs:
     needs: rust
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/download-artifact@v4
         with:
           name: p56-server-debug
