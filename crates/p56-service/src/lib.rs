@@ -77,7 +77,7 @@ pub struct DeviceDto {
     pub support: String,
 }
 
-#[derive(Deserialize, Clone, Copy, Default, Debug)]
+#[derive(Deserialize, Clone, Copy, Debug)]
 pub struct PlacementDto {
     #[serde(default)] pub x: f64,
     #[serde(default)] pub y: f64,
@@ -85,6 +85,9 @@ pub struct PlacementDto {
     #[serde(default)] pub mirror: bool,
 }
 fn one() -> f64 { 1.0 }
+impl Default for PlacementDto {
+    fn default() -> Self { PlacementDto { x: 0.0, y: 0.0, scale: 1.0, mirror: false } }
+}
 impl From<PlacementDto> for Placement {
     fn from(p: PlacementDto) -> Self { Placement { x_offset: p.x, y_offset: p.y, scale: p.scale, mirror: p.mirror } }
 }
@@ -657,4 +660,26 @@ pub fn fan_types() -> Value {
         Some(json!({ "id": id, "angles": angles, "leds": leds, "jpeg": jpeg,
             "support": format!("{:?}", FanType::support(id)).to_lowercase() }))
     }).collect::<Vec<_>>().into()
+}
+
+#[cfg(test)]
+mod preview_tests {
+    use super::*;
+
+    fn lit(text: &str) -> (usize, usize) {
+        let img = text::render(text, [255, 255, 255], [0, 0, 0], 0.0);
+        let src = img.pixels().filter(|p| p[0] > 128).count();
+        let jpeg = transcode::encode(&img, &FanType::P56, &Placement::default()).jpeg;
+        let round = transcode::preview_from_jpeg(&jpeg, &FanType::P56, 360).unwrap();
+        (src, round.pixels().filter(|p| p[0] > 128).count())
+    }
+
+    #[test]
+    fn text_survives_the_round_trip() {
+        for t in ["HALLO", "0,23 kWh", "0,23 €/kWh"] {
+            let (src, out) = lit(t);
+            let frac = out as f64 / (360.0 * 360.0);
+            assert!(src > 2000 && (0.02..0.5).contains(&frac), "{t}: {src} lit pixels in, {:.1}% of the preview lit", frac * 100.0);
+        }
+    }
 }

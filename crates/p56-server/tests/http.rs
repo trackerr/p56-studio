@@ -1,7 +1,7 @@
 //! The `p56-server` binary end to end: HTTP API, add-on 1.x endpoints, SSE and the web UI,
 //! against its built-in simulated fan.
 
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{Ipv4Addr, TcpListener, TcpStream, UdpSocket};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
@@ -115,6 +115,12 @@ fn text_and_image_like_addon_1x() {
     let mac = s.get("/api/state")["devices"][0]["mac"].as_str().unwrap().to_string();
     let shown = ureq::get(&format!("{}/api/shown/{mac}", s.base)).call().unwrap();
     assert_eq!(shown.content_type(), "image/png");
+    // the text really is on the disc: some, but far from all, pixels lit
+    let mut png = Vec::new();
+    shown.into_reader().read_to_end(&mut png).unwrap();
+    let img = image::load_from_memory(&png).unwrap().to_rgb8();
+    let lit = img.pixels().filter(|p| p[0] > 128).count() as f64 / (img.width() * img.height()) as f64;
+    assert!((0.02..0.5).contains(&lit), "shown picture is not text: {:.1}% lit", lit * 100.0);
     // live cast mode stores nothing
     let (code, v) = s.post("/api/show", json!({ "text": "LIVE", "mode": "cast", "show_seconds": 1, "color": "geel" }));
     assert_eq!(code, 200, "{v}");

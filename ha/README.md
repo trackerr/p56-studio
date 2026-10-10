@@ -1,77 +1,220 @@
+<div align="center">
+
+<img src="custom_components/p56_pov/brand/icon.png" width="96" alt="">
+
 # P56 POV Display for Home Assistant
 
-Control **Holoscope / P56 POV fans** (the spinning LED "hologram" fans) from Home
-Assistant, locally, without the vendor app or a cloud. This repository has two parts
-that work together:
+**Put text, prices, notifications, camera snapshots and pictures on your Holoscope / P56
+hologram fan, straight from Home Assistant. Local, no vendor app, no cloud.**
 
-| Part | What it does |
+[![Validate](https://github.com/trackerr/home-assistant-p56/actions/workflows/validate.yml/badge.svg)](https://github.com/trackerr/home-assistant-p56/actions/workflows/validate.yml)
+[![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/docs/faq/custom_repositories)
+![Home Assistant 2026.8+](https://img.shields.io/badge/Home%20Assistant-2026.8%2B-18BCF2?logo=homeassistant&logoColor=white)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
+<img src="docs/fan-preview.png" width="220" alt="Energy price as shown on the fan">
+
+</div>
+
+---
+
+## ✨ What you get
+
+| | |
 | --- | --- |
-| **Add-on** [`p56_pov_display`](p56_pov_display) | Runs *p56-server*: the fans connect to it (TCP 6666), it speaks their protocol, serves the P56 Studio web app as a sidebar panel and offers an HTTP API. |
-| **Integration** [`custom_components/p56_pov`](custom_components/p56_pov) | Turns every fan into a Home Assistant device with entities and actions, and updates live from the add-on. |
+| 💡 **Control** | On/off and brightness as a light, play/pause, playlist, repeat, picture angle, colour mode |
+| 📝 **Text** | A text field on your dashboard, or the `p56_pov.show_text` action, sized automatically to fit the round display |
+| 🔔 **Notifications** | `notify.send_message` shows a message for 15 seconds, then the playlist resumes |
+| 🖼️ **Pictures** | `p56_pov.show_image` from a file, a URL, the media library or a camera snapshot |
+| 👀 **Preview** | An image entity that shows what the fan is displaying right now |
+| 🖥️ **Web app** | The full P56 Studio app as a sidebar panel: upload photos, GIFs and video, cast live, change Wi-Fi |
+| 🔌 **Self-contained** | Everything runs inside Home Assistant; the fans connect to it on your own network |
 
-The add-on is built on [p56-studio](https://github.com/trackerr/p56-studio): the same
-Rust core powers the Windows and Android apps that replace the vendor app.
+<p align="center"><img src="docs/panel.jpg" width="820" alt="The P56 Studio panel in Home Assistant"></p>
 
-```
- fan ──TCP 6666──▶ add-on (p56-server) ◀──HTTP + live events── integration p56_pov
-  ▲  UDP 8988 discovery      │  port 8765: API + web UI (panel)
-  └──────────────────────────┘
-```
+---
 
-## Install
+## 🚀 Installation
 
-1. **Add-on**: Settings → Add-ons → Add-on store → ⋮ → Repositories → add
-   `https://github.com/trackerr/home-assistant-p56`. Install **P56 POV Display**, start it.
-   Turn on *simulate* to try it without a fan.
-2. **Integration**: HACS → ⋮ → Custom repositories → add this repository as type
-   *Integration* → install **P56 POV Display** → restart Home Assistant.
-   (Or copy `custom_components/p56_pov` to `/config/custom_components/`.)
-3. Settings → Devices & services: "P56 POV Display discovered" → add.
+You need **two parts**: the **add-on** (talks to the fan) and the **integration** (gives you the
+entities and actions). Both are in this repository.
 
-Requires Home Assistant 2026.8 or newer; amd64 or aarch64 for the add-on.
+### Step 1 — Add-on
 
-## Use it
+[![Add the add-on repository to your Home Assistant](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Ftrackerr%2Fhome-assistant-p56)
 
-- **Dashboard**: the light entity (on/off, brightness), the *File* select (playlist),
-  *Playing* switch, the *Text* field and the *Shown* image.
-- **Notifications**: `notify.send_message` to `notify.<fan>_message` shows a message for
-  15 s (configurable), then the playlist resumes.
-- **Actions** `p56_pov.show_text`, `p56_pov.show_image` (file, URL, camera snapshot or
-  media library), `p56_pov.play_file`, `p56_pov.delete_file`.
+1. Click the button above (or go to **Settings → Add-ons → Add-on store → ⋮ → Repositories**
+   and add `https://github.com/trackerr/home-assistant-p56`).
+2. Install **P56 POV Display** and press **Start**.
+3. Optional: turn on **Show in sidebar** to get the **P56 POV** panel.
+
+> 💡 No fan at hand? Turn on the **Virtual fan** option: a simulated fan connects and you can
+> try everything.
+
+### Step 2 — Integration
+
+[![Open this repository in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=trackerr&repository=home-assistant-p56&category=integration)
+
+1. Click the button above (or in **HACS → ⋮ → Custom repositories** add this repository with type
+   **Integration**).
+2. Download **P56 POV Display** and **restart Home Assistant**.
+
+<details>
+<summary>Without HACS</summary>
+
+Copy the folder `custom_components/p56_pov` to `/config/custom_components/` and restart Home Assistant.
+</details>
+
+### Step 3 — Connect
+
+Go to **Settings → Devices & services**. Home Assistant shows **"P56 POV Display discovered"**:
+click **Add**. Every fan that connects now appears as a device.
+
+### Step 4 — Put the fan on your Wi-Fi (once)
+
+A new fan starts as its own Wi-Fi hotspot, which Home Assistant can't reach. Connect a phone or
+PC to that hotspot once, open [P56 Studio](https://github.com/trackerr/p56-studio/releases)
+(or the vendor app), go to **Network → Router** and enter your Wi-Fi name and password.
+From then on the fan joins your Wi-Fi and finds Home Assistant by itself.
+
+---
+
+## 🧩 Entities
+
+For each fan (example names for a fan called *P56*):
+
+| Entity | What it does |
+| --- | --- |
+| `light.p56` | Picture on/off and brightness |
+| `switch.p56_playing` | Play / pause |
+| `select.p56_file` | Choose what plays |
+| `select.p56_repeat` | Repeat all files or one |
+| `text.p56_text` | Type something, the fan shows it |
+| `notify.p56_message` | Notifications, shown for a while |
+| `image.p56_shown` | What Home Assistant last sent to the fan |
+| `sensor.p56_playing_file`, `sensor.p56_files` | Current file, number of files |
+| `number.p56_picture_angle`, `select.p56_colour_mode` | Settings |
+
+Plus `sensor.p56_server_connected_fans` (0 means no fan is connected).
+
+---
+
+## 🛠️ Actions & examples
+
+### Show text
 
 ```yaml
-# Energy price on the fan every hour, removed again after a minute
-triggers:
-  - trigger: time_pattern
-    minutes: 0
-actions:
-  - action: p56_pov.show_text
-    data:
-      text: "{{ states('sensor.energy_price') | round(2) }} €/kWh"
-      color: "#ffc800"
-      name: energy
-      show_seconds: 60
+action: p56_pov.show_text
+data:
+  text: "{{ states('sensor.energy_price') }} €/kWh"
+  color: "#ffc800"          # or [255, 200, 0], or a name: yellow, red, …
+  show_seconds: 60          # remove again after a minute (0 = keep)
+  name: energy              # the same name replaces the previous one
 ```
 
-More in [examples/automations.yaml](examples/automations.yaml) and in the
-[add-on documentation](p56_pov_display/DOCS.md) (options, HTTP API, `rest_command`).
+### Show a picture
 
-## Upgrading from the 1.x local add-on
+```yaml
+action: p56_pov.show_image
+data:
+  camera: camera.front_door   # or: path: /media/logo.png  ·  url: https://…  ·  media: (picker)
+  show_seconds: 20
+```
 
-Uninstall the old local add-on, install this one, remove the old integration entry
-and add the discovered one. `rest_command`s that post to `/text` keep working.
+### Send a notification
 
-## Development
+```yaml
+action: notify.send_message
+target:
+  entity_id: notify.p56_message
+data:
+  message: The washing machine is done
+```
 
-Integration tests run Home Assistant against a real p56-server with its virtual fan:
+| Action | Fields |
+| --- | --- |
+| `p56_pov.show_text` | `text`, `color`, `background`, `font_size`, `show_seconds`, `mode`, `name`, `device_id` |
+| `p56_pov.show_image` | one of `path` / `url` / `camera` / `media`, plus `show_seconds`, `mode`, `name`, `scale`, `x_offset`, `y_offset`, `mirror`, `device_id` |
+| `p56_pov.play_file` | `device_id` and `slot` or `name` |
+| `p56_pov.delete_file` | `device_id` and `slot` or `name` |
+
+`mode: upload` (default) stores the picture on the fan; `mode: cast` shows it live without
+storing anything. Leave out `device_id` to use all fans.
+
+More ready-to-use automations: [examples/automations.yaml](examples/automations.yaml).
+
+---
+
+## ❓ Questions & troubleshooting
+
+<details>
+<summary><b>No fan appears</b></summary>
+
+- The fan must be on the **same network** as Home Assistant (router mode, not its own hotspot).
+- Check the add-on log: it shows every fan that answers.
+- Broadcast blocked or another subnet? Enter the fan's IP under the add-on option **Fan IP addresses**.
+- Only one program can serve a fan at a time: close the vendor app and P56 Studio on other devices.
+</details>
+
+<details>
+<summary><b>I used the old 1.x add-on</b></summary>
+
+Uninstall the old local add-on and remove the old integration entry, then follow the steps above.
+Old `rest_command`s that post to `http://localhost:8765/text` keep working.
+</details>
+
+<details>
+<summary><b>Can other devices use the API?</b></summary>
+
+Yes: port **8765** offers an HTTP API (`/api/show`, `/api/state`, live events) and the web app.
+Turn off the add-on option **API reachable on the network** to allow only Home Assistant itself.
+See the [add-on documentation](p56_pov_display/DOCS.md) for the full API.
+</details>
+
+<details>
+<summary><b>Which fans work?</b></summary>
+
+Fans that use the Holoscope app (P56 and relatives). The add-on runs on **amd64** and **aarch64**
+(Raspberry Pi 4/5, most mini PCs).
+</details>
+
+<details>
+<summary>🇳🇱 <b>Nederlands — snel aan de slag</b></summary>
+
+1. **Add-on:** klik op de eerste knop hierboven, installeer **P56 POV Display** en start hem.
+2. **Integratie:** klik op de HACS-knop, download **P56 POV Display** en herstart Home Assistant.
+3. **Koppelen:** Instellingen → Apparaten & diensten → **P56 POV Display gevonden** → Toevoegen.
+4. **Wifi:** zet de fan één keer op je eigen wifi: verbind een telefoon of pc met de hotspot van de
+   fan, open P56 Studio (of de Holoscope-app) → Netwerk → Router.
+
+Daarna: tekst via `p56_pov.show_text`, meldingen via `notify.send_message`, afbeeldingen via
+`p56_pov.show_image`, en het tekstveld op je dashboard.
+</details>
+
+---
+
+## 🏗️ How it works
+
+```
+ fan ──TCP 6666──▶ add-on (p56-server) ◀── HTTP + live events ── integration p56_pov
+  ▲   UDP 8988 discovery    │  port 8765: API + web app (sidebar panel)
+  └─────────────────────────┘
+```
+
+The add-on is built on [**p56-studio**](https://github.com/trackerr/p56-studio), the same Rust core
+as the Windows and Android apps that replace the vendor app.
+
+<details>
+<summary>Development</summary>
+
+The integration tests start Home Assistant against a real p56-server with a virtual fan:
 
 ```bash
 pip install pytest-homeassistant-custom-component
-cargo build -p p56-server          # in a p56-studio checkout
-P56_SERVER=…/target/debug/p56-server pytest
+P56_SERVER=/path/to/p56-server pytest
 ```
+</details>
 
-## License
+## 📄 License
 
-MIT. Not affiliated with the maker of the fans; the protocol was worked out for
-interoperability with hardware you own.
+MIT. Not affiliated with the maker of the fans or the Holoscope app.
