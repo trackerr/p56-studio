@@ -3,8 +3,8 @@
 //! See `PROTOCOL.md` for the reverse-engineered wire format. Layers:
 //! - [`protocol`]: packet builders and parser (pure, no I/O)
 //! - [`transcode`]: image → fan-layout JPEG, modelled on Holoscope.exe
-//! - [`net`]: UDP discovery, TCP server, upload and live cast
-//! - [`video`]: frame source via an external `ffmpeg` binary (optional)
+//! - [`net`]: UDP discovery, TCP server, commands, upload and live cast
+//! - [`video`]: frame source via an external `ffmpeg` binary (optional, desktop)
 
 pub mod net;
 pub mod protocol;
@@ -12,17 +12,19 @@ pub mod transcode;
 pub mod video;
 
 pub use net::{Config, Device, Event, Link};
-pub use protocol::{MachineInfo, Packet, Status};
-pub use transcode::{FanType, Frame, Placement};
+pub use protocol::{ColorMode, FanError, MachineInfo, Packet, Status};
+pub use transcode::{FanType, Frame, Placement, Support};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("no fan connected")]
+    #[error("geen fan verbonden")]
     NotConnected,
     #[error("i/o: {0}")]
     Io(String),
-    #[error("invalid: {0}")]
+    #[error("ongeldig: {0}")]
     Invalid(String),
-    #[error("image: {0}")]
+    #[error("fan meldt: {0}")]
+    Fan(FanError),
+    #[error("beeld: {0}")]
     Image(#[from] image::ImageError),
 }

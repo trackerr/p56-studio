@@ -1,0 +1,358 @@
+//! Gauntlet: the real `p56_core::Link` against the simulated fan, for every feature.
+//! Every test also asserts the simulator saw zero protocol errors.
+
+use std::net::{Ipv4Addr, SocketAddr};
+use std::sync::mpsc::Receiver;
+use std::time::Duration;
+
+use p56_core::protocol::{ColorMode, FanError};
+use p56_core::transcode::{self, FanType, Placement};
+use p56_core::{Config, Error, Event, Link};
+use p56_sim::{Sim, SimConfig, SimState};
+
+const T: Duration = Duration::from_secs(5);
+
+struct Rig {
+    link: Link,
+    _rx: Receiver<Event>,
+    sim: Sim,
+    id: u32,
+}
+
+impl Drop for Rig {
+    fn drop(&mut self) {
+        self.sim.stop();
+        self.link.shutdown();
+    }
+}
+
+fn start_link(targets: Vec<SocketAddr>, fan_udp: u16) -> (Link, Receiver<Event>) {
+    Link::start(Config {
+        local_ip: None,
+        tcp_port: 0,
+        udp_port: 0,
+        fan_udp_port: fan_udp,
+        broadcast_interval: Duration::from_millis(200),
+        heartbeat: true,
+        targets,
+    })
+    .expect("link start")
+}
+
+fn rig_with(f: impl FnOnce(&mut SimConfig)) -> Rig {
+    let mut cfg = SimConfig { udp_port: 0, ..Default::default() };
+    f(&mut cfg);
+    // Port of the link is only known after start, so start the sim first on a free UDP
+    // port, then the link (which targets that port), then tell the sim the TCP port.
+    let probe = std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let udp = probe.local_addr().unwrap().port();
+    drop(probe);
+    let (link, rx) = start_link(vec![SocketAddr::from((Ipv4Addr::LOCALHOST, udp))], udp);
+    cfg.udp_port = udp;
+    cfg.pc_port = link.tcp_port;
+    let sim = Sim::start(cfg).expect("sim start");
+    assert!(link.wait_connected(T), "fan did not connect");
+    let id = link.ids()[0];
+    let rig = Rig { link, _rx: rx, sim, id };
+    rig.wait_dev(|d| d.info.is_some() && d.status.is_some());
+    rig
+}
+
+fn rig() -> Rig { rig_with(|_| {}) }
+
+impl Rig {
+    fn wait_dev(&self, pred: impl Fn(&p56_core::Device) -> bool) {
+        let deadline = std::time::Instant::now() + T;
+        loop {
+            if let Some(d) = self.link.device(self.id) { if pred(&d) { return; } }
+            assert!(std::time::Instant::now() < deadline, "device state never matched: {:?}", self.link.device(self.id));
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+    fn wait_sim(&self, pred: impl Fn(&SimState) -> bool) {
+        assert!(self.sim.wait_until(T, pred), "sim state never matched: {:?}", strip(self.sim.state()));
+    }
+    fn clean(&self) {
+        let e = self.sim.state().protocol_errors;
+        assert!(e.is_empty(), "protocol errors: {e:#?}");
+    }
+    fn jpeg(&self) -> Vec<u8> {
+        transcode::encode(&transcode::test_card(), &FanType::P56, &Placement::default()).jpeg
+    }
+}
+
+fn strip(mut s: SimState) -> SimState { s.commands.truncate(0); s }
+
+#[test]
+fn connects_and_reports_info_and_status() {
+    let r = rig_with(|c| c.name = "Woonkamer".into());
+    let d = r.link.device(r.id).unwrap();
+    let info = d.info.unwrap();
+    assert_eq!(info.name, "Woonkamer");
+    assert_eq!(info.mac, "02:e0:e0:56:00:f5");
+    assert_eq!(info.hotspot, "Woonkamer-AP");
+    let st = d.status.unwrap();
+    assert_eq!(st.fan_type, 8);
+    assert!(st.power && st.playing);
+    assert_eq!(st.brightness, 16);
+    assert_eq!(st.angle, 180);
+    r.wait_sim(|s| s.heartbeats >= 1);
+    r.clean();
+}
+
+#[test]
+fn power_play_pause_repeat() {
+    let r = rig();
+    r.link.off(r.id).unwrap();
+    r.wait_dev(|d| d.status.as_ref().is_some_and(|s| !s.power));
+    r.link.on(r.id).unwrap();
+    r.wait_dev(|d| d.status.as_ref().is_some_and(|s| s.power));
+    r.link.pause(r.id).unwrap();
+    r.wait_dev(|d| d.status.as_ref().is_some_and(|s| !s.playing));
+    r.link.play(r.id).unwrap();
+    r.wait_dev(|d| d.status.as_ref().is_some_and(|s| s.playing));
+    r.link.repeat(r.id, false).unwrap();
+    r.wait_dev(|d| d.status.as_ref().is_some_and(|s| !s.repeat_all));
+    r.link.repeat(r.id, true).unwrap();
+    r.wait_dev(|d| d.status.as_ref().is_some_and(|s| s.repeat_all));
+    r.clean();
+}
+
+#[test]
+fn settings_roundtrip_through_status() {
+    let r = rig();
+    r.link.brightness(r.id, 7).unwrap();
+    r.link.angle(r.id, 300).unwrap();
+    r.link.color_mode(r.id, ColorMode::True).unwrap();
+    r.link.breath(r.id, true).unwrap();
+    r.link.autostart(r.id, false).unwrap();
+    r.link.master(r.id, true).unwrap();
+    r.link.volume(r.id, 4).unwrap();
+    r.wait_dev(|d| d.status.as_ref().is_some_and(|s| s.brightness == 7 && s.angle == 300 && s.color_mode == 1
+        && s.breath && !s.autostart && s.master));
+    r.wait_sim(|s| s.volume == 4);
+    r.link.color_mode(r.id, ColorMode::Bright).unwrap();
+    r.link.angle(r.id, 0).unwrap();
+    r.wait_dev(|d| d.status.as_ref().is_some_and(|s| s.color_mode == 2 && s.angle == 0));
+    r.clean();
+}
+
+#[test]
+fn names_hotspot_router() {
+    let r = rig();
+    r.link.device_name(r.id, "Hal").unwrap();
+    r.wait_dev(|d| d.info.as_ref().is_some_and(|i| i.name == "Hal"));
+    r.link.set_hotspot(r.id, "HoloNet", "geheim123").unwrap();
+    r.wait_sim(|s| s.hotspot == ("HoloNet".into(), "geheim123".into()));
+    r.link.set_router(r.id, "ThuisWifi", "pass word!").unwrap();
+    r.wait_sim(|s| s.router == ("ThuisWifi".into(), "pass word!".into()));
+    r.wait_dev(|d| d.info.as_ref().is_some_and(|i| i.hotspot == "HoloNet" && i.router == "ThuisWifi"));
+    // 32-byte fields: longer values are cut, not overflowing into the next field
+    r.link.set_router(r.id, &"R".repeat(40), &"P".repeat(40)).unwrap();
+    r.wait_sim(|s| s.router == ("R".repeat(32), "P".repeat(32)));
+    r.clean();
+}
+
+#[test]
+fn upload_select_rename_delete() {
+    let r = rig();
+    let j = r.jpeg();
+    r.link.upload(r.id, &[j.clone()], "kat", Some(1), 1).unwrap();
+    r.wait_sim(|s| s.files.len() == 1 && s.files[0].name == "kat.mp4" && (s.files[0].width, s.files[0].height) == (688, 240));
+    r.link.upload(r.id, &[j.clone(), j.clone(), j], "hond.mp4", Some(2), 2).unwrap();
+    r.wait_sim(|s| s.files.len() == 2 && s.files[1].frames == 3 && s.current == 2);
+    r.wait_dev(|d| d.files == vec![(1, "kat.mp4".to_string()), (2, "hond.mp4".to_string())]);
+    r.link.select(r.id, 1).unwrap();
+    r.wait_dev(|d| d.status.as_ref().is_some_and(|s| s.play_index == 1));
+    r.link.rename(r.id, 2, "vogel").unwrap();
+    r.wait_dev(|d| d.files.get(1).is_some_and(|f| f.1 == "vogel.mp4"));
+    r.link.delete(r.id, 1).unwrap();
+    r.wait_dev(|d| d.files == vec![(1, "vogel.mp4".to_string())]);
+    r.wait_sim(|s| s.uploads == 2 && s.files.len() == 1);
+    r.clean();
+}
+
+#[test]
+fn upload_errors_from_fan() {
+    let r = rig_with(|c| c.max_files = 2);
+    let j = r.jpeg();
+    r.link.upload(r.id, &[j.clone()], "a", None, 1).unwrap();
+    match r.link.upload(r.id, &[j.clone()], "a", None, 2) {
+        Err(Error::Fan(FanError::DuplicateName)) => {}
+        other => panic!("expected duplicate name, got {other:?}"),
+    }
+    r.link.upload(r.id, &[j.clone()], "b", None, 3).unwrap();
+    match r.link.upload(r.id, &[j.clone()], "c", None, 4) {
+        Err(Error::Fan(FanError::TooManyFiles)) => {}
+        other => panic!("expected too many files, got {other:?}"),
+    }
+    r.wait_dev(|d| d.last_error == Some(FanError::TooManyFiles));
+    // still usable afterwards
+    r.link.delete(r.id, 1).unwrap();
+    r.link.upload(r.id, &[j], "c", Some(2), 5).unwrap();
+    r.wait_sim(|s| s.file_names() == vec!["b.mp4".to_string(), "c.mp4".to_string()]);
+    r.clean();
+}
+
+#[test]
+fn gif_animation_uploads_all_frames() {
+    let r = rig();
+    let mut gif = Vec::new();
+    {
+        let mut enc = image::codecs::gif::GifEncoder::new(&mut gif);
+        for i in 0..5u8 {
+            let img = image::RgbaImage::from_pixel(64, 64, image::Rgba([i * 50, 255 - i * 50, 80, 255]));
+            enc.encode_frame(image::Frame::from_parts(img, 0, 0, image::Delay::from_numer_denom_ms(80, 1))).unwrap();
+        }
+    }
+    let frames = transcode::decode_frames(&gif, 0).unwrap();
+    assert_eq!(frames.len(), 5);
+    assert!(frames.iter().all(|(_, ms)| *ms == 80));
+    let jpegs: Vec<_> = frames.iter().map(|(f, _)| transcode::encode(f, &FanType::P56, &Placement::default()).jpeg).collect();
+    r.link.upload(r.id, &jpegs, "anim.gif", Some(1), 1).unwrap();
+    r.wait_sim(|s| s.files.first().is_some_and(|f| f.frames == 5 && f.name == "anim.gif.mp4"));
+    r.clean();
+}
+
+#[test]
+fn live_cast_frames_are_valid() {
+    let r = rig();
+    let j = r.jpeg();
+    for _ in 0..25 { assert_eq!(r.link.cast(&j), 1); }
+    r.wait_sim(|s| s.cast_ok == 25);
+    assert_eq!(r.sim.state().cast_bad, 0);
+    assert!(r.sim.current_jpeg().is_some());
+    r.clean();
+}
+
+#[test]
+fn bluetooth_scan_connect_disconnect() {
+    let r = rig();
+    r.link.ble(r.id, true).unwrap();
+    r.wait_sim(|s| s.ble_on);
+    r.link.ble_scan(r.id).unwrap();
+    r.wait_dev(|d| d.lists.get(&0x80).is_some_and(|(_, items)| items == &vec!["BT-Speaker".to_string(), "Phone".to_string()]));
+    r.link.ble_connect(r.id, 1).unwrap();
+    r.wait_sim(|s| s.ble_connected == Some(1));
+    r.wait_dev(|d| d.lists.get(&0xC0).is_some_and(|(i, _)| *i == 2));
+    r.link.ble_disconnect(r.id).unwrap();
+    r.wait_sim(|s| s.ble_connected.is_none());
+    r.link.ble(r.id, false).unwrap();
+    r.wait_sim(|s| !s.ble_on);
+    r.clean();
+}
+
+#[test]
+fn format_and_factory_reset() {
+    let r = rig();
+    r.link.upload(r.id, &[r.jpeg()], "x", Some(1), 1).unwrap();
+    r.link.brightness(r.id, 3).unwrap();
+    r.link.device_name(r.id, "Anders").unwrap();
+    r.link.factory_reset(r.id).unwrap();
+    r.wait_sim(|s| s.resets == 1 && s.brightness == 16 && s.device_name == "SIM-P56" && s.files.len() == 1);
+    r.wait_dev(|d| d.status.as_ref().is_some_and(|s| s.brightness == 16) && d.info.as_ref().is_some_and(|i| i.name == "SIM-P56"));
+    r.link.format_card(r.id).unwrap();
+    r.wait_sim(|s| s.files.is_empty() && s.formats == 1);
+    r.wait_dev(|d| d.files.is_empty());
+    r.clean();
+}
+
+#[test]
+fn reconnects_after_drop() {
+    let r = rig();
+    r.sim.drop_connection();
+    let deadline = std::time::Instant::now() + T;
+    while !r.link.ids().is_empty() || !r.sim.state().connected || r.sim.state().connections < 2 {
+        assert!(std::time::Instant::now() < deadline, "no reconnect: ids={:?} sim={:?}", r.link.ids(), r.sim.state().connections);
+        std::thread::sleep(Duration::from_millis(20));
+        if r.sim.state().connections >= 2 && !r.link.ids().is_empty() { break; }
+    }
+    assert!(r.link.wait_connected(T));
+    let id = r.link.ids()[0];
+    r.link.brightness(id, 9).unwrap();
+    r.wait_sim(|s| s.brightness == 9);
+    r.clean();
+}
+
+#[test]
+fn two_fans_cast_and_commands() {
+    let probe = std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let probe2 = std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let (u1, u2) = (probe.local_addr().unwrap().port(), probe2.local_addr().unwrap().port());
+    drop((probe, probe2));
+    let (link, _rx) = start_link(vec![SocketAddr::from((Ipv4Addr::LOCALHOST, u1)), SocketAddr::from((Ipv4Addr::LOCALHOST, u2))], u1);
+    let a = Sim::start(SimConfig { udp_port: u1, pc_port: link.tcp_port, name: "A".into(), ..Default::default() }).unwrap();
+    let b = Sim::start(SimConfig { udp_port: u2, pc_port: link.tcp_port, name: "B".into(), fragment: true, ..Default::default() }).unwrap();
+    let deadline = std::time::Instant::now() + T;
+    while link.ids().len() < 2 { assert!(std::time::Instant::now() < deadline); std::thread::sleep(Duration::from_millis(20)); }
+    let j = transcode::encode(&transcode::test_card(), &FanType::P56, &Placement::default()).jpeg;
+    for _ in 0..10 { assert_eq!(link.cast(&j), 2); }
+    assert!(a.wait_until(T, |s| s.cast_ok == 10));
+    assert!(b.wait_until(T, |s| s.cast_ok == 10));
+    for id in link.ids() { link.brightness(id, 5).unwrap(); }
+    assert!(a.wait_until(T, |s| s.brightness == 5));
+    assert!(b.wait_until(T, |s| s.brightness == 5));
+    assert!(a.state().protocol_errors.is_empty() && b.state().protocol_errors.is_empty());
+    a.stop(); b.stop(); link.shutdown();
+}
+
+#[test]
+fn fragmented_replies_are_parsed() {
+    let r = rig_with(|c| c.fragment = true);
+    for v in 1..=16 { r.link.brightness(r.id, v).unwrap(); }
+    r.wait_dev(|d| d.status.as_ref().is_some_and(|s| s.brightness == 16));
+    r.link.upload(r.id, &[r.jpeg()], "frag", Some(1), 1).unwrap();
+    r.wait_dev(|d| d.files.len() == 1);
+    r.link.refresh(r.id).unwrap();
+    r.wait_dev(|d| d.info.is_some());
+    r.clean();
+}
+
+#[test]
+fn odd_input_from_fan_does_not_break_link() {
+    let r = rig();
+    assert!(r.sim.inject(&[0x00, 0xFF, 0x5A, 0x99, 0x01, 0x02]));
+    assert!(r.sim.inject(&[0x5A, 0x0E, 0x0E, 0xF5, 0x00]));
+    assert!(r.sim.inject(&[0x5A, 0x85, 0x0A, 0x0A, 0xF5]));
+    r.wait_dev(|d| d.last_error == Some(FanError::TooManyFiles));
+    r.link.brightness(r.id, 2).unwrap();
+    r.wait_dev(|d| d.status.as_ref().is_some_and(|s| s.brightness == 2));
+    r.clean();
+}
+
+/// Random command sequences checked against a simple model of the fan.
+#[test]
+fn random_sequences_match_model() {
+    let r = rig_with(|c| { c.fragment = true; c.max_files = 6; });
+    let j = r.jpeg();
+    let mut seed: u64 = 0x1234_5678_9abc_def1;
+    let mut rnd = |n: u64| { seed ^= seed << 13; seed ^= seed >> 7; seed ^= seed << 17; seed % n };
+    let mut files: Vec<String> = Vec::new();
+    let mut up = 0u32;
+    for step in 0..120 {
+        match rnd(10) {
+            0 => { let v = 1 + rnd(16) as u8; r.link.brightness(r.id, v).unwrap(); r.wait_sim(|s| s.brightness == v); }
+            1 => { let a = rnd(361) as u16; r.link.angle(r.id, a).unwrap(); r.wait_sim(|s| s.angle == a); }
+            2 => { let on = rnd(2) == 0; r.link.breath(r.id, on).unwrap(); r.wait_sim(|s| s.breath == on); }
+            3 => {
+                up += 1;
+                let name = format!("f{step}.mp4");
+                let res = r.link.upload(r.id, &[j.clone()], &name, None, up);
+                if files.len() >= 6 { assert!(matches!(res, Err(Error::Fan(FanError::TooManyFiles))), "{res:?}"); }
+                else { res.unwrap(); files.push(name); }
+            }
+            4 if !files.is_empty() => { let i = rnd(files.len() as u64) as usize; r.link.delete(r.id, i as u8 + 1).unwrap(); files.remove(i); }
+            5 if !files.is_empty() => { let i = rnd(files.len() as u64) as usize; let n = format!("r{step}.mp4"); r.link.rename(r.id, i as u8 + 1, &n).unwrap(); files[i] = n; }
+            6 => { let m = if rnd(2) == 0 { ColorMode::True } else { ColorMode::Bright }; r.link.color_mode(r.id, m).unwrap(); }
+            7 => { assert_eq!(r.link.cast(&j), 1); }
+            8 => { if rnd(2) == 0 { r.link.pause(r.id).unwrap(); } else { r.link.play(r.id).unwrap(); } }
+            _ => { r.link.refresh(r.id).unwrap(); }
+        }
+        let want = files.clone();
+        assert!(r.sim.wait_until(T, |s| s.file_names() == want), "step {step}: sim {:?} vs model {want:?}", r.sim.state().file_names());
+    }
+    let want: Vec<(u8, String)> = files.iter().enumerate().map(|(i, n)| (i as u8 + 1, n.clone())).collect();
+    r.link.refresh(r.id).unwrap();
+    r.wait_dev(|d| d.files == want);
+    r.clean();
+}

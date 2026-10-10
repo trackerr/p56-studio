@@ -25,10 +25,24 @@ pub struct FanType {
     pub gain: f64,
 }
 
+/// How well we know a fan type's image format.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Support {
+    /// JPEG arm layout taken from Holoscope (P56 = type 8 verified against the real fan).
+    Jpeg,
+    /// Raw polar JPEG as Holoscope.exe sends it; Holoscope.apk uses a binary format
+    /// for these types instead, so newer firmware may ignore it.
+    Legacy,
+    /// Known from Holoscope.apk but the image layout is not implemented.
+    Unsupported,
+}
+
 impl FanType {
     pub const P56: FanType = FanType { id: 8, angles: 960, radius: 172, arms: 4, gain: 1.5 };
 
-    pub fn by_id(id: u8) -> FanType {
+    /// Types we can transcode for.
+    pub fn known(id: u8) -> Option<FanType> {
         let (angles, radius, arms, gain) = match id {
             1 | 17 => (960, 192, if id == 1 { 4 } else { 2 }, 1.5),
             2 => (960, 168, 4, 1.5),
@@ -42,9 +56,64 @@ impl FanType {
             12 => (512, 85, 0, 1.6),
             13 => (490, 128, 0, 1.6),
             14 => (960, 176, 2, 1.4),
-            _ => return FanType::by_id(1),
+            _ => return None,
         };
-        FanType { id, angles, radius, arms, gain }
+        Some(FanType { id, angles, radius, arms, gain })
+    }
+
+    /// Like [`FanType::known`] but falls back to type 1 for unknown ids.
+    pub fn by_id(id: u8) -> FanType {
+        FanType::known(id).unwrap_or(FanType { id: 1, angles: 960, radius: 192, arms: 4, gain: 1.5 })
+    }
+
+    pub fn support(id: u8) -> Support {
+        match id {
+            1 | 2 | 3 | 4 | 5 | 8 | 11 | 14 | 17 => Support::Jpeg,
+            6 | 7 | 12 | 13 | 15 => Support::Legacy,
+            _ => Support::Unsupported,
+        }
+    }
+
+    /// Geometry Holoscope.apk uses (`fileprocess::setparam`): (angles, LEDs, fps).
+    pub fn apk_geometry(id: u8) -> Option<(u32, u32, u32)> {
+        Some(match id {
+            1 | 17 | 21 | 25 => (960, 192, 20),
+            2 => (960, 168, 20),
+            4 => (960, 144, 20),
+            5 | 22 => (960, 128, 20),
+            6 => (480, 122, 12),
+            7 | 15 => (490, 122, 12),
+            8 => (960, 172, 20),
+            11 => (960, 184, 20),
+            12 => (512, 85, 12),
+            13 => (500, 117, 12),
+            14 | 24 | 28 => (960, 176, 20),
+            16 => (400, 80, 12),
+            18 => (480, 117, 12),
+            20 | 26 => (512, 512, 20),
+            23 => (512, 96, 12),
+            27 => (450, 112, 12),
+            29 => (512, 80, 16),
+            30 => (490, 85, 16),
+            31 => (490, 112, 12),
+            32 => (960, 122, 20),
+            33 => (960, 133, 20),
+            34 => (960, 154, 20),
+            36 => (448, 69, 12),
+            37 => (704, 128, 20),
+            _ => return None,
+        })
+    }
+
+    /// Error text when we cannot produce images for `id`, `None` when we can.
+    pub fn check(id: u8) -> Option<String> {
+        match FanType::support(id) {
+            Support::Unsupported => Some(match FanType::apk_geometry(id) {
+                Some((a, l, _)) => format!("fantype {id} ({a}×{l}) wordt nog niet ondersteund: het beeldformaat is onbekend"),
+                None => format!("onbekend fantype {id}"),
+            }),
+            _ => None,
+        }
     }
 
     /// Size of the JPEG the firmware expects: (width, height).
@@ -318,6 +387,38 @@ pub fn preview_from_jpeg(jpeg: &[u8], ft: &FanType, size: u32) -> Result<RgbImag
 /// Convenience: load any image file (png/jpg/bmp/webp/gif) as RGB.
 pub fn load_rgb(path: &std::path::Path) -> Result<RgbImage, image::ImageError> {
     Ok(image::open(path)?.to_rgb8())
+}
+
+/// Decode an image from memory (any supported format).
+pub fn decode_rgb(bytes: &[u8]) -> Result<RgbImage, image::ImageError> {
+    Ok(image::load_from_memory(bytes)?.to_rgb8())
+}
+
+/// Frames of an image file in memory: an animated GIF yields every frame with its
+/// delay in ms, anything else one frame with delay 0. At most `max` frames (0 = all).
+pub fn decode_frames(bytes: &[u8], max: usize) -> Result<Vec<(RgbImage, u32)>, image::ImageError> {
+    use image::AnimationDecoder;
+    if image::guess_format(bytes).ok() == Some(image::ImageFormat::Gif) {
+        let dec = image::codecs::gif::GifDecoder::new(std::io::Cursor::new(bytes))?;
+        let mut out = Vec::new();
+        for f in dec.into_frames() {
+            let f = f?;
+            let (n, d) = f.delay().numer_denom_ms();
+            let ms = if d == 0 { 100 } else { n / d };
+            out.push((image::DynamicImage::ImageRgba8(f.into_buffer()).to_rgb8(), ms.max(20)));
+            if max > 0 && out.len() >= max { break; }
+        }
+        if !out.is_empty() { return Ok(out); }
+    }
+    Ok(vec![(decode_rgb(bytes)?, 0)])
+}
+
+/// Downscale so the shorter side is at most `side` pixels (keeps the polar warp cheap).
+pub fn fit(img: RgbImage, side: u32) -> RgbImage {
+    let (w, h) = img.dimensions();
+    let s = side as f64 / w.min(h).max(1) as f64;
+    if s >= 1.0 { return img; }
+    image::imageops::resize(&img, ((w as f64 * s).round() as u32).max(1), ((h as f64 * s).round() as u32).max(1), image::imageops::FilterType::Triangle)
 }
 
 /// Build an RGB image from raw RGB bytes (e.g. a captured screen).

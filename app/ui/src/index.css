@@ -1,0 +1,48 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root, .dark {
+    /* deep blue-black with a cyan "hologram" accent */
+    --background: 222 24% 7%;
+    --foreground: 210 20% 92%;
+    --card: 222 22% 10%;
+    --card-foreground: 210 20% 92%;
+    --popover: 222 22% 11%;
+    --popover-foreground: 210 20% 92%;
+    --primary: 192 100% 61%;
+    --primary-foreground: 200 80% 8%;
+    --secondary: 220 16% 17%;
+    --secondary-foreground: 210 20% 92%;
+    --muted: 220 16% 15%;
+    --muted-foreground: 218 12% 62%;
+    --accent: 220 16% 18%;
+    --accent-foreground: 210 20% 96%;
+    --destructive: 0 78% 60%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 220 14% 20%;
+    --input: 220 14% 22%;
+    --ring: 192 100% 61%;
+    --radius: 0.45rem;
+  }
+}
+
+@layer base {
+  * { @apply border-border; }
+  html, body, #root { height: 100%; }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+    background-image: radial-gradient(1200px 500px at 85% -10%, hsl(192 100% 61% / 0.06), transparent 60%);
+    -webkit-tap-highlight-color: transparent;
+  }
+  code, .font-mono { font-family: "Cascadia Mono", Consolas, ui-monospace, monospace; }
+}
+
+/* slow light sweep over the round preview while casting */
+@keyframes sweep { to { transform: rotate(360deg); } }
+.blade-sweep {
+  background: conic-gradient(from 0deg, transparent 0deg, hsl(192 100% 61% / 0.18) 12deg, transparent 40deg);
+  animation: sweep 1.2s linear infinite;
+}

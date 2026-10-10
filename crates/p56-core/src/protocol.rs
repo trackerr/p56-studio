@@ -1,8 +1,11 @@
 //! Wire protocol of the Holoscope / P56 POV hologram fan.
 //!
 //! Every packet is `5A <opcode> <body…> F5`. Text-carrying packets end with an
-//! XOR checksum over `<len><ascii>` right before the `F5`. The upload header
-//! (tag, size) is little-endian u32; everything else is big-endian.
+//! XOR checksum right before the `F5`. The upload header (tag, size) is
+//! little-endian u32; everything else is big-endian.
+//!
+//! Sources: Holoscope.exe (Windows, Qt5) and Holoscope.apk (Android, Qt6,
+//! `DeviceInterface::*` / `MyTcpServer::ReadData`). See `PROTOCOL.md`.
 
 use serde::{Deserialize, Serialize};
 
@@ -24,59 +27,164 @@ pub const UPLOAD_PADDING: usize = 1600;
 pub const UPLOAD_TAG_BASE: u32 = 4950;
 pub const UPLOAD_CHUNK: usize = 1440;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[repr(u8)]
-pub enum Op {
-    On = 0x01,
-    Off = 0x02,
-    Pause = 0x03,
-    Play = 0x04,
-    Heartbeat = 0x0D,
-    Ready = 0x0E,
-    TransCancel = 0x10,
-    GetMachine = 0x1C,
-    SelectDevice = 0x23,
-    CastFrame = 0x28,
-    AngleAlignStart = 0x2A,
-    AngleAlignStop = 0x2B,
-    Delete = 0x80,
-    Rename = 0x83,
-    FileName = 0x84,
-    Status = 0x86,
-    Select = 0x87,
-    Wifi = 0x8A,
-    MachineInfo = 0x8D,
-    TransStart = 0x90,
-    Commit = 0x91,
-    GroupSaved = 0x93,
-    Charset = 0x94,
-    GroupAdd = 0x95,
+/// Fixed-size string fields in the name / Wi-Fi packets.
+pub const NAME_FIELD: usize = 32;
+
+/// Opcodes, PC → fan unless noted.
+pub mod op {
+    pub const ON: u8 = 0x01;
+    pub const OFF: u8 = 0x02;
+    pub const PAUSE: u8 = 0x03;
+    pub const PLAY: u8 = 0x04;
+    /// Loop through the whole playlist ("repeate", 顺序循环).
+    pub const REPEAT_ALL: u8 = 0x05;
+    /// Loop the current file ("repeateforever", 单循环).
+    pub const REPEAT_ONE: u8 = 0x06;
+    pub const FORMAT_CARD: u8 = 0x07;
+    pub const FACTORY_RESET: u8 = 0x08;
+    pub const BREATH_ON: u8 = 0x09;
+    pub const BREATH_OFF: u8 = 0x0A;
+    pub const AUTOSTART_ON: u8 = 0x0B;
+    pub const AUTOSTART_OFF: u8 = 0x0C;
+    pub const HEARTBEAT: u8 = 0x0D;
+    /// Fan → PC: command / chunk acknowledged.
+    pub const READY: u8 = 0x0E;
+    pub const TRANS_CANCEL: u8 = 0x10;
+    pub const BLE_SCAN: u8 = 0x18;
+    pub const BLE_DISCONNECT: u8 = 0x19;
+    pub const BLE_ON: u8 = 0x1A;
+    pub const BLE_OFF: u8 = 0x1B;
+    pub const GET_MACHINE: u8 = 0x1C;
+    pub const MASTER_ON: u8 = 0x1F;
+    pub const MASTER_OFF: u8 = 0x20;
+    /// Fan → PC: transfer step acknowledged / continue.
+    pub const TRANS_CONTINUE: u8 = 0x21;
+    /// Fan → PC: transfer aborted by the fan.
+    pub const TRANS_BREAK: u8 = 0x22;
+    pub const SELECT_DEVICE: u8 = 0x23;
+    pub const CAST_FRAME: u8 = 0x28;
+    /// Fan → PC: transfer stored (progress 100 %).
+    pub const TRANS_DONE: u8 = 0x29;
+    pub const ANGLE_ALIGN_START: u8 = 0x2A;
+    pub const ANGLE_ALIGN_STOP: u8 = 0x2B;
+    pub const COLOR_TRUE: u8 = 0x2C;
+    pub const COLOR_BRIGHT: u8 = 0x2D;
+    pub const DELETE: u8 = 0x80;
+    pub const BRIGHTNESS: u8 = 0x81;
+    pub const ANGLE: u8 = 0x82;
+    pub const RENAME: u8 = 0x83;
+    /// PC → fan: upload file name. Fan → PC: playlist.
+    pub const FILE_NAME: u8 = 0x84;
+    /// Fan → PC: error code.
+    pub const ERROR: u8 = 0x85;
+    /// Fan → PC: status.
+    pub const STATUS: u8 = 0x86;
+    pub const SELECT: u8 = 0x87;
+    pub const DEVICE_NAME: u8 = 0x89;
+    pub const HOTSPOT: u8 = 0x8A;
+    pub const ROUTER: u8 = 0x8B;
+    /// Fan → PC: machine info.
+    pub const MACHINE_INFO: u8 = 0x8D;
+    pub const BLE_CONNECT: u8 = 0x8E;
+    /// Fan → PC: list report (devices / Bluetooth).
+    pub const LIST: u8 = 0x8F;
+    pub const VOLUME: u8 = 0x90;
+    pub const COMMIT: u8 = 0x91;
 }
 
 pub fn xorsum(b: &[u8]) -> u8 {
     b.iter().fold(0u8, |a, &v| a ^ v)
 }
 
+/// `5A op op F5`
 fn simple(op: u8) -> Vec<u8> {
     vec![SOF, op, op, EOF]
 }
 
-pub fn on() -> Vec<u8> { simple(Op::On as u8) }
-pub fn off() -> Vec<u8> { simple(Op::Off as u8) }
-pub fn pause() -> Vec<u8> { simple(Op::Pause as u8) }
-pub fn play() -> Vec<u8> { simple(Op::Play as u8) }
-pub fn get_machine() -> Vec<u8> { simple(Op::GetMachine as u8) }
+/// `5A op v v F5`
+fn with_value(op: u8, v: u8) -> Vec<u8> {
+    vec![SOF, op, v, v, EOF]
+}
 
-/// `5A 0D 0D F5 3E` — Holoscope appends a trailing 0x3E byte.
-pub fn heartbeat() -> Vec<u8> { vec![SOF, 0x0D, 0x0D, EOF, 0x3E] }
+pub fn on() -> Vec<u8> { simple(op::ON) }
+pub fn off() -> Vec<u8> { simple(op::OFF) }
+pub fn pause() -> Vec<u8> { simple(op::PAUSE) }
+pub fn play() -> Vec<u8> { simple(op::PLAY) }
+pub fn repeat_all() -> Vec<u8> { simple(op::REPEAT_ALL) }
+pub fn repeat_one() -> Vec<u8> { simple(op::REPEAT_ONE) }
+pub fn format_card() -> Vec<u8> { simple(op::FORMAT_CARD) }
+pub fn factory_reset() -> Vec<u8> { simple(op::FACTORY_RESET) }
+pub fn breath(on: bool) -> Vec<u8> { simple(if on { op::BREATH_ON } else { op::BREATH_OFF }) }
+pub fn autostart(on: bool) -> Vec<u8> { simple(if on { op::AUTOSTART_ON } else { op::AUTOSTART_OFF }) }
+pub fn trans_cancel() -> Vec<u8> { simple(op::TRANS_CANCEL) }
+pub fn ble_scan() -> Vec<u8> { simple(op::BLE_SCAN) }
+pub fn ble_disconnect() -> Vec<u8> { simple(op::BLE_DISCONNECT) }
+pub fn ble(on: bool) -> Vec<u8> { simple(if on { op::BLE_ON } else { op::BLE_OFF }) }
+pub fn get_machine() -> Vec<u8> { simple(op::GET_MACHINE) }
+pub fn master(on: bool) -> Vec<u8> { simple(if on { op::MASTER_ON } else { op::MASTER_OFF }) }
+pub fn angle_align(start: bool) -> Vec<u8> { simple(if start { op::ANGLE_ALIGN_START } else { op::ANGLE_ALIGN_STOP }) }
+
+/// Colour mode: true colour (`5A 2C`) or high brightness (`5A 2D`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ColorMode { True, Bright }
+
+impl ColorMode {
+    /// Value as the status packet reports it (1 = true colour, 2 = high brightness).
+    pub fn from_status(v: u8) -> Option<ColorMode> {
+        match v { 1 => Some(ColorMode::True), 2 => Some(ColorMode::Bright), _ => None }
+    }
+}
+
+pub fn color_mode(m: ColorMode) -> Vec<u8> {
+    simple(match m { ColorMode::True => op::COLOR_TRUE, ColorMode::Bright => op::COLOR_BRIGHT })
+}
+
+/// `5A 0D 0D F5 3E` — Holoscope.exe appends a trailing 0x3E byte.
+pub fn heartbeat() -> Vec<u8> { vec![SOF, op::HEARTBEAT, op::HEARTBEAT, EOF, 0x3E] }
 
 /// Select / show slot `n` (1-based).
-pub fn select(n: u8) -> Vec<u8> { vec![SOF, Op::Select as u8, n, n, EOF] }
+pub fn select(n: u8) -> Vec<u8> { with_value(op::SELECT, n) }
 /// Delete slot `n` (1-based).
-pub fn delete(n: u8) -> Vec<u8> { vec![SOF, Op::Delete as u8, n, n, EOF] }
-/// Finish an upload so the firmware stores it in a playlist slot.
-pub fn commit() -> Vec<u8> { vec![SOF, Op::Commit as u8, 0, 0, 0, 1, 1, EOF] }
+pub fn delete(n: u8) -> Vec<u8> { with_value(op::DELETE, n) }
+/// Brightness 1–16.
+pub fn brightness(v: u8) -> Vec<u8> { with_value(op::BRIGHTNESS, v.clamp(1, 16)) }
+/// Volume 0–10.
+pub fn volume(v: u8) -> Vec<u8> { with_value(op::VOLUME, v.min(10)) }
+/// Connect the fan's Bluetooth to entry `i` of its scan list.
+pub fn ble_connect(i: u8) -> Vec<u8> { with_value(op::BLE_CONNECT, i) }
+/// Select one fan in a group (`5A 23 n F5`).
+pub fn select_device(n: u8) -> Vec<u8> { vec![SOF, op::SELECT_DEVICE, n, EOF] }
 
+/// Display rotation in degrees, 0–360 (Holoscope's slider −180…180 + 180).
+pub fn angle(deg: u16) -> Vec<u8> {
+    let d = deg.min(360);
+    let (hi, lo) = ((d >> 8) as u8, d as u8);
+    vec![SOF, op::ANGLE, hi, lo, hi ^ lo, EOF]
+}
+
+/// Finish an upload so the firmware stores it in a playlist slot.
+/// `frames` is what Holoscope puts in the u32 (frame count for the bin formats, 1 for JPEG).
+pub fn commit_with(frames: u32) -> Vec<u8> {
+    let b = frames.to_be_bytes();
+    vec![SOF, op::COMMIT, b[0], b[1], b[2], b[3], xorsum(&b), EOF]
+}
+pub fn commit() -> Vec<u8> { commit_with(1) }
+
+/// Names the fan stores are ASCII; anything else becomes `_` so both of the
+/// firmware's charsets (GB2312 / local 8-bit) see the same bytes.
+pub fn ascii(s: &str) -> String {
+    s.chars().map(|c| if c.is_ascii() && !c.is_ascii_control() { c } else { '_' }).collect()
+}
+
+/// Append `.mp4` unless present: the firmware only lists `.mp4` names.
+pub fn mp4_name(name: &str) -> String {
+    let n = ascii(name.trim());
+    let n = if n.is_empty() { "upload".to_string() } else { n };
+    if n.to_ascii_lowercase().ends_with(".mp4") { n } else { format!("{n}.mp4") }
+}
+
+/// `5A op len <bytes> xor F5`, xor over `len` and the bytes.
 fn named(op: u8, body: &[u8]) -> Vec<u8> {
     let body = body.get(..255).unwrap_or(body);
     let mut v = Vec::with_capacity(body.len() + 5);
@@ -84,23 +192,50 @@ fn named(op: u8, body: &[u8]) -> Vec<u8> {
     v.push(op);
     v.push(body.len() as u8);
     v.extend_from_slice(body);
-    let x = xorsum(&v[2..]);
-    v.push(x);
+    v.push(xorsum(&v[2..]));
     v.push(EOF);
     v
 }
 
-/// Announce the name of the file about to be uploaded. Must end in `.mp4` or the
-/// firmware will not add it to the playlist.
-pub fn set_filename(name: &str) -> Vec<u8> { named(Op::FileName as u8, ascii(name).as_bytes()) }
-pub fn rename(old: &str, new: &str) -> Vec<u8> {
-    named(Op::Rename as u8, format!("{}\0{}", ascii(old), ascii(new)).as_bytes())
-}
-pub fn wifi(ssid: &str, password: &str) -> Vec<u8> {
-    named(Op::Wifi as u8, format!("{}\0{}", ascii(ssid), ascii(password)).as_bytes())
+/// Fixed-layout packet: `5A op <fields…> xor F5`, every field `NAME_FIELD` bytes, zero padded.
+fn fixed(op: u8, fields: &[&str]) -> Vec<u8> {
+    let mut v = vec![0u8; 2 + fields.len() * NAME_FIELD + 2];
+    v[0] = SOF;
+    v[1] = op;
+    for (i, f) in fields.iter().enumerate() {
+        let b = ascii(f).into_bytes();
+        let n = b.len().min(NAME_FIELD);
+        v[2 + i * NAME_FIELD..2 + i * NAME_FIELD + n].copy_from_slice(&b[..n]);
+    }
+    let end = v.len();
+    v[end - 2] = xorsum(&v[2..end - 2]);
+    v[end - 1] = EOF;
+    v
 }
 
-fn ascii(s: &str) -> String { s.chars().filter(|c| c.is_ascii() && *c != '\0').collect() }
+/// Announce the name of the file about to be uploaded (`.mp4` is appended if missing).
+pub fn set_filename(name: &str) -> Vec<u8> { named(op::FILE_NAME, mp4_name(name).as_bytes()) }
+
+/// Rename slot `slot` (1-based): `5A 83 slot len name.mp4 xor F5`.
+pub fn rename(slot: u8, new_name: &str) -> Vec<u8> {
+    let name = mp4_name(new_name);
+    let b = name.as_bytes().get(..250).unwrap_or(name.as_bytes());
+    let mut v = vec![SOF, op::RENAME, slot, b.len() as u8];
+    v.extend_from_slice(b);
+    v.push(xorsum(&v[2..]));
+    v.push(EOF);
+    v
+}
+
+/// Fan name shown in Holoscope (36 bytes).
+pub fn device_name(name: &str) -> Vec<u8> { fixed(op::DEVICE_NAME, &[name]) }
+
+/// Name and password of the fan's own Wi-Fi hotspot (68 bytes). After this the
+/// default hotspot name/password no longer work.
+pub fn hotspot(ssid: &str, password: &str) -> Vec<u8> { fixed(op::HOTSPOT, &[ssid, password]) }
+
+/// Let the fan join a router (68 bytes). It searches for it after this.
+pub fn router(ssid: &str, password: &str) -> Vec<u8> { fixed(op::ROUTER, &[ssid, password]) }
 
 /// Build the upload blob: `[tag u32le][size u32le][1600×00][frames…][00]`.
 /// Returns `(header_part, body_part)` — Holoscope writes the 4-byte tag separately.
@@ -126,11 +261,11 @@ pub fn upload_tag(seq: u32) -> u32 {
 }
 
 /// Wrap a JPEG into a 20480-byte live cast frame: `5A 28 | jpeg | 00… | 55 F5`.
-pub fn cast_frame(jpeg: &[u8]) -> [u8; CAST_FRAME_SIZE] {
-    let mut f = [0u8; CAST_FRAME_SIZE];
+pub fn cast_frame(jpeg: &[u8]) -> Vec<u8> {
+    let mut f = vec![0u8; CAST_FRAME_SIZE];
     let n = jpeg.len().min(MAX_JPEG);
     f[0] = SOF;
-    f[1] = Op::CastFrame as u8;
+    f[1] = op::CAST_FRAME;
     f[2..2 + n].copy_from_slice(&jpeg[..n]);
     f[CAST_FRAME_SIZE - 2] = 0x55;
     f[CAST_FRAME_SIZE - 1] = EOF;
@@ -141,35 +276,156 @@ pub fn cast_frame(jpeg: &[u8]) -> [u8; CAST_FRAME_SIZE] {
 // Packets coming back from the fan
 // ---------------------------------------------------------------------------
 
+/// `5A 86` status, 11 bytes:
+/// `5A 86 flags slot brightness (color<<4 | angle_hi) angle_lo group type extra F5`.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Status {
     pub flags: u8,
     pub power: bool,
+    /// Holoscope's `play_stop_mode`: playing (true) or paused.
     pub playing: bool,
+    /// Holoscope's `repeate_mode`: whole playlist (true) or current file.
+    pub repeat_all: bool,
+    pub breath: bool,
+    pub autostart: bool,
+    pub master: bool,
     /// Currently playing slot (1-based, 0 = none).
     pub play_index: u8,
-    pub leds_per_arm: u8,
-    pub angles: u16,
+    /// 1–16.
+    pub brightness: u8,
+    /// 1 = true colour, 2 = high brightness.
+    pub color_mode: u8,
+    /// Display rotation 0–360 (180 = neutral).
+    pub angle: u16,
+    pub group: u8,
     pub fan_type: u8,
-    pub raw: Vec<u8>,
+    pub extra: u8,
 }
 
+impl Status {
+    pub fn parse(body: &[u8]) -> Option<Status> {
+        if body.len() < 8 { return None; }
+        let f = body[0];
+        Some(Status {
+            flags: f,
+            power: f & 0x40 != 0,
+            autostart: f & 0x20 != 0,
+            breath: f & 0x10 != 0,
+            playing: f & 0x08 != 0,
+            repeat_all: f & 0x04 != 0,
+            master: f & 0x02 != 0,
+            play_index: body[1],
+            brightness: body[2],
+            color_mode: body[3] >> 4,
+            angle: (((body[3] & 0x0F) as u16) << 8) | body[4] as u16,
+            group: body[5],
+            fan_type: body[6],
+            extra: body[7],
+        })
+    }
+
+    /// Inverse of [`Status::parse`], used by the simulator.
+    pub fn to_packet(&self) -> Vec<u8> {
+        let mut f = 0u8;
+        if self.power { f |= 0x40 }
+        if self.autostart { f |= 0x20 }
+        if self.breath { f |= 0x10 }
+        if self.playing { f |= 0x08 }
+        if self.repeat_all { f |= 0x04 }
+        if self.master { f |= 0x02 }
+        let a = self.angle.min(0x0FFF);
+        vec![SOF, op::STATUS, f, self.play_index, self.brightness, (self.color_mode << 4) | (a >> 8) as u8,
+             a as u8, self.group, self.fan_type, self.extra, EOF]
+    }
+}
+
+/// `5A 8D` machine info, 126 bytes.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct MachineInfo {
+    /// Fan IP as it reports it (bytes 6–9).
+    pub ip: String,
+    /// Device name (bytes 14–45).
     pub name: String,
     pub mac: String,
-    pub wifi: String,
-    pub version: String,
+    /// Name of the fan's own hotspot (bytes 52–83).
+    pub hotspot: String,
+    /// Router the fan joins (bytes 84–115); older firmware puts a version here.
+    pub router: String,
+}
+
+pub const MACHINE_INFO_LEN: usize = 126;
+
+impl MachineInfo {
+    pub fn parse(pkt: &[u8]) -> Option<MachineInfo> {
+        if pkt.len() < 116 { return None; }
+        Some(MachineInfo {
+            ip: format!("{}.{}.{}.{}", pkt[6], pkt[7], pkt[8], pkt[9]),
+            name: cstr(&pkt[14..46]),
+            mac: pkt[46..52].iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(":"),
+            hotspot: cstr(&pkt[52..84]),
+            router: cstr(&pkt[84..116]),
+        })
+    }
+
+    pub fn to_packet(&self) -> Vec<u8> {
+        let mut r = vec![0u8; MACHINE_INFO_LEN];
+        r[0] = SOF;
+        r[1] = op::MACHINE_INFO;
+        r[125] = EOF;
+        for (i, p) in self.ip.split('.').take(4).enumerate() { r[6 + i] = p.parse().unwrap_or(0); }
+        put_str(&mut r[14..46], &self.name);
+        for (i, p) in self.mac.split(':').take(6).enumerate() { r[46 + i] = u8::from_str_radix(p, 16).unwrap_or(0); }
+        put_str(&mut r[52..84], &self.hotspot);
+        put_str(&mut r[84..116], &self.router);
+        r
+    }
+}
+
+/// Fan-side error from `5A 85 code … F5`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FanError {
+    /// 0x06: a file with this name already exists.
+    DuplicateName,
+    /// 0x0A: playlist / card is full.
+    TooManyFiles,
+    /// Anything else: transfer failed (check the memory card).
+    TransferFailed(u8),
+}
+
+impl FanError {
+    pub fn from_code(c: u8) -> FanError {
+        match c { 0x06 => FanError::DuplicateName, 0x0A => FanError::TooManyFiles, c => FanError::TransferFailed(c) }
+    }
+    pub fn code(&self) -> u8 {
+        match self { FanError::DuplicateName => 0x06, FanError::TooManyFiles => 0x0A, FanError::TransferFailed(c) => *c }
+    }
+    pub fn to_packet(&self) -> Vec<u8> { vec![SOF, op::ERROR, self.code(), self.code(), EOF] }
+}
+
+impl std::fmt::Display for FanError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FanError::DuplicateName => write!(f, "bestandsnaam bestaat al op de fan"),
+            FanError::TooManyFiles => write!(f, "maximaal aantal bestanden bereikt"),
+            FanError::TransferFailed(c) => write!(f, "overdracht mislukt (code {c:#04x}); controleer de geheugenkaart"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Packet {
     /// `5A 0E 0E F5`: command / chunk acknowledged.
     Ready,
+    TransContinue,
+    TransBreak,
+    TransDone,
     Status(Status),
     MachineInfo(MachineInfo),
     /// Playlist as the fan reports it: `(slot, name)`, 1-based.
     FileList(Vec<(u8, String)>),
+    Error(FanError),
+    /// `5A 8F kind index len16 "a/b/c" xor F5`: device or Bluetooth list.
+    List { kind: u8, index: u8, items: Vec<String> },
     /// Any other `5A xx … F5` packet.
     Other { op: u8, body: Vec<u8> },
 }
@@ -179,52 +435,97 @@ fn cstr(b: &[u8]) -> String {
     String::from_utf8_lossy(&b[..end]).trim().to_string()
 }
 
-fn parse_filelist(body: &[u8]) -> Vec<(u8, String)> {
-    // body = <len16 be> <ascii "1 a.mp4/2 b.mp4"> <xor>
-    if body.len() < 3 { return vec![]; }
+fn put_str(dst: &mut [u8], s: &str) {
+    let b = ascii(s).into_bytes();
+    let n = b.len().min(dst.len());
+    dst[..n].copy_from_slice(&b[..n]);
+}
+
+fn split_items(text: &[u8]) -> Vec<String> {
+    String::from_utf8_lossy(text).split('/').map(|t| t.trim_matches(|c: char| c == '\0' || c.is_whitespace()).to_string())
+        .filter(|t| !t.is_empty()).collect()
+}
+
+pub fn parse_filelist(body: &[u8]) -> Vec<(u8, String)> {
+    // body = <len16 be> <"1 a.mp4/2 b.mp4" or "a.mp4/b.mp4"> <xor>
+    if body.len() < 2 { return vec![]; }
     let n = u16::from_be_bytes([body[0], body[1]]) as usize;
-    let text = String::from_utf8_lossy(&body[2..(2 + n).min(body.len())]);
     let mut out = Vec::new();
     let mut next = 1u8;
-    for tok in text.split('/').map(str::trim).filter(|t| !t.is_empty()) {
+    for tok in split_items(&body[2..(2 + n).min(body.len())]) {
         let (idx, name) = match tok.split_once(' ') {
-            Some((i, n)) if i.chars().all(|c| c.is_ascii_digit()) => (i.parse().unwrap_or(next), n.trim()),
+            Some((i, n)) if !i.is_empty() && i.chars().all(|c| c.is_ascii_digit()) => (i.parse().unwrap_or(next), n.trim().to_string()),
             _ => (next, tok),
         };
-        out.push((idx, name.to_string()));
+        out.push((idx, name));
         next = idx.wrapping_add(1);
     }
     out
 }
 
+/// Playlist packet as the fan sends it (used by the simulator).
+pub fn filelist_packet(names: &[String]) -> Vec<u8> {
+    let text: String = names.iter().enumerate().map(|(i, n)| format!("{} {}", i + 1, ascii(n))).collect::<Vec<_>>().join("/");
+    let t = text.as_bytes().get(..2000).unwrap_or(text.as_bytes());
+    let mut v = vec![SOF, op::FILE_NAME, (t.len() >> 8) as u8, t.len() as u8];
+    v.extend_from_slice(t);
+    v.push(xorsum(&v[2..]));
+    v.push(EOF);
+    v
+}
+
+/// List report packet (used by the simulator).
+pub fn list_packet(kind: u8, index: u8, items: &[String]) -> Vec<u8> {
+    let text = items.iter().map(|s| ascii(s)).collect::<Vec<_>>().join("/");
+    let t = text.as_bytes().get(..2000).unwrap_or(text.as_bytes());
+    let mut v = vec![SOF, op::LIST, kind, index, (t.len() >> 8) as u8, t.len() as u8];
+    v.extend_from_slice(t);
+    v.push(xorsum(&v[2..]));
+    v.push(EOF);
+    v
+}
+
 pub fn parse_packet(pkt: &[u8]) -> Option<Packet> {
-    if pkt.len() < 3 || pkt[0] != SOF || *pkt.last()? != EOF { return None; }
+    if pkt.len() < 4 || pkt[0] != SOF || *pkt.last()? != EOF { return None; }
     let op = pkt[1];
     let body = &pkt[2..pkt.len() - 1];
     Some(match op {
-        0x0E => Packet::Ready,
-        0x86 if body.len() >= 8 => {
-            let flags = body[0];
-            Packet::Status(Status {
-                flags,
-                power: flags & 0x10 != 0 || flags & 0x02 != 0,
-                playing: flags & 0x0C != 0,
-                play_index: body[1],
-                leds_per_arm: body[2],
-                angles: u16::from_be_bytes([body[3], body[4]]),
-                fan_type: body[6],
-                raw: pkt.to_vec(),
-            })
+        op::READY => Packet::Ready,
+        op::TRANS_CONTINUE => Packet::TransContinue,
+        op::TRANS_BREAK => Packet::TransBreak,
+        op::TRANS_DONE => Packet::TransDone,
+        op::STATUS => match Status::parse(body) { Some(s) => Packet::Status(s), None => Packet::Other { op, body: body.to_vec() } },
+        op::MACHINE_INFO => match MachineInfo::parse(pkt) { Some(i) => Packet::MachineInfo(i), None => Packet::Other { op, body: body.to_vec() } },
+        op::FILE_NAME => Packet::FileList(parse_filelist(body)),
+        op::ERROR => Packet::Error(FanError::from_code(body[0])),
+        op::LIST if body.len() >= 4 => {
+            let n = u16::from_be_bytes([body[2], body[3]]) as usize;
+            Packet::List { kind: body[0], index: body[1], items: split_items(&body[4..(4 + n).min(body.len())]) }
         }
-        0x8D if pkt.len() >= 120 => Packet::MachineInfo(MachineInfo {
-            name: cstr(&pkt[14..46]),
-            mac: pkt[46..52].iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(":"),
-            wifi: cstr(&pkt[52..84]),
-            version: cstr(&pkt[84..pkt.len().min(116)]),
-        }),
-        0x84 => Packet::FileList(parse_filelist(body)),
         _ => Packet::Other { op, body: body.to_vec() },
     })
+}
+
+/// Total length of the packet starting at `buf[0]` (= `5A`), if it can be determined yet.
+/// `Err(())` means "not a packet we can frame by length; scan for F5".
+fn framed_len(buf: &[u8]) -> Result<Option<usize>, ()> {
+    let need = |n: usize| if buf.len() >= n { Ok(Some(n)) } else { Ok(None) };
+    match buf.get(1) {
+        None => Ok(None),
+        Some(&op::MACHINE_INFO) => need(MACHINE_INFO_LEN),
+        Some(&op::STATUS) => need(11),
+        Some(&op::ERROR) => need(5),
+        Some(&(op::READY | op::TRANS_CONTINUE | op::TRANS_BREAK | op::TRANS_DONE)) => need(4),
+        Some(&op::FILE_NAME) => {
+            if buf.len() < 4 { return Ok(None); }
+            need(4 + u16::from_be_bytes([buf[2], buf[3]]) as usize + 2)
+        }
+        Some(&op::LIST) => {
+            if buf.len() < 6 { return Ok(None); }
+            need(6 + u16::from_be_bytes([buf[4], buf[5]]) as usize + 2)
+        }
+        _ => Err(()),
+    }
 }
 
 /// Incremental splitter for the fan → PC byte stream.
@@ -243,25 +544,22 @@ impl Reader {
                 break;
             };
             if start > 0 { self.buf.drain(..start); }
-            if self.buf.len() < 3 { break; }
-            // 8D info is fixed 126 bytes and may contain 0xF5 inside the name/MAC.
-            let end = if self.buf[1] == 0x8D {
-                if self.buf.len() < 126 { break; }
-                125
-            } else if self.buf[1] == 0x84 && self.buf.len() >= 4 {
-                let n = u16::from_be_bytes([self.buf[2], self.buf[3]]) as usize;
-                let e = 4 + n + 1; // + xor, then F5
-                if self.buf.len() <= e { break; }
-                e
-            } else {
-                match self.buf[2..].iter().position(|&b| b == EOF) {
-                    Some(p) => p + 2,
+            let len = match framed_len(&self.buf) {
+                Ok(Some(n)) => n,
+                Ok(None) => break,
+                Err(()) => match self.buf.iter().skip(2).position(|&b| b == EOF) {
+                    Some(p) => p + 3,
                     None => { if self.buf.len() > 4096 { self.buf.clear(); } break; }
-                }
+                },
             };
-            let pkt: Vec<u8> = self.buf.drain(..=end).collect();
+            if self.buf[len - 1] != EOF {
+                // Not a real frame start: skip this 5A and resync.
+                self.buf.remove(0);
+                continue;
+            }
+            let pkt: Vec<u8> = self.buf.drain(..len).collect();
             if let Some(p) = parse_packet(&pkt) { out.push(p); }
-            // Holoscope pads 4-byte packets to 5 (e.g. heartbeat 3E); the fan does the same.
+            // The fan pads 4-byte packets to 5 bytes (like Holoscope's heartbeat 3E).
             if pkt.len() == 4 && self.buf.first().is_some_and(|&b| b != SOF) { self.buf.remove(0); }
         }
         out
@@ -274,45 +572,108 @@ mod tests {
 
     #[test]
     fn filename_checksum_matches_v25() {
-        // f_set_filename("eddie.mp4") from the verified v25 test lab
         let p = set_filename("eddie.mp4");
-        assert_eq!(p[0], 0x5A);
-        assert_eq!(p[1], 0x84);
-        assert_eq!(p[2], 9);
+        assert_eq!(&p[..3], &[0x5A, 0x84, 9]);
         assert_eq!(&p[3..12], b"eddie.mp4");
-        let x = xorsum(&p[2..12]);
-        assert_eq!(p[12], x);
+        assert_eq!(p[12], xorsum(&p[2..12]));
         assert_eq!(p[13], 0xF5);
+        assert_eq!(set_filename("eddie"), p);
     }
 
     #[test]
-    fn status_parses() {
-        let raw = [0x5A, 0x86, 0x1E, 0x02, 172, 0x03, 0xC0, 0, 8, 0, 0xF5];
-        let p = parse_packet(&raw).unwrap();
-        match p {
-            Packet::Status(s) => {
-                assert_eq!(s.play_index, 2);
-                assert_eq!(s.leds_per_arm, 172);
-                assert_eq!(s.angles, 960);
-                assert_eq!(s.fan_type, 8);
-                assert!(s.playing && s.power);
-            }
-            _ => panic!(),
-        }
+    fn simple_commands_match_holoscope() {
+        assert_eq!(on(), [0x5A, 0x01, 0x01, 0xF5]);
+        assert_eq!(pause(), [0x5A, 0x03, 0x03, 0xF5]);
+        assert_eq!(repeat_all(), [0x5A, 0x05, 0x05, 0xF5]);
+        assert_eq!(format_card(), [0x5A, 0x07, 0x07, 0xF5]);
+        assert_eq!(breath(false), [0x5A, 0x0A, 0x0A, 0xF5]);
+        assert_eq!(autostart(true), [0x5A, 0x0B, 0x0B, 0xF5]);
+        assert_eq!(ble(false), [0x5A, 0x1B, 0x1B, 0xF5]);
+        assert_eq!(master(true), [0x5A, 0x1F, 0x1F, 0xF5]);
+        assert_eq!(color_mode(ColorMode::Bright), [0x5A, 0x2D, 0x2D, 0xF5]);
+        assert_eq!(select(3), [0x5A, 0x87, 3, 3, 0xF5]);
+        assert_eq!(brightness(40), [0x5A, 0x81, 16, 16, 0xF5]);
+        assert_eq!(volume(7), [0x5A, 0x90, 7, 7, 0xF5]);
+        assert_eq!(angle(300), [0x5A, 0x82, 0x01, 0x2C, 0x01 ^ 0x2C, 0xF5]);
+        assert_eq!(commit(), [0x5A, 0x91, 0, 0, 0, 1, 1, 0xF5]);
     }
 
     #[test]
-    fn filelist_parses_numbered() {
-        let text = b"1 a.mp4/2 b.mp4";
-        let mut body = vec![0, text.len() as u8];
-        body.extend_from_slice(text);
-        body.push(xorsum(&body));
-        let mut pkt = vec![0x5A, 0x84];
-        pkt.extend(body);
-        pkt.push(0xF5);
+    fn fixed_layout_wifi() {
+        let p = hotspot("MyFan", "secret12");
+        assert_eq!(p.len(), 68);
+        assert_eq!(&p[..2], &[0x5A, 0x8A]);
+        assert_eq!(&p[2..7], b"MyFan");
+        assert_eq!(&p[34..42], b"secret12");
+        assert_eq!(p[66], xorsum(&p[2..66]));
+        assert_eq!(p[67], 0xF5);
+        assert_eq!(router("x", "y")[1], 0x8B);
+        let n = device_name("Fan 1");
+        assert_eq!(n.len(), 36);
+        assert_eq!(n[34], xorsum(&n[2..34]));
+    }
+
+    #[test]
+    fn rename_layout() {
+        let p = rename(2, "clip");
+        assert_eq!(&p[..4], &[0x5A, 0x83, 2, 8]);
+        assert_eq!(&p[4..12], b"clip.mp4");
+        assert_eq!(p[12], xorsum(&p[2..12]));
+    }
+
+    #[test]
+    fn status_roundtrip() {
+        let s = Status { power: true, playing: true, repeat_all: true, breath: false, autostart: true, master: false,
+            play_index: 2, brightness: 12, color_mode: 2, angle: 270, group: 1, fan_type: 8, extra: 0, flags: 0 };
+        let pkt = s.to_packet();
+        assert_eq!(pkt.len(), 11);
+        let Some(Packet::Status(p)) = parse_packet(&pkt) else { panic!() };
+        assert_eq!(Status { flags: p.flags, ..s.clone() }, p);
+        assert_eq!(p.flags, 0x40 | 0x20 | 0x08 | 0x04);
+    }
+
+    #[test]
+    fn status_with_f5_inside_frames_by_length() {
+        let s = Status { angle: 0xF5, play_index: 0xF5, ..Default::default() };
         let mut r = Reader::default();
-        let out = r.push(&pkt);
-        assert_eq!(out, vec![Packet::FileList(vec![(1, "a.mp4".into()), (2, "b.mp4".into())])]);
+        let mut stream = s.to_packet();
+        stream.extend(vec![0x5A, 0x0E, 0x0E, 0xF5]);
+        let out = r.push(&stream);
+        assert_eq!(out.len(), 2);
+        assert!(matches!(&out[0], Packet::Status(p) if p.angle == 0xF5 && p.play_index == 0xF5));
+        assert_eq!(out[1], Packet::Ready);
+    }
+
+    #[test]
+    fn machine_info_roundtrip() {
+        let i = MachineInfo { ip: "192.168.4.1".into(), name: "P56".into(), mac: "02:e0:e0:e0:e0:f5".into(), hotspot: "HOLO-1".into(), router: "home".into() };
+        let pkt = i.to_packet();
+        let mut r = Reader::default();
+        // feed byte by byte: MAC contains F5
+        let mut out = vec![];
+        for b in &pkt { out.extend(r.push(&[*b])); }
+        assert_eq!(out, vec![Packet::MachineInfo(i)]);
+    }
+
+    #[test]
+    fn filelist_and_list_roundtrip() {
+        let names = vec!["a.mp4".to_string(), "b c.mp4".to_string()];
+        let mut r = Reader::default();
+        let out = r.push(&filelist_packet(&names));
+        assert_eq!(out, vec![Packet::FileList(vec![(1, "a.mp4".into()), (2, "b c.mp4".into())])]);
+        let out = r.push(&list_packet(0x80, 1, &["dev1".into(), "dev2".into()]));
+        assert_eq!(out, vec![Packet::List { kind: 0x80, index: 1, items: vec!["dev1".into(), "dev2".into()] }]);
+        let out = r.push(&FanError::DuplicateName.to_packet());
+        assert_eq!(out, vec![Packet::Error(FanError::DuplicateName)]);
+    }
+
+    #[test]
+    fn reader_resyncs_after_garbage_and_padding() {
+        let mut r = Reader::default();
+        let mut s = vec![0x00, 0x12, 0x5A, 0x0E, 0x0E, 0xF5, 0x3E];
+        s.extend(Status::default().to_packet());
+        let out = r.push(&s);
+        assert_eq!(out.len(), 2);
     }
 
     #[test]

@@ -1,0 +1,668 @@
+//! Simulator of a Holoscope / P56 POV hologram fan.
+//!
+//! Behaves like the real device on the network: it answers the PC's `"<ip>HS"`
+//! UDP broadcast, connects to the PC's TCP server, executes every command of the
+//! protocol, stores uploads, checks every checksum and frame, and reports status,
+//! machine info, playlist, list reports and error codes the way the firmware does.
+//! Anything malformed is recorded in [`SimState::protocol_errors`].
+
+use std::io::{Read, Write};
+use std::net::{Ipv4Addr, Shutdown, SocketAddr, TcpStream, UdpSocket};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Condvar, Mutex};
+use std::thread;
+use std::time::{Duration, Instant};
+
+use p56_core::protocol::{self as proto, op, FanError, MachineInfo, Status, CAST_CHUNK, CAST_FRAME_SIZE, SOF, EOF};
+use p56_core::transcode::FanType;
+use serde::Serialize;
+
+#[derive(Debug, Clone)]
+pub struct SimConfig {
+    pub name: String,
+    pub fan_type: u8,
+    /// UDP port to listen for the broadcast on (real fan: 8988, 0 = any free port).
+    pub udp_port: u16,
+    /// Connect straight to this PC address instead of waiting for a broadcast.
+    pub pc: Option<SocketAddr>,
+    /// TCP port of the PC (real fan: always 6666).
+    pub pc_port: u16,
+    /// IP the fan reports in its `HS` reply and machine info.
+    pub ip: Ipv4Addr,
+    pub mac: [u8; 6],
+    pub max_files: usize,
+    /// Split every reply into random small pieces (stress test for the PC's parser).
+    pub fragment: bool,
+    /// Reconnect after the PC closes the connection.
+    pub reconnect: bool,
+}
+
+impl Default for SimConfig {
+    fn default() -> Self {
+        SimConfig {
+            name: "SIM-P56".into(),
+            fan_type: 8,
+            udp_port: proto::UDP_PORT,
+            pc: None,
+            pc_port: proto::TCP_PORT,
+            ip: Ipv4Addr::new(192, 168, 4, 1),
+            mac: [0x02, 0xE0, 0xE0, 0x56, 0x00, 0xF5],
+            max_files: 20,
+            fragment: false,
+            reconnect: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SimFile {
+    pub name: String,
+    pub frames: usize,
+    pub width: u32,
+    pub height: u32,
+    #[serde(skip)]
+    pub jpegs: Vec<Vec<u8>>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SimState {
+    pub connected: bool,
+    pub connections: u32,
+    pub pc: Option<String>,
+    pub power: bool,
+    pub playing: bool,
+    pub repeat_all: bool,
+    pub breath: bool,
+    pub autostart: bool,
+    pub master: bool,
+    pub brightness: u8,
+    pub color_mode: u8,
+    pub angle: u16,
+    pub volume: u8,
+    pub group_device: u8,
+    pub angle_align: bool,
+    pub ble_on: bool,
+    pub ble_devices: Vec<String>,
+    pub ble_connected: Option<u8>,
+    pub device_name: String,
+    pub hotspot: (String, String),
+    pub router: (String, String),
+    pub files: Vec<SimFile>,
+    /// Playing slot, 1-based (0 = none).
+    pub current: u8,
+    pub uploads: u32,
+    pub cast_ok: u64,
+    pub cast_bad: u64,
+    pub formats: u32,
+    pub resets: u32,
+    pub heartbeats: u32,
+    pub cancels: u32,
+    /// Every command received, by name (most recent last, max 500).
+    pub commands: Vec<String>,
+    /// Malformed input from the PC. A correct client never causes any.
+    pub protocol_errors: Vec<String>,
+    #[serde(skip)]
+    pub last_cast: Option<(Instant, Vec<u8>)>,
+}
+
+impl SimState {
+    fn new(cfg: &SimConfig) -> SimState {
+        SimState {
+            connected: false, connections: 0, pc: None,
+            power: true, playing: true, repeat_all: true, breath: false, autostart: true, master: false,
+            brightness: 16, color_mode: 2, angle: 180, volume: 10, group_device: 0, angle_align: false,
+            ble_on: false, ble_devices: vec!["BT-Speaker".into(), "Phone".into()], ble_connected: None,
+            device_name: cfg.name.clone(), hotspot: (format!("{}-AP", cfg.name), "12345678".into()), router: (String::new(), String::new()),
+            files: Vec::new(), current: 0,
+            uploads: 0, cast_ok: 0, cast_bad: 0, formats: 0, resets: 0, heartbeats: 0, cancels: 0,
+            commands: Vec::new(), protocol_errors: Vec::new(), last_cast: None,
+        }
+    }
+
+    fn factory_reset(&mut self, cfg: &SimConfig) {
+        let keep = (self.connected, self.connections, self.pc.clone(), std::mem::take(&mut self.files), self.uploads,
+            self.cast_ok, self.cast_bad, self.formats, std::mem::take(&mut self.commands), std::mem::take(&mut self.protocol_errors), self.heartbeats);
+        *self = SimState::new(cfg);
+        (self.connected, self.connections, self.pc, self.files, self.uploads, self.cast_ok, self.cast_bad, self.formats, self.commands, self.protocol_errors, self.heartbeats) = keep;
+        self.current = if self.files.is_empty() { 0 } else { 1 };
+        self.resets += 1;
+    }
+
+    pub fn status(&self, fan_type: u8) -> Status {
+        Status {
+            flags: 0, power: self.power, playing: self.playing, repeat_all: self.repeat_all, breath: self.breath,
+            autostart: self.autostart, master: self.master, play_index: self.current, brightness: self.brightness,
+            color_mode: self.color_mode, angle: self.angle, group: self.group_device, fan_type, extra: 0,
+        }
+    }
+
+    pub fn file_names(&self) -> Vec<String> { self.files.iter().map(|f| f.name.clone()).collect() }
+
+    pub fn errors(&self) -> &[String] { &self.protocol_errors }
+}
+
+struct Shared {
+    cfg: SimConfig,
+    state: Mutex<SimState>,
+    changed: Condvar,
+    stop: AtomicBool,
+    conn: Mutex<Option<TcpStream>>,
+    want_pc: Mutex<Option<SocketAddr>>,
+    rng: Mutex<u64>,
+}
+
+/// A running simulated fan. Dropping it stops the simulator.
+pub struct Sim {
+    shared: Arc<Shared>,
+    pub udp_port: u16,
+}
+
+impl Sim {
+    pub fn start(cfg: SimConfig) -> std::io::Result<Sim> {
+        let udp = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, cfg.udp_port))?;
+        let _ = udp.set_broadcast(true);
+        udp.set_read_timeout(Some(Duration::from_millis(200)))?;
+        let udp_port = udp.local_addr()?.port();
+        let seed = Instant::now().elapsed().as_nanos() as u64 ^ (udp_port as u64) << 17 ^ 0x9E37_79B9_7F4A_7C15;
+        let shared = Arc::new(Shared {
+            state: Mutex::new(SimState::new(&cfg)),
+            changed: Condvar::new(),
+            stop: AtomicBool::new(false),
+            conn: Mutex::new(None),
+            want_pc: Mutex::new(cfg.pc),
+            rng: Mutex::new(seed | 1),
+            cfg,
+        });
+        { let s = shared.clone(); thread::spawn(move || udp_loop(s, udp)); }
+        { let s = shared.clone(); thread::spawn(move || connect_loop(s)); }
+        Ok(Sim { shared, udp_port })
+    }
+
+    pub fn config(&self) -> &SimConfig { &self.shared.cfg }
+
+    pub fn state(&self) -> SimState { self.shared.state.lock().unwrap().clone() }
+
+    /// Change the simulated device state (e.g. fill the card).
+    pub fn modify(&self, f: impl FnOnce(&mut SimState)) {
+        f(&mut self.shared.state.lock().unwrap());
+        self.shared.changed.notify_all();
+    }
+
+    /// Wait until `pred` holds for the state.
+    pub fn wait_until(&self, timeout: Duration, pred: impl Fn(&SimState) -> bool) -> bool {
+        let deadline = Instant::now() + timeout;
+        let mut g = self.shared.state.lock().unwrap();
+        loop {
+            if pred(&g) { return true; }
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() { return false; }
+            g = self.shared.changed.wait_timeout(g, left.min(Duration::from_millis(50))).unwrap().0;
+        }
+    }
+
+    /// Close the TCP connection as if Wi-Fi dropped; the fan reconnects on the next broadcast.
+    pub fn drop_connection(&self) {
+        if let Some(c) = self.shared.conn.lock().unwrap().take() { let _ = c.shutdown(Shutdown::Both); }
+    }
+
+    /// Send raw bytes to the PC (to test the PC's handling of odd input).
+    pub fn inject(&self, data: &[u8]) -> bool {
+        match self.shared.conn.lock().unwrap().as_ref().and_then(|c| c.try_clone().ok()) {
+            Some(mut c) => c.write_all(data).is_ok(),
+            None => false,
+        }
+    }
+
+    /// JPEG currently on the "blades": a live cast frame (< 1 s old) or the playing file.
+    pub fn current_jpeg(&self) -> Option<Vec<u8>> {
+        let g = self.shared.state.lock().unwrap();
+        if let Some((t, j)) = &g.last_cast { if t.elapsed() < Duration::from_secs(1) { return Some(j.clone()); } }
+        if !g.power || g.current == 0 { return None; }
+        let f = g.files.get(g.current as usize - 1)?;
+        if f.jpegs.is_empty() { return None; }
+        let i = if g.playing { (epoch().elapsed().as_millis() / 50) as usize % f.jpegs.len() } else { 0 };
+        Some(f.jpegs[i].clone())
+    }
+
+    pub fn stop(&self) {
+        self.shared.stop.store(true, Ordering::SeqCst);
+        self.drop_connection();
+    }
+}
+
+fn epoch() -> Instant {
+    static E: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+    *E.get_or_init(Instant::now)
+}
+
+impl Drop for Sim {
+    fn drop(&mut self) { self.stop(); }
+}
+
+fn udp_loop(sh: Arc<Shared>, sock: UdpSocket) {
+    let mut buf = [0u8; 256];
+    while !sh.stop.load(Ordering::SeqCst) {
+        let Ok((n, from)) = sock.recv_from(&mut buf) else { continue };
+        let txt = String::from_utf8_lossy(&buf[..n]).trim().to_string();
+        let Some(ip) = txt.strip_suffix("HS").and_then(|s| s.parse::<Ipv4Addr>().ok()) else { continue };
+        let reply_ip = if ip.is_loopback() { Ipv4Addr::LOCALHOST } else { sh.cfg.ip };
+        let _ = sock.send_to(format!("{reply_ip}HS").as_bytes(), from);
+        let mut w = sh.want_pc.lock().unwrap();
+        if w.is_none() || !sh.state.lock().unwrap().connected {
+            *w = Some(SocketAddr::from((ip, sh.cfg.pc_port)));
+        }
+    }
+}
+
+fn connect_loop(sh: Arc<Shared>) {
+    while !sh.stop.load(Ordering::SeqCst) {
+        let target = *sh.want_pc.lock().unwrap();
+        let Some(addr) = target else { thread::sleep(Duration::from_millis(50)); continue };
+        match TcpStream::connect_timeout(&addr, Duration::from_secs(2)) {
+            Ok(s) => {
+                let _ = s.set_nodelay(true);
+                *sh.conn.lock().unwrap() = s.try_clone().ok();
+                {
+                    let mut g = sh.state.lock().unwrap();
+                    g.connected = true;
+                    g.connections += 1;
+                    g.pc = Some(addr.to_string());
+                }
+                sh.changed.notify_all();
+                log::info!("[sim {}] verbonden met {addr}", sh.cfg.name);
+                session(&sh, s);
+                *sh.conn.lock().unwrap() = None;
+                sh.state.lock().unwrap().connected = false;
+                sh.changed.notify_all();
+                log::info!("[sim {}] verbinding met {addr} weg", sh.cfg.name);
+                if !sh.cfg.reconnect { break; }
+                if sh.cfg.pc.is_none() { *sh.want_pc.lock().unwrap() = None; }
+                thread::sleep(Duration::from_millis(300));
+            }
+            Err(_) => thread::sleep(Duration::from_millis(300)),
+        }
+    }
+}
+
+enum Mode {
+    Commands,
+    /// Waiting for the upload blob after a valid `84` file name.
+    Upload { name: String },
+}
+
+struct Out<'a> {
+    sh: &'a Shared,
+    s: TcpStream,
+}
+
+impl Out<'_> {
+    fn send(&mut self, data: &[u8]) {
+        if !self.sh.cfg.fragment {
+            let _ = self.s.write_all(data);
+            return;
+        }
+        let mut i = 0;
+        while i < data.len() {
+            let r = {
+                let mut x = self.sh.rng.lock().unwrap();
+                *x ^= *x << 13; *x ^= *x >> 7; *x ^= *x << 17;
+                *x
+            };
+            let n = (1 + (r % 7) as usize).min(data.len() - i);
+            if self.s.write_all(&data[i..i + n]).is_err() { return; }
+            i += n;
+            if r % 3 == 0 { thread::sleep(Duration::from_millis(1)); }
+        }
+    }
+    fn ready(&mut self) { self.send(&[SOF, op::READY, op::READY, EOF]); }
+}
+
+/// Length of the PC â†’ fan packet at `b[0]` (= `5A`), `None` if more bytes are needed,
+/// `Some(Err)` if the length cannot be derived from the opcode.
+fn command_len(b: &[u8]) -> Option<Result<usize, ()>> {
+    let o = *b.get(1)?;
+    Some(Ok(match o {
+        op::ON | op::OFF | op::PAUSE | op::PLAY | op::REPEAT_ALL | op::REPEAT_ONE | op::FORMAT_CARD | op::FACTORY_RESET
+        | op::BREATH_ON | op::BREATH_OFF | op::AUTOSTART_ON | op::AUTOSTART_OFF | op::HEARTBEAT | op::TRANS_CANCEL
+        | op::BLE_SCAN | op::BLE_DISCONNECT | op::BLE_ON | op::BLE_OFF | op::GET_MACHINE | op::MASTER_ON | op::MASTER_OFF
+        | op::SELECT_DEVICE | op::ANGLE_ALIGN_START | op::ANGLE_ALIGN_STOP | op::COLOR_TRUE | op::COLOR_BRIGHT => 4,
+        op::DELETE | op::BRIGHTNESS | op::SELECT | op::BLE_CONNECT | op::VOLUME => 5,
+        op::ANGLE => 6,
+        op::COMMIT => 8,
+        op::FILE_NAME => 2 + 1 + *b.get(2)? as usize + 2,
+        op::RENAME => 2 + 2 + *b.get(3)? as usize + 2,
+        op::DEVICE_NAME => 36,
+        op::HOTSPOT | op::ROUTER => 68,
+        op::CAST_FRAME => CAST_FRAME_SIZE,
+        _ => return Some(Err(())),
+    }))
+}
+
+fn op_name(o: u8) -> String {
+    match o {
+        op::ON => "on", op::OFF => "off", op::PAUSE => "pause", op::PLAY => "play", op::REPEAT_ALL => "repeat_all",
+        op::REPEAT_ONE => "repeat_one", op::FORMAT_CARD => "format", op::FACTORY_RESET => "reset", op::BREATH_ON => "breath_on",
+        op::BREATH_OFF => "breath_off", op::AUTOSTART_ON => "autostart_on", op::AUTOSTART_OFF => "autostart_off",
+        op::HEARTBEAT => "heartbeat", op::TRANS_CANCEL => "cancel", op::BLE_SCAN => "ble_scan", op::BLE_DISCONNECT => "ble_disconnect",
+        op::BLE_ON => "ble_on", op::BLE_OFF => "ble_off", op::GET_MACHINE => "get_machine", op::MASTER_ON => "master_on",
+        op::MASTER_OFF => "master_off", op::SELECT_DEVICE => "select_device", op::CAST_FRAME => "cast",
+        op::ANGLE_ALIGN_START => "align_start", op::ANGLE_ALIGN_STOP => "align_stop", op::COLOR_TRUE => "color_true",
+        op::COLOR_BRIGHT => "color_bright", op::DELETE => "delete", op::BRIGHTNESS => "brightness", op::ANGLE => "angle",
+        op::RENAME => "rename", op::FILE_NAME => "filename", op::SELECT => "select", op::DEVICE_NAME => "device_name",
+        op::HOTSPOT => "hotspot", op::ROUTER => "router", op::BLE_CONNECT => "ble_connect", op::VOLUME => "volume",
+        op::COMMIT => "commit", other => return format!("op_{other:02x}"),
+    }.to_string()
+}
+
+fn field(b: &[u8]) -> String {
+    let end = b.iter().position(|&c| c == 0).unwrap_or(b.len());
+    String::from_utf8_lossy(&b[..end]).to_string()
+}
+
+fn jpegs_in(data: &[u8]) -> Vec<Vec<u8>> {
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i + 1 < data.len() {
+        if data[i] == 0xFF && data[i + 1] == 0xD8 {
+            if let Some(j) = data[i + 2..].windows(2).position(|w| w == [0xFF, 0xD9]) {
+                let end = i + 2 + j + 2;
+                out.push(data[i..end].to_vec());
+                i = end;
+                continue;
+            }
+            break;
+        }
+        i += 1;
+    }
+    out
+}
+
+/// Check a JPEG has the layout this fan type expects. Returns (w, h).
+fn check_jpeg(jpeg: &[u8], fan_type: u8) -> Result<(u32, u32), String> {
+    let img = image::load_from_memory_with_format(jpeg, image::ImageFormat::Jpeg).map_err(|e| format!("JPEG onleesbaar: {e}"))?;
+    let (w, h) = (img.width(), img.height());
+    if let Some(ft) = FanType::known(fan_type) {
+        if (w, h) != ft.jpeg_size() { return Err(format!("JPEG {w}Ã—{h}, verwacht {:?} voor type {fan_type}", ft.jpeg_size())); }
+    }
+    Ok((w, h))
+}
+
+fn session(sh: &Shared, stream: TcpStream) {
+    let Ok(mut rd) = stream.try_clone() else { return };
+    let mut out = Out { sh, s: stream };
+    let mut buf: Vec<u8> = Vec::with_capacity(64 * 1024);
+    let mut mode = Mode::Commands;
+    let mut cast_acked = false;
+    let mut just_uploaded = false;
+    let mut pad = false;
+    let mut tmp = vec![0u8; 64 * 1024];
+    let ft = sh.cfg.fan_type;
+    loop {
+        let n = match rd.read(&mut tmp) { Ok(0) | Err(_) => return, Ok(n) => n };
+        buf.extend_from_slice(&tmp[..n]);
+        loop {
+            if let Mode::Upload { name } = &mode {
+                if buf.len() < 8 { break; }
+                let size = u32::from_le_bytes([buf[4], buf[5], buf[6], buf[7]]) as usize;
+                if size > 64 * 1024 * 1024 {
+                    sh.err(format!("upload {name}: onmogelijke grootte {size}"));
+                    buf.clear();
+                    mode = Mode::Commands;
+                    break;
+                }
+                if buf.len() < 8 + size { break; }
+                let blob: Vec<u8> = buf.drain(..8 + size).collect();
+                let content = &blob[8..];
+                let name = name.clone();
+                mode = Mode::Commands;
+                if content[..proto::UPLOAD_PADDING.min(content.len())].iter().any(|&b| b != 0) {
+                    sh.err(format!("upload {name}: de 1600 opvulbytes zijn niet allemaal 0"));
+                }
+                let jpegs = jpegs_in(&content[proto::UPLOAD_PADDING.min(content.len())..]);
+                let mut dims = (0, 0);
+                let mut ok = !jpegs.is_empty();
+                if jpegs.is_empty() { sh.err(format!("upload {name}: geen JPEG-frames")); }
+                for (i, j) in jpegs.iter().enumerate() {
+                    match check_jpeg(j, ft) {
+                        Ok(d) => dims = d,
+                        Err(e) => { sh.err(format!("upload {name} frame {i}: {e}")); ok = false; }
+                    }
+                }
+                {
+                    let mut g = sh.state.lock().unwrap();
+                    if ok {
+                        g.files.push(SimFile { name: name.clone(), frames: jpegs.len(), width: dims.0, height: dims.1, jpegs });
+                        g.current = g.files.len() as u8;
+                        g.uploads += 1;
+                    }
+                }
+                sh.changed.notify_all();
+                just_uploaded = ok;
+                out.ready();
+                continue;
+            }
+            // command mode
+            if pad && !buf.is_empty() {
+                // Holoscope pads 4-byte packets to 5 bytes (heartbeat `3E`).
+                if buf[0] != SOF { buf.remove(0); }
+                pad = false;
+                continue;
+            }
+            let Some(start) = buf.iter().position(|&b| b == SOF) else {
+                if !buf.is_empty() { sh.err(format!("onverwachte bytes {:02x?}", &buf[..buf.len().min(16)])); }
+                buf.clear();
+                break;
+            };
+            if start > 0 {
+                sh.err(format!("onverwachte bytes {:02x?}", &buf[..start.min(16)]));
+                buf.drain(..start);
+            }
+            let len = match command_len(&buf) {
+                None => break,
+                Some(Ok(l)) => l,
+                Some(Err(())) => match buf.iter().skip(2).position(|&b| b == EOF) {
+                    Some(p) => p + 3,
+                    None => { if buf.len() > 4096 { sh.err("onbekend pakket zonder F5".into()); buf.clear(); } break; }
+                },
+            };
+            if buf[1] == op::CAST_FRAME && !cast_acked && buf.len() >= CAST_CHUNK {
+                cast_acked = true;
+                out.ready();
+            }
+            if buf.len() < len { break; }
+            let pkt: Vec<u8> = buf.drain(..len).collect();
+            if pkt[1] == op::CAST_FRAME { cast_acked = false; }
+            pad = pkt.len() == 4;
+            if let Some(m) = handle(sh, &mut out, &pkt, ft, &mut just_uploaded) { mode = m; }
+        }
+    }
+}
+
+impl Shared {
+    fn err(&self, e: String) {
+        log::warn!("[sim {}] protocolfout: {e}", self.cfg.name);
+        self.state.lock().unwrap().protocol_errors.push(e);
+        self.changed.notify_all();
+    }
+    fn info(&self) -> MachineInfo {
+        let g = self.state.lock().unwrap();
+        MachineInfo {
+            ip: self.cfg.ip.to_string(),
+            name: g.device_name.clone(),
+            mac: self.cfg.mac.iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(":"),
+            hotspot: g.hotspot.0.clone(),
+            router: g.router.0.clone(),
+        }
+    }
+}
+
+fn handle(sh: &Shared, out: &mut Out, pkt: &[u8], ft: u8, just_uploaded: &mut bool) -> Option<Mode> {
+    let o = pkt[1];
+    let n = pkt.len();
+    if pkt[n - 1] != EOF && o != op::CAST_FRAME {
+        sh.err(format!("{}: laatste byte {:02x} i.p.v. F5", op_name(o), pkt[n - 1]));
+        return None;
+    }
+    {
+        let mut g = sh.state.lock().unwrap();
+        if o != op::CAST_FRAME && o != op::HEARTBEAT {
+            g.commands.push(op_name(o));
+            if g.commands.len() > 500 { g.commands.remove(0); }
+        }
+    }
+    let status = |sh: &Shared| { let g = sh.state.lock().unwrap(); g.status(ft).to_packet() };
+    let files = |sh: &Shared| proto::filelist_packet(&sh.state.lock().unwrap().file_names());
+    let check_dup = |pkt: &[u8], what: &str| if pkt[2] != pkt[3] { sh.err(format!("{what}: waarde {:02x} â‰  controle {:02x}", pkt[2], pkt[3])); false } else { true };
+    let xor_ok = |pkt: &[u8], what: &str| {
+        let n = pkt.len();
+        let x = proto::xorsum(&pkt[2..n - 2]);
+        if x != pkt[n - 2] { sh.err(format!("{what}: checksum {:02x} â‰  {:02x}", pkt[n - 2], x)); false } else { true }
+    };
+    let simple = |pkt: &[u8]| if pkt.len() == 4 && pkt[2] != pkt[1] && pkt[1] != op::SELECT_DEVICE { sh.err(format!("{}: byte 2 is {:02x}", op_name(pkt[1]), pkt[2])); };
+    if n == 4 { simple(pkt); }
+
+    let set = |f: &dyn Fn(&mut SimState)| { f(&mut sh.state.lock().unwrap()); sh.changed.notify_all(); };
+    match o {
+        op::ON => { set(&|g| g.power = true); out.ready(); out.send(&status(sh)); }
+        op::OFF => { set(&|g| g.power = false); out.ready(); out.send(&status(sh)); }
+        op::PAUSE => { set(&|g| g.playing = false); out.ready(); out.send(&status(sh)); }
+        op::PLAY => { set(&|g| { g.playing = true; g.power = true; }); out.ready(); out.send(&status(sh)); }
+        op::REPEAT_ALL | op::REPEAT_ONE => { set(&|g| g.repeat_all = o == op::REPEAT_ALL); out.ready(); out.send(&status(sh)); }
+        op::FORMAT_CARD => { set(&|g| { g.files.clear(); g.current = 0; g.formats += 1; }); out.ready(); out.send(&files(sh)); out.send(&status(sh)); }
+        op::FACTORY_RESET => {
+            sh.state.lock().unwrap().factory_reset(&sh.cfg);
+            sh.changed.notify_all();
+            out.ready(); out.send(&status(sh)); out.send(&sh.info().to_packet());
+        }
+        op::BREATH_ON | op::BREATH_OFF => { set(&|g| g.breath = o == op::BREATH_ON); out.ready(); out.send(&status(sh)); }
+        op::AUTOSTART_ON | op::AUTOSTART_OFF => { set(&|g| g.autostart = o == op::AUTOSTART_ON); out.ready(); out.send(&status(sh)); }
+        op::HEARTBEAT => { set(&|g| g.heartbeats += 1); out.send(&status(sh)); }
+        op::TRANS_CANCEL => { set(&|g| g.cancels += 1); out.ready(); }
+        op::BLE_ON | op::BLE_OFF => { set(&|g| { g.ble_on = o == op::BLE_ON; if !g.ble_on { g.ble_connected = None; } }); out.ready(); }
+        op::BLE_SCAN => {
+            out.ready();
+            let (on, list, con) = { let g = sh.state.lock().unwrap(); (g.ble_on, g.ble_devices.clone(), g.ble_connected) };
+            out.send(&proto::list_packet(0x80 | if con.is_some() { 0x40 } else { 0 }, con.map(|c| c + 1).unwrap_or(0), if on { &list } else { &[] }));
+        }
+        op::BLE_DISCONNECT => {
+            set(&|g| g.ble_connected = None);
+            out.ready();
+            let list = sh.state.lock().unwrap().ble_devices.clone();
+            out.send(&proto::list_packet(0x80, 0, &list));
+        }
+        op::BLE_CONNECT => {
+            if check_dup(pkt, "ble_connect") {
+                let i = pkt[2];
+                let (ok, list) = { let g = sh.state.lock().unwrap(); ((i as usize) < g.ble_devices.len() && g.ble_on, g.ble_devices.clone()) };
+                if ok { set(&|g| g.ble_connected = Some(i)); }
+                out.ready();
+                out.send(&proto::list_packet(0x80 | if ok { 0x40 } else { 0 }, if ok { i + 1 } else { 0 }, &list));
+            }
+        }
+        op::GET_MACHINE => { out.send(&sh.info().to_packet()); out.send(&files(sh)); out.send(&status(sh)); }
+        op::MASTER_ON | op::MASTER_OFF => { set(&|g| g.master = o == op::MASTER_ON); out.ready(); out.send(&status(sh)); }
+        op::SELECT_DEVICE => { let d = pkt[2]; set(&|g| g.group_device = d); out.ready(); }
+        op::ANGLE_ALIGN_START | op::ANGLE_ALIGN_STOP => { set(&|g| g.angle_align = o == op::ANGLE_ALIGN_START); out.ready(); }
+        op::COLOR_TRUE | op::COLOR_BRIGHT => { set(&|g| g.color_mode = if o == op::COLOR_TRUE { 1 } else { 2 }); out.ready(); out.send(&status(sh)); }
+        op::DELETE => {
+            if check_dup(pkt, "delete") {
+                let i = pkt[2];
+                let ok = { let g = sh.state.lock().unwrap(); i >= 1 && (i as usize) <= g.files.len() };
+                if ok {
+                    set(&|g| {
+                        g.files.remove(i as usize - 1);
+                        if g.current == i { g.current = if g.files.is_empty() { 0 } else { 1 }; } else if g.current > i { g.current -= 1; }
+                    });
+                }
+                out.ready(); out.send(&files(sh)); out.send(&status(sh));
+            }
+        }
+        op::SELECT => {
+            if check_dup(pkt, "select") {
+                let i = pkt[2];
+                let ok = { let g = sh.state.lock().unwrap(); i >= 1 && (i as usize) <= g.files.len() };
+                if ok { set(&|g| { g.current = i; g.playing = true; }); }
+                out.ready(); out.send(&status(sh));
+            }
+        }
+        op::BRIGHTNESS => {
+            if check_dup(pkt, "brightness") {
+                let v = pkt[2];
+                if !(1..=16).contains(&v) { sh.err(format!("helderheid {v} buiten 1â€“16")); }
+                set(&|g| g.brightness = v.clamp(1, 16)); out.ready(); out.send(&status(sh));
+            }
+        }
+        op::VOLUME => {
+            if check_dup(pkt, "volume") {
+                let v = pkt[2];
+                if v > 10 { sh.err(format!("volume {v} buiten 0â€“10")); }
+                set(&|g| g.volume = v.min(10)); out.ready(); out.send(&status(sh));
+            }
+        }
+        op::ANGLE => {
+            if pkt[4] != pkt[2] ^ pkt[3] { sh.err("angle: checksum fout".into()); }
+            let a = u16::from_be_bytes([pkt[2], pkt[3]]);
+            if a > 360 { sh.err(format!("hoek {a} > 360")); }
+            set(&|g| g.angle = a.min(360)); out.ready(); out.send(&status(sh));
+        }
+        op::RENAME => {
+            if xor_ok(pkt, "rename") {
+                let slot = pkt[2];
+                let name = String::from_utf8_lossy(&pkt[4..4 + pkt[3] as usize]).to_string();
+                if !name.ends_with(".mp4") { sh.err(format!("rename: naam {name:?} eindigt niet op .mp4")); }
+                let (exists, dup) = { let g = sh.state.lock().unwrap(); (slot >= 1 && (slot as usize) <= g.files.len(), g.files.iter().enumerate().any(|(i, f)| f.name == name && i + 1 != slot as usize)) };
+                if dup { out.send(&FanError::DuplicateName.to_packet()); }
+                else if exists { set(&|g| g.files[slot as usize - 1].name = name.clone()); out.ready(); }
+                else { out.ready(); }
+                out.send(&files(sh));
+            }
+        }
+        op::DEVICE_NAME => { if xor_ok(pkt, "device_name") { let s = field(&pkt[2..34]); set(&|g| g.device_name = s.clone()); out.ready(); out.send(&sh.info().to_packet()); } }
+        op::HOTSPOT | op::ROUTER => {
+            if xor_ok(pkt, op_name(o).as_str()) {
+                let (a, b) = (field(&pkt[2..34]), field(&pkt[34..66]));
+                if o == op::HOTSPOT { set(&|g| g.hotspot = (a.clone(), b.clone())); } else { set(&|g| g.router = (a.clone(), b.clone())); }
+                out.ready(); out.send(&sh.info().to_packet());
+            }
+        }
+        op::COMMIT => {
+            let x = proto::xorsum(&pkt[2..6]);
+            if x != pkt[6] { sh.err("commit: checksum fout".into()); }
+            out.ready();
+            if *just_uploaded {
+                *just_uploaded = false;
+                out.send(&[SOF, op::TRANS_DONE, op::TRANS_DONE, EOF]);
+                out.send(&files(sh));
+                out.send(&status(sh));
+            }
+        }
+        op::FILE_NAME => {
+            if !xor_ok(pkt, "filename") { return None; }
+            let name = String::from_utf8_lossy(&pkt[3..3 + pkt[2] as usize]).to_string();
+            if !name.ends_with(".mp4") { sh.err(format!("filename {name:?} eindigt niet op .mp4")); }
+            let (full, dup) = { let g = sh.state.lock().unwrap(); (g.files.len() >= sh.cfg.max_files, g.files.iter().any(|f| f.name == name)) };
+            if dup { out.send(&FanError::DuplicateName.to_packet()); return None; }
+            if full { out.send(&FanError::TooManyFiles.to_packet()); return None; }
+            out.ready();
+            return Some(Mode::Upload { name });
+        }
+        op::CAST_FRAME => {
+            let good = pkt[n - 2] == 0x55 && pkt[n - 1] == EOF;
+            let jp = jpegs_in(&pkt[2..n - 2]);
+            let res = if !good { Err("cast: staart is geen 55 F5".to_string()) }
+                else if jp.len() != 1 { Err(format!("cast: {} JPEG's in frame", jp.len())) }
+                else if pkt[2..4] != [0xFF, 0xD8] { Err("cast: JPEG begint niet direct na 5A 28".into()) }
+                else { check_jpeg(&jp[0], ft).map(|_| ()) };
+            match res {
+                Ok(()) => { let j = jp.into_iter().next().unwrap(); set(&|g| { g.cast_ok += 1; g.last_cast = Some((Instant::now(), j.clone())); }); }
+                Err(e) => { set(&|g| g.cast_bad += 1); sh.err(e); }
+            }
+            out.ready();
+        }
+        other => {
+            sh.err(format!("onbekend commando {other:02x}: {:02x?}", &pkt[..pkt.len().min(16)]));
+            out.ready();
+        }
+    }
+    None
+}

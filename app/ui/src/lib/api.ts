@@ -1,0 +1,211 @@
+// Bridge to the Rust backend (Tauri). In a plain browser a small in-page demo fan
+// answers the same commands, so the UI can be developed and tested without the app.
+
+export type Status = {
+  power: boolean; playing: boolean; repeat_all: boolean; breath: boolean; autostart: boolean; master: boolean;
+  play_index: number; brightness: number; color_mode: number; angle: number; fan_type: number;
+};
+export type Device = {
+  id: number; ip: string; name: string; mac: string; hotspot: string; router: string;
+  status: Status | null; files: [number, string][]; last_error: string | null;
+  ble: [number, string[]] | null; support: string;
+};
+export type FanTypeInfo = { id: number; angles: number; leds: number; jpeg: string | null; support: string };
+export type Preview = { round: string; layout: string; jpeg_bytes: number; quality: number; width: number; height: number; frames: number };
+export type MediaInfo = { id: number; name: string; frames: number; width: number; height: number };
+export type Placement = { x: number; y: number; scale: number; mirror: boolean };
+export type P56Event = { type: string; data: any };
+
+const T: any = (window as any).__TAURI__;
+export const isTauri = !!T?.core?.invoke;
+
+export async function invoke<R = unknown>(cmd: string, args?: Record<string, unknown>): Promise<R> {
+  if (isTauri) return T.core.invoke(cmd, args);
+  return demo(cmd, args ?? {}) as Promise<R>;
+}
+
+const listeners = new Set<(e: P56Event) => void>();
+export function onEvent(cb: (e: P56Event) => void): () => void {
+  listeners.add(cb);
+  return () => listeners.delete(cb);
+}
+if (isTauri) T.event.listen('p56', (e: { payload: P56Event }) => listeners.forEach((l) => l(e.payload)));
+function emit(e: P56Event) { listeners.forEach((l) => l(e)); }
+
+export const VIDEO_EXT = ['mp4', 'm4v', 'mov', 'webm', 'mkv', 'avi', '3gp'];
+export const IMAGE_EXT = ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp'];
+
+export type Picked = { name: string; bytes: Uint8Array; video: boolean; mime: string };
+
+function extOf(name: string) { return (name.split('.').pop() || '').toLowerCase(); }
+function mimeOf(ext: string) {
+  return ({ mp4: 'video/mp4', m4v: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm', mkv: 'video/x-matroska', avi: 'video/x-msvideo', '3gp': 'video/3gpp',
+    png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', bmp: 'image/bmp', webp: 'image/webp' } as Record<string, string>)[ext] || 'application/octet-stream';
+}
+function sniffVideo(b: Uint8Array) {
+  const s = String.fromCharCode(...b.slice(4, 12));
+  return s.startsWith('ftyp') || (b[0] === 0x1a && b[1] === 0x45 && b[2] === 0xdf && b[3] === 0xa3) || String.fromCharCode(...b.slice(0, 4)) === 'RIFF' && String.fromCharCode(...b.slice(8, 11)) === 'AVI';
+}
+
+/** Let the user pick an image or video. Works for Android `content://` picks too. */
+export async function pickMedia(): Promise<Picked | null> {
+  if (isTauri && T.dialog && T.fs) {
+    const p = await T.dialog.open({ multiple: false, filters: [{ name: 'Beeld of video', extensions: [...IMAGE_EXT, ...VIDEO_EXT] }] });
+    if (!p) return null;
+    const path: string = typeof p === 'string' ? p : (p.path ?? String(p));
+    const bytes: Uint8Array = await T.fs.readFile(path);
+    let name = decodeURIComponent(path.split(/[\\/]/).pop() || 'media');
+    if (name.includes(':')) name = name.split(':').pop() || name;
+    let ext = extOf(name);
+    const video = VIDEO_EXT.includes(ext) || (!IMAGE_EXT.includes(ext) && sniffVideo(bytes));
+    if (!IMAGE_EXT.includes(ext) && !VIDEO_EXT.includes(ext)) { ext = video ? 'mp4' : 'jpg'; name = `${name}.${ext}`; }
+    return { name, bytes, video, mime: mimeOf(ext) };
+  }
+  return new Promise((resolve) => {
+    const inp = document.createElement('input');
+    inp.type = 'file';
+    inp.accept = 'image/*,video/*';
+    inp.onchange = async () => {
+      const f = inp.files?.[0];
+      if (!f) return resolve(null);
+      const bytes = new Uint8Array(await f.arrayBuffer());
+      const ext = extOf(f.name);
+      resolve({ name: f.name, bytes, video: f.type.startsWith('video') || VIDEO_EXT.includes(ext), mime: f.type || mimeOf(ext) });
+    };
+    inp.click();
+  });
+}
+
+export function toBase64(data: Uint8Array | Blob): Promise<string> {
+  const blob = data instanceof Blob ? data : new Blob([data as BlobPart]);
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(String(r.result).split(',')[1] ?? '');
+    r.onerror = () => rej(r.error);
+    r.readAsDataURL(blob);
+  });
+}
+
+/** Decode a video in the WebView: seek frame by frame and hand out JPEG data URLs. */
+export async function decodeVideo(
+  picked: Picked, opts: { fps: number; start: number; end: number; max: number; side?: number },
+  onFrame: (jpegB64: string, i: number, total: number) => Promise<void>,
+  cancelled: () => boolean,
+): Promise<number> {
+  const url = URL.createObjectURL(new Blob([picked.bytes as BlobPart], { type: picked.mime }));
+  const v = document.createElement('video');
+  v.muted = true; v.playsInline = true; v.preload = 'auto'; v.src = url;
+  try {
+    await new Promise<void>((res, rej) => { v.onloadedmetadata = () => res(); v.onerror = () => rej(new Error('deze video kan de app niet lezen (codec?)')); });
+    let dur = v.duration;
+    if (!isFinite(dur)) {
+      // Recorder-made WebM has no duration in its header; seeking far ahead makes the browser compute it.
+      await new Promise<void>((res) => { v.ondurationchange = () => isFinite(v.duration) && res(); v.currentTime = 1e9; setTimeout(res, 3000); });
+      dur = isFinite(v.duration) ? v.duration : v.currentTime;
+      v.ondurationchange = null;
+    }
+    if (!isFinite(dur) || dur <= 0) throw new Error('video heeft geen lengte');
+    const side = opts.side ?? 720;
+    const s = Math.min(1, side / Math.min(v.videoWidth, v.videoHeight));
+    const c = document.createElement('canvas');
+    c.width = Math.round(v.videoWidth * s); c.height = Math.round(v.videoHeight * s);
+    const ctx = c.getContext('2d')!;
+    const start = Math.max(0, Math.min(opts.start, dur));
+    const end = opts.end > start ? Math.min(opts.end, dur) : dur;
+    let total = Math.max(1, Math.floor((end - start) * opts.fps));
+    if (opts.max > 0) total = Math.min(total, opts.max);
+    for (let i = 0; i < total; i++) {
+      if (cancelled()) break;
+      const t = Math.min(end - 0.001, start + i / opts.fps);
+      await new Promise<void>((res) => { v.onseeked = () => res(); v.currentTime = t; });
+      ctx.drawImage(v, 0, 0, c.width, c.height);
+      const b64 = c.toDataURL('image/jpeg', 0.88).split(',')[1];
+      await onFrame(b64, i, total);
+    }
+    return total;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+/** Grab the current frame of a <video> (camera or live video) as JPEG base64. */
+export function grab(v: HTMLVideoElement, c: HTMLCanvasElement, side = 720): string | null {
+  if (!v.videoWidth) return null;
+  const s = Math.min(1, side / Math.min(v.videoWidth, v.videoHeight));
+  c.width = Math.round(v.videoWidth * s); c.height = Math.round(v.videoHeight * s);
+  c.getContext('2d')!.drawImage(v, 0, 0, c.width, c.height);
+  return c.toDataURL('image/jpeg', 0.85).split(',')[1];
+}
+
+// ---------------------------------------------------------------------------
+// Demo fan for running the UI in a plain browser
+// ---------------------------------------------------------------------------
+const demoFan: Device = {
+  id: 1, ip: '192.168.4.1', name: 'DEMO-P56', mac: '02:e0:e0:56:00:01', hotspot: 'DEMO-P56-AP', router: '',
+  status: { power: true, playing: true, repeat_all: true, breath: false, autostart: true, master: false, play_index: 1, brightness: 16, color_mode: 2, angle: 0, fan_type: 8 },
+  files: [[1, 'welkom.mp4'], [2, 'logo.mp4']], last_error: null, ble: null, support: 'jpeg',
+};
+let demoMedia = 0;
+const demoFrames = new Map<number, number>();
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+function demoPreview(): Preview {
+  const c = document.createElement('canvas'); c.width = c.height = 240;
+  const g = c.getContext('2d')!;
+  g.fillStyle = '#000'; g.fillRect(0, 0, 240, 240);
+  [[110, '#ff3b3b'], [80, '#3bff7a'], [50, '#3b7aff']].forEach(([r, col]) => { g.strokeStyle = col as string; g.lineWidth = 8; g.beginPath(); g.arc(120, 120, r as number, 0, Math.PI * 2); g.stroke(); });
+  const url = c.toDataURL('image/png');
+  return { round: url, layout: url, jpeg_bytes: 18873, quality: 80, width: 688, height: 240, frames: 1 };
+}
+async function demo(cmd: string, a: any): Promise<unknown> {
+  await sleep(60);
+  const s = demoFan.status!;
+  const st = () => emit({ type: 'packet', data: { id: 1, kind: 'status', msg: '' } });
+  switch (cmd) {
+    case 'start_link': setTimeout(() => emit({ type: 'connected', data: { id: 1, ip: demoFan.ip } }), 400); return '192.168.4.2';
+    case 'stop_link': return null;
+    case 'link_info': return { ip: '192.168.4.2', port: 6666, interfaces: ['192.168.4.2 (broadcast 192.168.4.255)'], discovered: ['192.168.4.1'] };
+    case 'devices': return [structuredClone(demoFan)];
+    case 'platform': return { os: 'browser', screen: false, version: 'demo' };
+    case 'fan_types': return [{ id: 8, angles: 960, leds: 172, jpeg: '688×240', support: 'jpeg' }, { id: 1, angles: 960, leds: 192, jpeg: '768×240', support: 'jpeg' }, { id: 32, angles: 960, leds: 122, jpeg: null, support: 'unsupported' }];
+    case 'set_fan_type': return null;
+    case 'control': {
+      const m: Record<string, () => void> = {
+        on: () => (s.power = true), off: () => (s.power = false), play: () => { s.playing = true; s.power = true; }, pause: () => (s.playing = false),
+        repeat_all: () => (s.repeat_all = true), repeat_one: () => (s.repeat_all = false), breath_on: () => (s.breath = true), breath_off: () => (s.breath = false),
+        autostart_on: () => (s.autostart = true), autostart_off: () => (s.autostart = false), master_on: () => (s.master = true), master_off: () => (s.master = false),
+        color_true: () => (s.color_mode = 1), color_bright: () => (s.color_mode = 2), format: () => (demoFan.files = []), reset: () => { s.brightness = 16; s.angle = 0; },
+        ble_on: () => (demoFan.ble = [0, []]), ble_off: () => (demoFan.ble = null), ble_scan: () => (demoFan.ble = [0, ['BT-Speaker', 'Telefoon']]), ble_disconnect: () => demoFan.ble && (demoFan.ble[0] = 0), refresh: () => {},
+      };
+      m[a.action]?.(); st(); return null;
+    }
+    case 'set_value':
+      if (a.what === 'brightness') s.brightness = a.value;
+      if (a.what === 'angle') s.angle = a.value;
+      if (a.what === 'select') s.play_index = a.value;
+      if (a.what === 'delete') demoFan.files = demoFan.files.filter(([n]) => n !== a.value).map(([, f], i) => [i + 1, f]);
+      if (a.what === 'ble_connect' && demoFan.ble) demoFan.ble[0] = a.value + 1;
+      st(); return null;
+    case 'set_text':
+      if (a.what === 'name') demoFan.name = a.a;
+      if (a.what === 'hotspot') demoFan.hotspot = a.a;
+      if (a.what === 'router') demoFan.router = a.a;
+      if (a.what === 'rename') demoFan.files = demoFan.files.map(([n, f]) => [n, n === a.slot ? (a.a.endsWith('.mp4') ? a.a : a.a + '.mp4') : f]);
+      return null;
+    case 'media_load': demoMedia++; demoFrames.set(demoMedia, 1); return { id: demoMedia, name: a.name, frames: 1, width: 1024, height: 768 };
+    case 'media_begin': demoMedia++; demoFrames.set(demoMedia, 0); return demoMedia;
+    case 'media_push': { const n = (demoFrames.get(a.media) ?? 0) + 1; demoFrames.set(a.media, n); return n; }
+    case 'media_drop': return null;
+    case 'preview': return { ...demoPreview(), frames: demoFrames.get(a.media) ?? 1 };
+    case 'upload': {
+      for (const [stage, d] of [['transcoderen', 0], ['versturen', 1]] as const) { emit({ type: 'progress', data: { stage, done: d, total: 2 } }); await sleep(300); }
+      const name = (a.args.name || 'media') + '.mp4';
+      demoFan.files.push([demoFan.files.length + 1, name]);
+      emit({ type: 'progress', data: { stage: 'klaar', done: 2, total: 2 } });
+      return `${name} (1 frame(s))`;
+    }
+    case 'cast_start': setTimeout(() => emit({ type: 'cast', data: { fps: 15, fans: 1, jpeg: 18000, q: 80, preview: demoPreview().round } }), 300); return null;
+    case 'cast_frame': return 1;
+    case 'cast_stop': setTimeout(() => emit({ type: 'cast', data: { stopped: true } }), 50); return null;
+  }
+  throw new Error(`demo: onbekend commando ${cmd}`);
+}

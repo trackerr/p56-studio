@@ -8,3 +8,9 @@ testdata/*_layout.png
 
 build.err
 build.log
+bin/
+*.zip
+dist/
+app/ui/node_modules/
+e2e/out/
+app/ui/dist/
