@@ -55,6 +55,21 @@ async def _options_updated(hass: HomeAssistant, entry: P56ConfigEntry) -> None:
     await hass.config_entries.async_reload(entry.entry_id)
 
 
+async def async_remove_config_entry_device(
+    hass: HomeAssistant, entry: P56ConfigEntry, device: dr.DeviceEntry
+) -> bool:
+    """A fan may be removed from Home Assistant while it is not connected."""
+    coordinator = entry.runtime_data
+    for domain, key in device.identifiers:
+        if domain != DOMAIN:
+            continue
+        if key == entry.entry_id:
+            return False  # the server device itself
+        if coordinator.fan(key) is not None:
+            return False
+    return True
+
+
 async def async_unload_entry(hass: HomeAssistant, entry: P56ConfigEntry) -> bool:
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 

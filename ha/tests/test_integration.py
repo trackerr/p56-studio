@@ -160,6 +160,15 @@ async def test_entities_and_actions(hass: HomeAssistant, p56_server, tmp_path: P
     await hass.services.async_call("switch", "turn_off", {"entity_id": playing}, blocking=True)
     await wait_for(hass, "paused", lambda: hass.states.get(playing).state == "off")
 
+    # a connected fan and the server device cannot be removed; a gone fan can
+    from custom_components.p56_pov import async_remove_config_entry_device  # noqa: PLC0415
+
+    server = next(d for d in devices if not d.via_device_id)
+    assert not await async_remove_config_entry_device(hass, entry, device)
+    assert not await async_remove_config_entry_device(hass, entry, server)
+    gone = dr.async_get(hass).async_get_or_create(config_entry_id=entry.entry_id, identifiers={(DOMAIN, "aa:bb:cc:dd:ee:ff")})
+    assert await async_remove_config_entry_device(hass, entry, gone)
+
     # server sensor + live events
     conn = entity_id(hass, "sensor", "fans_connected")
     assert hass.states.get(conn).state == "1"
