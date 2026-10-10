@@ -10,10 +10,8 @@ done
 if bashio::config.has_value 'advertise_ip'; then
     args+=(--ip "$(bashio::config 'advertise_ip')")
 fi
-if bashio::config.true 'simulate'; then
-    bashio::log.info "Virtual fan enabled (for trying things without hardware)"
-    args+=(--simulate)
-fi
+# The virtual fan follows the 'simulate' option live: no restart needed.
+args+=(--options-file /data/options.json)
 if bashio::config.false 'lan_api'; then
     args+=(--local-only)
 fi

@@ -26,7 +26,7 @@ fan on your Wi-Fi once with the vendor app or with P56 Studio (Network tab).
 | `fan_ip` | Extra fan IPs to send the discovery packet to directly (other subnet, broadcast blocked). Usually empty. |
 | `advertise_ip` | IP the fans should connect back to. Empty: every network card announces itself. |
 | `lan_api` | `true`: port 8765 answers the whole LAN (apps/scripts elsewhere). `false`: only Home Assistant itself and the ingress panel. |
-| `simulate` | Start a virtual P56 fan, to try everything without hardware. |
+| `simulate` | Start a virtual P56 fan, to try everything without hardware. Takes effect right after saving; no restart needed. |
 | `log_level` | `trace`, `debug`, `info`, `warn`, `error`. |
 
 The port 8765 API has no login. Turn `lan_api` off if other devices on your

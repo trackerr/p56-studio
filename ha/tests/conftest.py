@@ -47,6 +47,19 @@ def auto_enable_custom_integrations(enable_custom_integrations, socket_enabled):
     yield
 
 
+def start_server(http: int, tcp: int, sim_udp: int, options_file: Path) -> subprocess.Popen:
+    """A p56-server like the add-on runs it: the virtual fan follows the options file."""
+    return subprocess.Popen(
+        [str(_binary()), "--http-port", str(http), "--tcp-port", str(tcp), "--sim-udp-port", str(sim_udp),
+         "--options-file", str(options_file)],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env={**os.environ, "RUST_LOG": "warn"},
+    )
+
+
+def free_port(kind: int = socket.SOCK_STREAM) -> int:
+    return _free(kind)
+
+
 @pytest.fixture(scope="session")
 def p56_server() -> Generator[tuple[str, int]]:
     pytest_socket.enable_socket()

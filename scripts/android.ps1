@@ -22,6 +22,7 @@ $root = Split-Path $PSScriptRoot -Parent
 $app = Join-Path $root 'app'
 $gen = Join-Path $app 'src-tauri\gen\android'
 $dist = Join-Path $root 'dist'
+$version = (Get-Content (Join-Path $app 'src-tauri\tauri.conf.json') -Raw | ConvertFrom-Json).version
 $abi = @{ aarch64 = @('aarch64-linux-android', 'arm64-v8a'); armv7 = @('armv7-linux-androideabi', 'armeabi-v7a'); x86_64 = @('x86_64-linux-android', 'x86_64'); i686 = @('i686-linux-android', 'x86') }
 
 function Build-Apk([string[]]$targets, [bool]$release) {
@@ -52,7 +53,7 @@ function Build-Apk([string[]]$targets, [bool]$release) {
   } finally { Pop-Location }
   New-Item -ItemType Directory -Force $dist | Out-Null
   $apk = Get-ChildItem (Join-Path $gen "app\build\outputs\apk\universal\$mode") -Filter *.apk | Select-Object -First 1
-  $name = "P56-Studio-0.2.0-$mode.apk"
+  $name = "P56-Studio-$version-$mode.apk"
   Copy-Item $apk.FullName (Join-Path $dist $name) -Force
   Write-Host "→ dist\$name ($([math]::Round($apk.Length / 1MB, 1)) MB)"
 }
@@ -62,7 +63,7 @@ switch ($Cmd) {
   'debug' { Build-Apk @('aarch64', 'x86_64') $false }
   'build' { Build-Apk @('aarch64', 'armv7', 'x86_64') $true }
   'install' {
-    $apk = Join-Path $dist 'P56-Studio-0.2.0-debug.apk'
+    $apk = Join-Path $dist "P56-Studio-$version-debug.apk"
     adb install -r $apk
   }
   'emulator' {

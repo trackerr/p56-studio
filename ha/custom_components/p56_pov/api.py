@@ -123,6 +123,7 @@ class P56Api:
             ) as resp:
                 if resp.status != 200:
                     raise P56ConnectionError(f"events: HTTP {resp.status}")
+                yield {"type": "open"}
                 async for raw in resp.content:
                     line = raw.decode(errors="replace").strip()
                     if not line.startswith("data:"):

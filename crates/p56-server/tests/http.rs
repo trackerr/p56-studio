@@ -165,3 +165,30 @@ fn base64_encode(b: &[u8]) -> String {
     use base64::Engine;
     base64::engine::general_purpose::STANDARD.encode(b)
 }
+#[test]
+fn virtual_fan_follows_the_options_file() {
+    let dir = std::env::temp_dir().join(format!("p56-opts-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let opts = dir.join("options.json");
+    std::fs::write(&opts, r#"{"simulate": false}"#).unwrap();
+    let (http, tcp) = (free_tcp(), free_tcp());
+    let child = Command::new(env!("CARGO_BIN_EXE_p56-server"))
+        .args(["--http-port", &http.to_string(), "--tcp-port", &tcp.to_string(), "--sim-udp-port", &free_udp().to_string()])
+        .arg("--options-file").arg(&opts)
+        .env("RUST_LOG", "warn").stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap();
+    let s = Srv { child, base: format!("http://127.0.0.1:{http}") };
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while ureq::get(&format!("{}/api/ping", s.base)).call().is_err() {
+        assert!(Instant::now() < deadline, "server did not start");
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    std::thread::sleep(Duration::from_secs(3));
+    assert_eq!(s.get("/api/state")["connected"], false, "no virtual fan while the option is off");
+    std::fs::write(&opts, r#"{"simulate": true, "log_level": "info"}"#).unwrap();
+    s.wait("virtual fan switched on", |v| v["connected"] == true);
+    std::fs::write(&opts, r#"{"simulate": false}"#).unwrap();
+    s.wait("virtual fan switched off", |v| v["connected"] == false);
+    std::fs::write(&opts, r#"{"simulate": true}"#).unwrap();
+    s.wait("virtual fan switched on again", |v| v["connected"] == true);
+    let _ = std::fs::remove_dir_all(&dir);
+}

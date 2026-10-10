@@ -123,14 +123,14 @@ class P56Coordinator(DataUpdateCoordinator[P56Data]):
 
     async def async_listen(self) -> None:
         """Follow the server's event stream, reconnecting with back-off."""
-        delay = 2.0
+        delay = 1.0
         while True:
             try:
                 async for event in self.api.events():
                     if not self.live:
                         self.live = True
                         self.update_interval = POLL_LIVE
-                        delay = 2.0
+                        delay = 1.0
                         LOGGER.debug("live events from %s", self.api.base)
                     self._handle_event(event)
             except asyncio.CancelledError:
@@ -140,10 +140,12 @@ class P56Coordinator(DataUpdateCoordinator[P56Data]):
             except Exception:  # noqa: BLE001 - keep listening whatever happens
                 LOGGER.exception("event stream failed")
             if self.live:
+                # The add-on restarted or stopped: show that now, not at the next poll.
                 self.live = False
                 self.update_interval = POLL_FALLBACK
+                await self.async_request_refresh()
             await asyncio.sleep(delay)
-            delay = min(delay * 2, 60.0)
+            delay = min(delay * 2, 10.0)
 
     @callback
     def _handle_event(self, event: dict[str, Any]) -> None:

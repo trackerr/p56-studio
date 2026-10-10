@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.0.1
+
+- The **Virtual fan** option takes effect right after saving; no restart of the add-on needed.
+- p56-server 0.2.1.
+
 ## 2.0.0
 
 - Rewritten on **p56-server** (Rust, static binary, ~5 MB) instead of Python + Pillow.

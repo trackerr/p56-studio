@@ -232,3 +232,51 @@ async def test_options_and_diagnostics(hass: HomeAssistant, p56_server) -> None:
     diag = await async_get_config_entry_diagnostics(hass, entry)
     assert diag["server_state"]["devices"][0]["mac"] == "**REDACTED**"
     assert await hass.config_entries.async_unload(entry.entry_id)
+
+async def test_follows_virtual_fan_and_addon_restarts(hass: HomeAssistant, tmp_path: Path) -> None:
+    """Switching the virtual fan and restarting the add-on show up within seconds."""
+    import socket  # noqa: PLC0415
+
+    from .conftest import free_port, start_server  # noqa: PLC0415
+
+    opts = tmp_path / "options.json"
+    opts.write_text('{"simulate": true}')
+    http, tcp, udp = free_port(), free_port(), free_port(socket.SOCK_DGRAM)
+    proc = start_server(http, tcp, udp, opts)
+    try:
+        loop = asyncio.get_running_loop()
+        end = loop.time() + 20
+        while True:
+            try:
+                await asyncio.wait_for(asyncio.open_connection("127.0.0.1", http), 1)
+                break
+            except OSError:
+                assert loop.time() < end, "server did not start"
+                await asyncio.sleep(0.2)
+        entry = MockConfigEntry(domain=DOMAIN, version=2, data={CONF_HOST: "127.0.0.1", CONF_PORT: http})
+        entry.add_to_hass(hass)
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        light = "light.virtuele_p56"
+        state = lambda: (hass.states.get(light) or type("S", (), {"state": "missing"})).state  # noqa: E731
+        await wait_for(hass, "fan on", lambda: state() == "on", 20)
+        await wait_for(hass, "live events", lambda: entry.runtime_data.live)
+
+        opts.write_text('{"simulate": false}')
+        await wait_for(hass, "virtual fan off -> unavailable", lambda: state() == "unavailable", 8)
+        opts.write_text('{"simulate": true}')
+        await wait_for(hass, "virtual fan on -> available", lambda: state() == "on", 10)
+
+        proc.kill()
+        proc.wait()
+        await wait_for(hass, "add-on stopped -> unavailable", lambda: state() == "unavailable", 5)
+        proc = start_server(http, tcp, udp, opts)
+        await wait_for(hass, "add-on back -> available", lambda: state() == "on", 20)
+
+        await hass.services.async_call("light", "turn_off", {"entity_id": light}, blocking=True)
+        await wait_for(hass, "turn off after restart", lambda: state() == "off", 5)
+        await hass.services.async_call("light", "turn_on", {"entity_id": light}, blocking=True)
+        await wait_for(hass, "turn on after restart", lambda: state() == "on", 5)
+        assert await hass.config_entries.async_unload(entry.entry_id)
+    finally:
+        proc.kill()
+        proc.wait()

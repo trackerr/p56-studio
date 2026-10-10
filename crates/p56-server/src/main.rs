@@ -36,6 +36,10 @@ struct Args {
     /// Start a simulated fan as well (for trying things without hardware).
     #[arg(long)]
     simulate: bool,
+    /// Add-on options file (JSON). Read every 2 s, so "simulate" switches the virtual fan
+    /// on and off without a restart.
+    #[arg(long)]
+    options_file: Option<std::path::PathBuf>,
     /// UDP port of the simulated fan.
     #[arg(long, default_value_t = 18988)]
     sim_udp_port: u16,
@@ -87,20 +91,58 @@ fn start_service(args: &Args, subs: Subscribers) -> Arc<Service> {
         subs.lock().unwrap().retain(|s| s.send(line.clone()).is_ok());
     });
     let mut targets = args.fans.clone();
-    if args.simulate { targets.push(format!("127.0.0.1:{}", args.sim_udp_port)); }
+    if args.simulate || args.options_file.is_some() { targets.push(format!("127.0.0.1:{}", args.sim_udp_port)); }
     let svc = Service::new(emit, Defaults { ip: args.ip.clone(), targets, port: Some(args.tcp_port) });
     match svc.start_link(None, None, None) {
         Ok(ip) => log::info!("fan-verbinding gestart op TCP {} (adverteert {ip})", args.tcp_port),
         Err(e) => log::error!("fan-verbinding niet gestart: {e}"),
     }
-    if args.simulate {
-        let cfg = p56_sim::SimConfig { name: "VIRTUELE-P56".into(), udp_port: args.sim_udp_port, pc_port: args.tcp_port, ..Default::default() };
-        match p56_sim::Sim::start(cfg) {
-            Ok(sim) => { log::info!("virtuele fan gestart"); std::mem::forget(sim); }
-            Err(e) => log::warn!("virtuele fan niet gestart: {e}"),
+    let virtual_fan = Arc::new(VirtualFan { udp_port: args.sim_udp_port, tcp_port: args.tcp_port, sim: Mutex::new(None) });
+    match args.options_file.clone() {
+        Some(path) => {
+            let vf = virtual_fan.clone();
+            let fallback = args.simulate;
+            thread::spawn(move || loop {
+                let wanted = std::fs::read_to_string(&path).ok()
+                    .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+                    .and_then(|v| v.get("simulate").and_then(|b| b.as_bool()))
+                    .unwrap_or(fallback);
+                vf.set(wanted);
+                thread::sleep(Duration::from_secs(2));
+            });
+        }
+        None => virtual_fan.set(args.simulate),
+    }
+    std::mem::forget(virtual_fan);
+    svc
+}
+
+/// The simulated fan, switched on and off while the server runs.
+struct VirtualFan {
+    udp_port: u16,
+    tcp_port: u16,
+    sim: Mutex<Option<p56_sim::Sim>>,
+}
+
+impl VirtualFan {
+    fn set(&self, on: bool) {
+        let mut sim = self.sim.lock().unwrap();
+        if on == sim.is_some() { return; }
+        if let Some(s) = sim.take() {
+            s.stop();
+            log::info!("virtuele fan gestopt");
+            return;
+        }
+        // the UDP port of a just-stopped simulator can take a moment to be released
+        for attempt in 0..10 {
+            let cfg = p56_sim::SimConfig { name: "VIRTUELE-P56".into(), udp_port: self.udp_port, pc_port: self.tcp_port, ..Default::default() };
+            match p56_sim::Sim::start(cfg) {
+                Ok(s) => { log::info!("virtuele fan gestart"); *sim = Some(s); return; }
+                Err(e) if attempt == 9 => log::warn!("virtuele fan niet gestart: {e}"),
+                Err(_) => thread::sleep(Duration::from_millis(300)),
+            }
         }
     }
-    svc
 }
 
 fn json_response(v: &Value, status: u16) -> Response<std::io::Cursor<Vec<u8>>> {

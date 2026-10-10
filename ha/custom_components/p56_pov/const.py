@@ -32,6 +32,7 @@ NOTIFY_FILE_NAME: Final = "ha_melding"
 
 # Server events after which the state is fetched again.
 REFRESH_EVENTS: Final = {
+    "open",
     "connected",
     "disconnected",
     "status",
