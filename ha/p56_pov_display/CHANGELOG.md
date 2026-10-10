@@ -1,8 +1,14 @@
 # Changelog
 
+## 2.0.2
+
+- The **Virtual fan** option now really takes effect right after saving: the add-on reads its
+  saved options from the Supervisor (2.0.1 only saw them after a restart).
+- p56-server 0.2.2.
+
 ## 2.0.1
 
-- The **Virtual fan** option takes effect right after saving; no restart of the add-on needed.
+- Virtual fan option read while running (from the options file).
 - p56-server 0.2.1.
 
 ## 2.0.0

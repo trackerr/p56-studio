@@ -10,8 +10,9 @@ done
 if bashio::config.has_value 'advertise_ip'; then
     args+=(--ip "$(bashio::config 'advertise_ip')")
 fi
-# The virtual fan follows the 'simulate' option live: no restart needed.
-args+=(--options-file /data/options.json)
+# The virtual fan follows the 'simulate' option live: the Supervisor API has the saved
+# options at once, /data/options.json only after a restart.
+args+=(--options-file /data/options.json --options-url http://supervisor/addons/self/info)
 if bashio::config.false 'lan_api'; then
     args+=(--local-only)
 fi

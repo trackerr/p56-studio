@@ -40,6 +40,11 @@ struct Args {
     /// on and off without a restart.
     #[arg(long)]
     options_file: Option<std::path::PathBuf>,
+    /// URL that returns the add-on's current options (Home Assistant: http://supervisor/addons/self/info,
+    /// authenticated with SUPERVISOR_TOKEN). Checked every 2 s; the Supervisor only rewrites the
+    /// options file when the add-on starts, so this is what makes changes apply at once.
+    #[arg(long)]
+    options_url: Option<String>,
     /// UDP port of the simulated fan.
     #[arg(long, default_value_t = 18988)]
     sim_udp_port: u16,
@@ -98,23 +103,46 @@ fn start_service(args: &Args, subs: Subscribers) -> Arc<Service> {
         Err(e) => log::error!("fan-verbinding niet gestart: {e}"),
     }
     let virtual_fan = Arc::new(VirtualFan { udp_port: args.sim_udp_port, tcp_port: args.tcp_port, sim: Mutex::new(None) });
-    match args.options_file.clone() {
-        Some(path) => {
-            let vf = virtual_fan.clone();
-            let fallback = args.simulate;
-            thread::spawn(move || loop {
-                let wanted = std::fs::read_to_string(&path).ok()
-                    .and_then(|s| serde_json::from_str::<Value>(&s).ok())
-                    .and_then(|v| v.get("simulate").and_then(|b| b.as_bool()))
-                    .unwrap_or(fallback);
-                vf.set(wanted);
-                thread::sleep(Duration::from_secs(2));
-            });
-        }
-        None => virtual_fan.set(args.simulate),
+    if args.options_file.is_some() || args.options_url.is_some() {
+        let vf = virtual_fan.clone();
+        let (file, url) = (args.options_file.clone(), args.options_url.clone());
+        let mut current = args.simulate;
+        thread::spawn(move || loop {
+            // the URL has the latest saved options; the file is what the add-on started with
+            let from_url = url.as_deref().and_then(fetch_json).as_ref().and_then(simulate_option);
+            let from_file = || file.as_ref().and_then(|p| std::fs::read_to_string(p).ok())
+                .and_then(|s| serde_json::from_str::<Value>(&s).ok()).as_ref().and_then(simulate_option);
+            if let Some(wanted) = from_url.or_else(from_file) { current = wanted; }
+            vf.set(current);
+            thread::sleep(Duration::from_secs(2));
+        });
+    } else {
+        virtual_fan.set(args.simulate);
     }
     std::mem::forget(virtual_fan);
     svc
+}
+
+/// "simulate" from an options object, also when wrapped as the Supervisor answers ({"data": {"options": …}}).
+fn simulate_option(v: &Value) -> Option<bool> {
+    [&v["data"]["options"]["simulate"], &v["options"]["simulate"], &v["simulate"]].into_iter().find_map(|b| b.as_bool())
+}
+
+/// Minimal HTTP GET returning JSON (plain http, as the Supervisor API is reached inside Home Assistant).
+fn fetch_json(url: &str) -> Option<Value> {
+    let rest = url.strip_prefix("http://")?;
+    let (hostport, path) = rest.split_once('/').map(|(h, p)| (h, format!("/{p}"))).unwrap_or((rest, "/".into()));
+    let addr = if hostport.contains(':') { hostport.to_string() } else { format!("{hostport}:80") };
+    let sock = std::net::ToSocketAddrs::to_socket_addrs(&addr).ok()?.next()?;
+    let mut s = TcpStream::connect_timeout(&sock, Duration::from_secs(3)).ok()?;
+    s.set_read_timeout(Some(Duration::from_secs(5))).ok()?;
+    let auth = std::env::var("SUPERVISOR_TOKEN").map(|t| format!("Authorization: Bearer {t}\r\n")).unwrap_or_default();
+    write!(s, "GET {path} HTTP/1.0\r\nHost: {hostport}\r\n{auth}Accept: application/json\r\n\r\n").ok()?;
+    let mut resp = String::new();
+    s.read_to_string(&mut resp).ok()?;
+    let (head, body) = resp.split_once("\r\n\r\n")?;
+    if !head.starts_with("HTTP/1.") || !head.split_whitespace().nth(1).is_some_and(|c| c == "200") { return None; }
+    serde_json::from_str(body).ok()
 }
 
 /// The simulated fan, switched on and off while the server runs.

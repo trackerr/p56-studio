@@ -192,3 +192,47 @@ fn virtual_fan_follows_the_options_file() {
     s.wait("virtual fan switched on again", |v| v["connected"] == true);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn virtual_fan_follows_the_supervisor_options() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    // fake Supervisor: answers /addons/self/info like Home Assistant, only with the right token
+    let simulate = Arc::new(AtomicBool::new(false));
+    let sup = tiny_http::Server::http("127.0.0.1:0").unwrap();
+    let sup_port = sup.server_addr().to_ip().unwrap().port();
+    let flag = simulate.clone();
+    std::thread::spawn(move || {
+        for req in sup.incoming_requests() {
+            let authed = req.headers().iter().any(|h| h.field.equiv("Authorization") && h.value.as_str() == "Bearer test-token");
+            let body = json!({ "result": "ok", "data": { "options": { "simulate": flag.load(Ordering::SeqCst), "lan_api": true } } }).to_string();
+            let resp = tiny_http::Response::from_string(body).with_status_code(if authed { 200 } else { 401 });
+            let _ = req.respond(resp);
+        }
+    });
+    // the options file keeps saying false, as on Home Assistant until the add-on restarts
+    let dir = std::env::temp_dir().join(format!("p56-sup-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let opts = dir.join("options.json");
+    std::fs::write(&opts, r#"{"simulate": false}"#).unwrap();
+    let (http, tcp) = (free_tcp(), free_tcp());
+    let child = Command::new(env!("CARGO_BIN_EXE_p56-server"))
+        .args(["--http-port", &http.to_string(), "--tcp-port", &tcp.to_string(), "--sim-udp-port", &free_udp().to_string()])
+        .arg("--options-file").arg(&opts)
+        .args(["--options-url", &format!("http://127.0.0.1:{sup_port}/addons/self/info")])
+        .env("SUPERVISOR_TOKEN", "test-token").env("RUST_LOG", "warn")
+        .stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap();
+    let s = Srv { child, base: format!("http://127.0.0.1:{http}") };
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while ureq::get(&format!("{}/api/ping", s.base)).call().is_err() {
+        assert!(Instant::now() < deadline, "server did not start");
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    std::thread::sleep(Duration::from_secs(3));
+    assert_eq!(s.get("/api/state")["connected"], false);
+    simulate.store(true, Ordering::SeqCst);
+    s.wait("option saved on -> virtual fan", |v| v["connected"] == true);
+    simulate.store(false, Ordering::SeqCst);
+    s.wait("option saved off -> gone", |v| v["connected"] == false);
+    let _ = std::fs::remove_dir_all(&dir);
+}
