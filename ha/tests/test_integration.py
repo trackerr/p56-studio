@@ -170,6 +170,22 @@ async def test_entities_and_actions(hass: HomeAssistant, p56_server, tmp_path: P
     assert entry.state is ConfigEntryState.NOT_LOADED
 
 
+async def test_discovery_adopts_manual_localhost_entry(hass: HomeAssistant, p56_server) -> None:
+    _, port = p56_server
+    entry = MockConfigEntry(domain=DOMAIN, version=1, data={CONF_HOST: "localhost", CONF_PORT: port, "name": "P56 POV Display"})
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    info = HassioServiceInfo(config={"host": "127.0.0.1", "port": port}, name="P56 POV Display", slug="5e97629b_p56_pov_display", uuid="1")
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_HASSIO}, data=info)
+    assert result["type"] is FlowResultType.ABORT
+    await hass.async_block_till_done()
+    assert len(hass.config_entries.async_entries(DOMAIN)) == 1
+    assert entry.data["addon_slug"] == "5e97629b_p56_pov_display"
+    assert entry.version == 2
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
 async def test_server_down(hass: HomeAssistant) -> None:
     entry = MockConfigEntry(domain=DOMAIN, version=2, data={CONF_HOST: "127.0.0.1", CONF_PORT: 1})
     entry.add_to_hass(hass)

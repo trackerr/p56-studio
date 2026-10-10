@@ -40,6 +40,9 @@ from .const import (
 )
 
 
+LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
+
+
 def _schema(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT) -> vol.Schema:
     return vol.Schema(
         {
@@ -89,6 +92,14 @@ class P56ConfigFlow(ConfigFlow, domain=DOMAIN):
         """The add-on announced itself."""
         host = discovery_info.config.get("host", DEFAULT_HOST)
         port = int(discovery_info.config.get("port", DEFAULT_PORT))
+        # An entry made by hand for this machine (localhost, 127.0.0.1) is the same server.
+        for entry in self._async_current_entries(include_ignore=False):
+            if entry.data.get(CONF_HOST) in LOCAL_HOSTS and int(entry.data.get(CONF_PORT, 0)) == port:
+                if entry.data.get("addon_slug") != discovery_info.slug:
+                    self.hass.config_entries.async_update_entry(
+                        entry, data={**entry.data, "addon_slug": discovery_info.slug}
+                    )
+                return self.async_abort(reason="already_configured")
         await self.async_set_unique_id(f"{host}:{port}")
         self._abort_if_unique_id_configured(updates={CONF_HOST: host, CONF_PORT: port, "addon_slug": discovery_info.slug})
         self._discovered = {CONF_HOST: host, CONF_PORT: port, "addon_slug": discovery_info.slug, "name": discovery_info.name}

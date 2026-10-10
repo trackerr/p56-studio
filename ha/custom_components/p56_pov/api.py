@@ -31,7 +31,8 @@ class P56Api:
 
     def __init__(self, session: aiohttp.ClientSession, host: str, port: int) -> None:
         self._session = session
-        self.host = host
+        # p56-server listens on IPv4; "localhost" may resolve to ::1 first.
+        self.host = "127.0.0.1" if host.strip().lower() == "localhost" else host
         self.port = port
 
     @property
