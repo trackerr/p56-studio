@@ -10,6 +10,7 @@ $base = Join-Path $env:USERPROFILE '.p56-android'
 $env:JAVA_HOME = Join-Path $base 'jdk17'
 $env:ANDROID_HOME = Join-Path $base 'sdk'
 $env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
+$env:ANDROID_AVD_HOME = Join-Path $base 'avd'
 $ndk = Get-ChildItem (Join-Path $env:ANDROID_HOME 'ndk') -Directory | Sort-Object Name -Descending | Select-Object -First 1
 $env:NDK_HOME = $ndk.FullName
 $env:PATH = "$env:JAVA_HOME\bin;$env:ANDROID_HOME\platform-tools;$env:ANDROID_HOME\emulator;$env:PATH"

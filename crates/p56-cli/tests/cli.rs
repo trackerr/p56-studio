@@ -1,19 +1,19 @@
 //! The `p56` binary against the fan simulator.
 
-use std::net::{Ipv4Addr, TcpListener, UdpSocket};
+use std::net::{Ipv4Addr, TcpListener};
 use std::process::Command;
 use std::time::Duration;
 
 use p56_sim::{Sim, SimConfig};
 
 fn free_tcp() -> u16 { TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap().local_addr().unwrap().port() }
-fn free_udp() -> u16 { UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap().local_addr().unwrap().port() }
 
 struct Env { sim: Sim, port: u16, udp: u16 }
 
 fn env() -> Env {
-    let (port, udp) = (free_tcp(), free_udp());
-    let sim = Sim::start(SimConfig { udp_port: udp, pc_port: port, name: "CLI-FAN".into(), ..Default::default() }).unwrap();
+    let port = free_tcp();
+    let sim = Sim::start(SimConfig { udp_port: 0, pc_port: port, name: "CLI-FAN".into(), ..Default::default() }).unwrap();
+    let udp = sim.udp_port;
     Env { sim, port, udp }
 }
 

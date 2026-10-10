@@ -146,6 +146,9 @@ struct Shared {
     state: Mutex<SimState>,
     changed: Condvar,
     stop: AtomicBool,
+    /// Set by [`Sim::drop_connection`]; the session closes on its next read tick.
+    kick: AtomicBool,
+    pc_port: Mutex<u16>,
     conn: Mutex<Option<TcpStream>>,
     want_pc: Mutex<Option<SocketAddr>>,
     rng: Mutex<u64>,
@@ -168,6 +171,8 @@ impl Sim {
             state: Mutex::new(SimState::new(&cfg)),
             changed: Condvar::new(),
             stop: AtomicBool::new(false),
+            kick: AtomicBool::new(false),
+            pc_port: Mutex::new(cfg.pc_port),
             conn: Mutex::new(None),
             want_pc: Mutex::new(cfg.pc),
             rng: Mutex::new(seed | 1),
@@ -179,6 +184,9 @@ impl Sim {
     }
 
     pub fn config(&self) -> &SimConfig { &self.shared.cfg }
+
+    /// TCP port of the PC to connect to after the next broadcast.
+    pub fn set_pc_port(&self, port: u16) { *self.shared.pc_port.lock().unwrap() = port; }
 
     pub fn state(&self) -> SimState { self.shared.state.lock().unwrap().clone() }
 
@@ -202,6 +210,7 @@ impl Sim {
 
     /// Close the TCP connection as if Wi-Fi dropped; the fan reconnects on the next broadcast.
     pub fn drop_connection(&self) {
+        self.shared.kick.store(true, Ordering::SeqCst);
         if let Some(c) = self.shared.conn.lock().unwrap().take() { let _ = c.shutdown(Shutdown::Both); }
     }
 
@@ -249,7 +258,7 @@ fn udp_loop(sh: Arc<Shared>, sock: UdpSocket) {
         let _ = sock.send_to(format!("{reply_ip}HS").as_bytes(), from);
         let mut w = sh.want_pc.lock().unwrap();
         if w.is_none() || !sh.state.lock().unwrap().connected {
-            *w = Some(SocketAddr::from((ip, sh.cfg.pc_port)));
+            *w = Some(SocketAddr::from((ip, *sh.pc_port.lock().unwrap())));
         }
     }
 }
@@ -261,6 +270,7 @@ fn connect_loop(sh: Arc<Shared>) {
         match TcpStream::connect_timeout(&addr, Duration::from_secs(2)) {
             Ok(s) => {
                 let _ = s.set_nodelay(true);
+                sh.kick.store(false, Ordering::SeqCst);
                 *sh.conn.lock().unwrap() = s.try_clone().ok();
                 {
                     let mut g = sh.state.lock().unwrap();
@@ -382,7 +392,7 @@ fn check_jpeg(jpeg: &[u8], fan_type: u8) -> Result<(u32, u32), String> {
     let img = image::load_from_memory_with_format(jpeg, image::ImageFormat::Jpeg).map_err(|e| format!("JPEG onleesbaar: {e}"))?;
     let (w, h) = (img.width(), img.height());
     if let Some(ft) = FanType::known(fan_type) {
-        if (w, h) != ft.jpeg_size() { return Err(format!("JPEG {w}Ã—{h}, verwacht {:?} voor type {fan_type}", ft.jpeg_size())); }
+        if (w, h) != ft.jpeg_size() { return Err(format!("JPEG {w}×{h}, verwacht {:?} voor type {fan_type}", ft.jpeg_size())); }
     }
     Ok((w, h))
 }
@@ -397,8 +407,18 @@ fn session(sh: &Shared, stream: TcpStream) {
     let mut pad = false;
     let mut tmp = vec![0u8; 64 * 1024];
     let ft = sh.cfg.fan_type;
+    let _ = rd.set_read_timeout(Some(Duration::from_millis(100)));
     loop {
-        let n = match rd.read(&mut tmp) { Ok(0) | Err(_) => return, Ok(n) => n };
+        if sh.kick.load(Ordering::SeqCst) || sh.stop.load(Ordering::SeqCst) {
+            let _ = rd.shutdown(Shutdown::Both);
+            return;
+        }
+        let n = match rd.read(&mut tmp) {
+            Ok(0) => return,
+            Ok(n) => n,
+            Err(e) if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) => continue,
+            Err(_) => return,
+        };
         buf.extend_from_slice(&tmp[..n]);
         loop {
             if let Mode::Upload { name } = &mode {
@@ -588,14 +608,14 @@ fn handle(sh: &Shared, out: &mut Out, pkt: &[u8], ft: u8, just_uploaded: &mut bo
         op::BRIGHTNESS => {
             if check_dup(pkt, "brightness") {
                 let v = pkt[2];
-                if !(1..=16).contains(&v) { sh.err(format!("helderheid {v} buiten 1â€“16")); }
+                if !(1..=16).contains(&v) { sh.err(format!("helderheid {v} buiten 1–16")); }
                 set(&|g| g.brightness = v.clamp(1, 16)); out.ready(); out.send(&status(sh));
             }
         }
         op::VOLUME => {
             if check_dup(pkt, "volume") {
                 let v = pkt[2];
-                if v > 10 { sh.err(format!("volume {v} buiten 0â€“10")); }
+                if v > 10 { sh.err(format!("volume {v} buiten 0–10")); }
                 set(&|g| g.volume = v.min(10)); out.ready(); out.send(&status(sh));
             }
         }

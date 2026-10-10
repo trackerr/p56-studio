@@ -42,15 +42,10 @@ fn start_link(targets: Vec<SocketAddr>, fan_udp: u16) -> (Link, Receiver<Event>)
 fn rig_with(f: impl FnOnce(&mut SimConfig)) -> Rig {
     let mut cfg = SimConfig { udp_port: 0, ..Default::default() };
     f(&mut cfg);
-    // Port of the link is only known after start, so start the sim first on a free UDP
-    // port, then the link (which targets that port), then tell the sim the TCP port.
-    let probe = std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
-    let udp = probe.local_addr().unwrap().port();
-    drop(probe);
-    let (link, rx) = start_link(vec![SocketAddr::from((Ipv4Addr::LOCALHOST, udp))], udp);
-    cfg.udp_port = udp;
-    cfg.pc_port = link.tcp_port;
+    // Sim first on a free UDP port, then the link targeting it, then the link's TCP port to the sim.
     let sim = Sim::start(cfg).expect("sim start");
+    let (link, rx) = start_link(vec![SocketAddr::from((Ipv4Addr::LOCALHOST, sim.udp_port))], sim.udp_port);
+    sim.set_pc_port(link.tcp_port);
     assert!(link.wait_connected(T), "fan did not connect");
     let id = link.ids()[0];
     let rig = Rig { link, _rx: rx, sim, id };
@@ -260,15 +255,18 @@ fn format_and_factory_reset() {
 #[test]
 fn reconnects_after_drop() {
     let r = rig();
+    let old = r.id;
     r.sim.drop_connection();
-    let deadline = std::time::Instant::now() + T;
-    while !r.link.ids().is_empty() || !r.sim.state().connected || r.sim.state().connections < 2 {
-        assert!(std::time::Instant::now() < deadline, "no reconnect: ids={:?} sim={:?}", r.link.ids(), r.sim.state().connections);
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    let id = loop {
+        let ids = r.link.ids();
+        if r.sim.state().connected && r.sim.state().connections >= 2 && !ids.contains(&old) {
+            if let Some(&id) = ids.first() { break id; }
+        }
+        assert!(std::time::Instant::now() < deadline, "no reconnect: ids={ids:?} sim={}", r.sim.state().connections);
         std::thread::sleep(Duration::from_millis(20));
-        if r.sim.state().connections >= 2 && !r.link.ids().is_empty() { break; }
-    }
-    assert!(r.link.wait_connected(T));
-    let id = r.link.ids()[0];
+    };
+    assert!(id > old);
     r.link.brightness(id, 9).unwrap();
     r.wait_sim(|s| s.brightness == 9);
     r.clean();
@@ -276,13 +274,11 @@ fn reconnects_after_drop() {
 
 #[test]
 fn two_fans_cast_and_commands() {
-    let probe = std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
-    let probe2 = std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
-    let (u1, u2) = (probe.local_addr().unwrap().port(), probe2.local_addr().unwrap().port());
-    drop((probe, probe2));
-    let (link, _rx) = start_link(vec![SocketAddr::from((Ipv4Addr::LOCALHOST, u1)), SocketAddr::from((Ipv4Addr::LOCALHOST, u2))], u1);
-    let a = Sim::start(SimConfig { udp_port: u1, pc_port: link.tcp_port, name: "A".into(), ..Default::default() }).unwrap();
-    let b = Sim::start(SimConfig { udp_port: u2, pc_port: link.tcp_port, name: "B".into(), fragment: true, ..Default::default() }).unwrap();
+    let a = Sim::start(SimConfig { udp_port: 0, name: "A".into(), ..Default::default() }).unwrap();
+    let b = Sim::start(SimConfig { udp_port: 0, name: "B".into(), fragment: true, ..Default::default() }).unwrap();
+    let (link, _rx) = start_link(vec![SocketAddr::from((Ipv4Addr::LOCALHOST, a.udp_port)), SocketAddr::from((Ipv4Addr::LOCALHOST, b.udp_port))], a.udp_port);
+    a.set_pc_port(link.tcp_port);
+    b.set_pc_port(link.tcp_port);
     let deadline = std::time::Instant::now() + T;
     while link.ids().len() < 2 { assert!(std::time::Instant::now() < deadline); std::thread::sleep(Duration::from_millis(20)); }
     let j = transcode::encode(&transcode::test_card(), &FanType::P56, &Placement::default()).jpeg;
