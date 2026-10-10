@@ -1,0 +1,49 @@
+name: Validate
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "0 4 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  hassfest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: home-assistant/actions/hassfest@master
+
+  hacs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: hacs/action@main
+        with:
+          category: integration
+
+  addon:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: frenck/action-addon-linter@v2
+        with:
+          path: ./p56_pov_display
+
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: p56-server from the p56-studio release
+        run: |
+          version=$(sed -n 's/^  P56_VERSION: "\(.*\)"/\1/p' p56_pov_display/build.yaml)
+          curl -fsSL -o p56-server "https://github.com/trackerr/p56-studio/releases/download/v${version}/p56-server-x86_64-linux-musl"
+          chmod +x p56-server
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - run: pip install pytest-homeassistant-custom-component
+      - run: pytest
+        env:
+          P56_SERVER: ${{ github.workspace }}/p56-server
