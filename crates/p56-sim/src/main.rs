@@ -66,6 +66,20 @@ fn main() {
         }
     }
     let sims = Arc::new(sims);
+    if sims.len() > 1 {
+        // Only the first fan can own the discovery port on this host; the others follow it to
+        // the same PC, like real fans that all hear the same broadcast.
+        let s = sims.clone();
+        thread::spawn(move || loop {
+            let lead = s[0].state();
+            if lead.connected {
+                if let Some(pc) = lead.pc.as_deref().and_then(|p| p.parse().ok()) {
+                    for other in &s[1..] { other.connect_to(pc); }
+                }
+            }
+            thread::sleep(Duration::from_millis(500));
+        });
+    }
     if a.http > 0 {
         match TcpListener::bind((Ipv4Addr::LOCALHOST, a.http)) {
             Ok(l) => {

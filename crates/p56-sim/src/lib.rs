@@ -188,6 +188,12 @@ impl Sim {
     /// TCP port of the PC to connect to after the next broadcast.
     pub fn set_pc_port(&self, port: u16) { *self.shared.pc_port.lock().unwrap() = port; }
 
+    /// Connect to this PC as if its broadcast had arrived (for extra fans sharing one host).
+    pub fn connect_to(&self, pc: SocketAddr) {
+        let mut w = self.shared.want_pc.lock().unwrap();
+        if w.is_none() || !self.shared.state.lock().unwrap().connected { *w = Some(pc); }
+    }
+
     pub fn state(&self) -> SimState { self.shared.state.lock().unwrap().clone() }
 
     /// Change the simulated device state (e.g. fill the card).
