@@ -1,0 +1,16 @@
+[package]
+name = "p56"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "p56"
+path = "src/main.rs"
+
+[dependencies]
+p56-core = { path = "../p56-core" }
+clap = { version = "4", features = ["derive"] }
+env_logger = "0.11"
+log = "0.4"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }

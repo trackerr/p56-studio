@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>P56 Studio</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <div class="brand"><span class="dot"></span> P56 Studio</div>
+  <nav>
+    <button data-tab="devices" class="active">Apparaten</button>
+    <button data-tab="playlist">Afspeellijst</button>
+    <button data-tab="upload">Uploaden</button>
+    <button data-tab="cast">Casten</button>
+    <button data-tab="settings">Instellingen</button>
+  </nav>
+  <div class="status" id="linkStatus">niet gestart</div>
+</header>
+
+<main>
+  <!-- ========== Apparaten ========== -->
+  <section id="tab-devices" class="tab active">
+    <div class="row between">
+      <h2>Verbonden fans</h2>
+      <div class="hint" id="discoveredHint"></div>
+    </div>
+    <div id="deviceList" class="cards"></div>
+    <p class="hint">De fan verbindt zelf met deze PC. Staat hij er niet bij: zit de PC op de wifi van de fan (standaard <code>192.168.4.1</code>)? Is Holoscope gesloten? Firewall: UDP 8988 + TCP 6666.</p>
+  </section>
+
+  <!-- ========== Afspeellijst ========== -->
+  <section id="tab-playlist" class="tab">
+    <div class="row between">
+      <h2>Afspeellijst</h2>
+      <div class="row">
+        <label>Fan <select id="plFan"></select></label>
+        <button id="plRefresh" class="ghost">Vernieuwen</button>
+      </div>
+    </div>
+    <table id="plTable"><thead><tr><th>#</th><th>Naam</th><th></th></tr></thead><tbody></tbody></table>
+    <div class="row">
+      <button data-ctl="on">Aan</button>
+      <button data-ctl="off">Uit</button>
+      <button data-ctl="play">Play</button>
+      <button data-ctl="pause">Pauze</button>
+    </div>
+  </section>
+
+  <!-- ========== Uploaden ========== -->
+  <section id="tab-upload" class="tab">
+    <h2>Beeld of video naar de fan</h2>
+    <div class="two">
+      <div>
+        <div class="field"><label>Bestand</label>
+          <div class="row"><input id="upPath" placeholder="kies een foto of video…" readonly><button id="upPick" class="ghost">Kiezen…</button><button id="upTest" class="ghost">Testkaart</button></div>
+        </div>
+        <div class="field"><label>Naam op de fan</label><input id="upName" placeholder="automatisch (bestandsnaam)"></div>
+        <div class="grid3">
+          <div class="field"><label>Slot tonen</label><input id="upSlot" type="number" min="1" max="255" value="1"></div>
+          <div class="field"><label>Fan</label><select id="upFan"></select></div>
+          <div class="field"><label>Max. frames (video)</label><input id="upMax" type="number" min="0" value="0"></div>
+        </div>
+        <fieldset class="place">
+          <legend>Positie &amp; schaal</legend>
+          <label>X <input type="range" id="pX" min="-0.5" max="0.5" step="0.01" value="0"><span id="pXv">0</span></label>
+          <label>Y <input type="range" id="pY" min="-0.5" max="0.5" step="0.01" value="0"><span id="pYv">0</span></label>
+          <label>Schaal <input type="range" id="pS" min="0.3" max="2" step="0.01" value="1"><span id="pSv">1.00</span></label>
+          <label class="chk"><input type="checkbox" id="pM"> Spiegelen</label>
+          <button id="pReset" class="ghost small">Reset</button>
+        </fieldset>
+        <div class="row">
+          <button id="upGo" class="primary">Uploaden &amp; tonen</button>
+          <span id="upMsg" class="hint"></span>
+        </div>
+        <p class="hint" id="ffmpegHint"></p>
+      </div>
+      <div class="preview">
+        <div class="round"><img id="pvRound" alt=""></div>
+        <div class="meta" id="pvMeta">Kies een bestand voor een voorbeeld.</div>
+        <img id="pvLayout" class="layout" alt="">
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== Casten ========== -->
+  <section id="tab-cast" class="tab">
+    <h2>Live casten</h2>
+    <div class="two">
+      <div>
+        <div class="field"><label>Bron</label>
+          <div class="row wrap">
+            <label class="radio"><input type="radio" name="castSrc" value="screen" checked> Dit scherm</label>
+            <label class="radio"><input type="radio" name="castSrc" value="file"> Bestand</label>
+            <label class="radio"><input type="radio" name="castSrc" value="test"> Testkaart</label>
+          </div>
+          <div class="row" id="castFileRow" hidden><input id="castPath" placeholder="foto of video…" readonly><button id="castPick" class="ghost">Kiezen…</button></div>
+        </div>
+        <div class="field"><label>Frames per seconde <span id="castFpsV">15</span></label><input type="range" id="castFps" min="1" max="30" value="15"></div>
+        <p class="hint">Positie, schaal en spiegelen uit het tabblad Uploaden gelden ook hier.</p>
+        <div class="row">
+          <button id="castStart" class="primary">Start</button>
+          <button id="castStop" disabled>Stop</button>
+          <span id="castMsg" class="hint"></span>
+        </div>
+      </div>
+      <div class="preview">
+        <div class="round"><img id="castPv" alt=""></div>
+        <div class="meta" id="castMeta">—</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== Instellingen ========== -->
+  <section id="tab-settings" class="tab">
+    <h2>Instellingen</h2>
+    <div class="field"><label>Fantype (bepaalt resolutie en aantal armen)</label><select id="setType"></select>
+      <p class="hint">De fan meldt zijn type zelf in de status; dit wordt automatisch overgenomen zodra hij verbonden is.</p></div>
+    <div class="field"><label>IP dat wordt uitgezonden (leeg = automatisch)</label>
+      <div class="row"><input id="setIp" placeholder="bv. 192.168.4.2"><button id="setIpApply" class="ghost">Herstart na wijziging</button></div></div>
+    <fieldset>
+      <legend>Wifi van de fan wijzigen</legend>
+      <p class="hint warn">Daarna is de fan alleen nog via het nieuwe netwerk bereikbaar. Noteer naam en wachtwoord.</p>
+      <div class="grid3">
+        <div class="field"><label>Fan</label><select id="wifiFan"></select></div>
+        <div class="field"><label>SSID</label><input id="wifiSsid"></div>
+        <div class="field"><label>Wachtwoord</label><input id="wifiPw" type="password"></div>
+      </div>
+      <button id="wifiGo" class="danger">Wifi instellen</button>
+    </fieldset>
+    <fieldset>
+      <legend>Hernoemen</legend>
+      <div class="grid3">
+        <div class="field"><label>Fan</label><select id="rnFan"></select></div>
+        <div class="field"><label>Oude naam</label><input id="rnOld" placeholder="x.mp4"></div>
+        <div class="field"><label>Nieuwe naam</label><input id="rnNew" placeholder="y.mp4"></div>
+      </div>
+      <button id="rnGo" class="ghost">Hernoemen</button>
+    </fieldset>
+    <h3>Logboek</h3>
+    <pre id="log"></pre>
+  </section>
+</main>
+<script src="main.js"></script>
+</body>
+</html>

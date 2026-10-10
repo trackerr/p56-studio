@@ -1,0 +1,10 @@
+target/
+node_modules/
+app/src-tauri/gen/
+emu/emu_*.bin
+emu/emu.log
+testdata/*.jpg
+testdata/*_layout.png
+
+build.err
+build.log
