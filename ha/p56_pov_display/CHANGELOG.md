@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.0.3
+
+- The panel (P56 Studio web app) is available in English and Dutch, with a switch in the header.
+- Log and error messages in English.
+- p56-server 0.2.3.
+
 ## 2.0.2
 
 - The **Virtual fan** option now really takes effect right after saving: the add-on reads its
