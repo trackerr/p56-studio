@@ -1,0 +1,23 @@
+configuration:
+  fan_ip:
+    name: Fan IP addresses
+    description: >-
+      Optional. Send the discovery packet straight to these fans as well
+      (for fans on another subnet). Normally the fans are found by broadcast.
+  advertise_ip:
+    name: Advertised IP address
+    description: >-
+      Optional. The address the fans should connect back to. Empty = each
+      network card announces its own address.
+  lan_api:
+    name: API reachable on the network
+    description: >-
+      On: the HTTP API and web UI on port 8765 answer the whole network
+      (needed for apps or scripts on other machines). Off: only Home Assistant
+      itself (integration, rest_command, the panel).
+  simulate:
+    name: Virtual fan
+    description: Start a simulated P56 fan, to try everything without hardware.
+  log_level:
+    name: Log level
+    description: How much the add-on writes to its log.

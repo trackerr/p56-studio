@@ -1,0 +1,7 @@
+# Shell scripts must keep LF line endings (they run on Linux / in the add-on container)
+*.sh text eol=lf
+gradlew text eol=lf
+ha/p56_pov_display/rootfs/** text eol=lf
+ha/p56_pov_display/Dockerfile text eol=lf
+*.ps1 text eol=crlf
+*.bat text eol=crlf

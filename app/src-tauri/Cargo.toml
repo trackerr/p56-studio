@@ -13,17 +13,11 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-p56-core = { path = "../../crates/p56-core" }
+p56-service = { path = "../../crates/p56-service" }
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-opener = "2"
-serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 log = "0.4"
 env_logger = "0.11"
-base64 = "0.22"
-image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
-
-[target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
-xcap = "0.9"

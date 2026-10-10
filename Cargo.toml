@@ -1,11 +1,18 @@
 [workspace]
 resolver = "2"
-members = ["crates/p56-core", "crates/p56-cli", "crates/p56-sim", "app/src-tauri"]
+members = ["crates/p56-core", "crates/p56-service", "crates/p56-cli", "crates/p56-sim", "crates/p56-server", "app/src-tauri"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 license = "MIT"
+repository = "https://github.com/trackerr/p56-studio"
+
+# Image work (polar warp, JPEG) is far too slow unoptimized, also in debug builds on a phone.
+[profile.dev.package.p56-core]
+opt-level = 3
+[profile.dev.package."*"]
+opt-level = 2
 
 [profile.release]
 opt-level = 3

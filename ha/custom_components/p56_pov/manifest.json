@@ -1,0 +1,14 @@
+{
+  "domain": "p56_pov",
+  "name": "P56 POV Display",
+  "codeowners": ["@trackerr"],
+  "config_flow": true,
+  "dependencies": [],
+  "after_dependencies": ["camera", "hassio", "media_player", "media_source"],
+  "documentation": "https://github.com/trackerr/home-assistant-p56",
+  "integration_type": "hub",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/trackerr/home-assistant-p56/issues",
+  "requirements": [],
+  "version": "2.0.0"
+}

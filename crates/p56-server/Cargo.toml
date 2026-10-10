@@ -1,0 +1,25 @@
+[package]
+name = "p56-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "P56 server for the Home Assistant add-on: HTTP API, live events and the P56 Studio web UI"
+
+[[bin]]
+name = "p56-server"
+path = "src/main.rs"
+
+[dependencies]
+p56-service = { path = "../p56-service" }
+p56-core = { path = "../p56-core" }
+p56-sim = { path = "../p56-sim" }
+tiny_http = "0.12"
+serde_json = "1"
+clap = { version = "4", features = ["derive"] }
+log = "0.4"
+env_logger = "0.11"
+
+[dev-dependencies]
+ureq = { version = "2", default-features = false, features = ["json"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
+base64 = "0.22"

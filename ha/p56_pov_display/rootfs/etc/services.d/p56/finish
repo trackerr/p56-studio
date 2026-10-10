@@ -1,0 +1,8 @@
+#!/usr/bin/env bashio
+# shellcheck shell=bash
+# Stop the add-on when p56-server stops unexpectedly, so the Supervisor watchdog restarts it.
+if [[ "${1}" -ne 0 ]] && [[ "${1}" -ne 256 ]]; then
+    bashio::log.warning "p56-server stopped (code ${1})"
+    echo "${1}" > /run/s6-linux-init-container-results/exitcode
+    exec /run/s6/basedir/bin/halt
+fi

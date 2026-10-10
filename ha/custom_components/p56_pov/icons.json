@@ -1,0 +1,41 @@
+{
+  "entity": {
+    "light": { "display": { "default": "mdi:fan" } },
+    "switch": {
+      "playing": { "default": "mdi:play", "state": { "off": "mdi:pause" } },
+      "breath": { "default": "mdi:weather-sunset" },
+      "autostart": { "default": "mdi:power-plug" },
+      "master": { "default": "mdi:crown" }
+    },
+    "select": {
+      "file": { "default": "mdi:playlist-play" },
+      "color_mode": { "default": "mdi:palette" },
+      "repeat": { "default": "mdi:repeat", "state": { "one": "mdi:repeat-once" } }
+    },
+    "number": {
+      "angle": { "default": "mdi:rotate-right" },
+      "volume": { "default": "mdi:volume-high" }
+    },
+    "sensor": {
+      "current_file": { "default": "mdi:filmstrip" },
+      "file_count": { "default": "mdi:counter" },
+      "ip": { "default": "mdi:ip-network" },
+      "last_error": { "default": "mdi:alert-circle-outline" },
+      "fans_connected": { "default": "mdi:fan-chevron-up" },
+      "last_activity": { "default": "mdi:clock-outline" }
+    },
+    "button": {
+      "refresh": { "default": "mdi:refresh" },
+      "delete_current": { "default": "mdi:delete" }
+    },
+    "text": { "text": { "default": "mdi:format-text" } },
+    "notify": { "message": { "default": "mdi:message-text" } },
+    "image": { "shown": { "default": "mdi:image" } }
+  },
+  "services": {
+    "show_text": { "service": "mdi:format-text" },
+    "show_image": { "service": "mdi:image" },
+    "play_file": { "service": "mdi:play" },
+    "delete_file": { "service": "mdi:delete" }
+  }
+}

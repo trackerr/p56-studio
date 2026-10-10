@@ -89,7 +89,8 @@ fn main() {
 fn serve(mut c: TcpStream, sims: &[Sim]) {
     let mut line = String::new();
     if BufReader::new(&c).read_line(&mut line).is_err() { return; }
-    let path = line.split_whitespace().nth(1).unwrap_or("/").to_string();
+    let target = line.split_whitespace().nth(1).unwrap_or("/");
+    let path = target.split('?').next().unwrap_or("/").to_string();
     let (ctype, body): (&str, Vec<u8>) = if let Some(i) = path.strip_prefix("/frame/").and_then(|s| s.trim_end_matches(".png").parse::<usize>().ok()) {
         let Some(sim) = sims.get(i) else { return };
         let ft = FanType::by_id(sim.config().fan_type);

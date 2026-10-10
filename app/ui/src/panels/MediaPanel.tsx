@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { FileImage, FlaskConical, Upload, Film, X } from 'lucide-react';
+import { FileImage, FlaskConical, Upload, Film, X, Type } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -38,6 +38,15 @@ export function MediaPanel() {
   const [slot, setSlot] = useState(1);
   const [maxFrames, setMaxFrames] = useState(0);
   const cancel = useRef(false);
+  const [txt, setTxt] = useState({ text: '', color: '#ffffff', bg: '#000000' });
+
+  async function makeText() {
+    try {
+      const m = await invoke<MediaInfo>('media_text', { text: txt.text, color: txt.color, background: txt.bg, name: txt.text.slice(0, 24) });
+      setPicked(null); setMedia(m); setFrame(0); setName(txt.text.slice(0, 24).replace(/[^\w -]/g, '').trim() || 'tekst');
+      addLog(`tekst: ${txt.text}`);
+    } catch (e) { toast.error('Tekst maken mislukt', { description: String(e) }); }
+  }
 
   // preview on every change
   useEffect(() => {
@@ -139,6 +148,12 @@ export function MediaPanel() {
               <FlaskConical className="mr-1.5 h-4 w-4" />Testkaart
             </Button>
           </div>
+          <form className="mt-3 flex flex-wrap items-center gap-2" onSubmit={(e) => { e.preventDefault(); makeText(); }}>
+            <Input className="min-w-48 flex-1" placeholder="of typ een tekst…" value={txt.text} data-testid="text-input" onChange={(e) => setTxt({ ...txt, text: e.target.value })} />
+            <input type="color" aria-label="Tekstkleur" value={txt.color} onChange={(e) => setTxt({ ...txt, color: e.target.value })} className="h-9 w-10 cursor-pointer rounded border border-input bg-transparent" />
+            <input type="color" aria-label="Achtergrond" value={txt.bg} onChange={(e) => setTxt({ ...txt, bg: e.target.value })} className="h-9 w-10 cursor-pointer rounded border border-input bg-transparent" />
+            <Button type="submit" variant="secondary" disabled={!txt.text.trim() || !!busy} data-testid="text-make"><Type className="mr-1.5 h-4 w-4" />Tekst</Button>
+          </form>
           <p className="mt-2 text-sm text-muted-foreground" data-testid="media-info">
             {media ? <>{media.name} · {media.frames} frame(s){media.width ? ` · ${media.width}×${media.height}` : ''}</>
               : picked?.video ? <>{picked.name} · video, nog geen frames</> : 'Testkaart (rode, groene en blauwe ring)'}

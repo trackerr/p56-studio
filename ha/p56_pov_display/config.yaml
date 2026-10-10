@@ -1,0 +1,37 @@
+name: P56 POV Display
+version: "2.0.0"
+slug: p56_pov_display
+description: Holoscope/P56 POV fans in Home Assistant, without the vendor app
+url: https://github.com/trackerr/home-assistant-p56/tree/main/p56_pov_display
+arch:
+  - amd64
+  - aarch64
+init: false
+startup: services
+boot: auto
+host_network: true
+ingress: true
+ingress_port: 8765
+panel_icon: mdi:fan
+panel_title: P56 POV
+discovery:
+  - p56_pov
+hassio_api: true
+map:
+  - type: media
+    read_only: true
+  - type: share
+    read_only: true
+options:
+  fan_ip: []
+  advertise_ip: ""
+  lan_api: true
+  simulate: false
+  log_level: info
+schema:
+  fan_ip:
+    - str
+  advertise_ip: str?
+  lan_api: bool
+  simulate: bool
+  log_level: list(trace|debug|info|warn|error)

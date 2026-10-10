@@ -1,0 +1,23 @@
+#!/usr/bin/with-contenv bashio
+# shellcheck shell=bash
+# P56 POV Display: start p56-server with the add-on options.
+
+args=(--http-port 8765 --tcp-port 6666 --discovery)
+
+for ip in $(bashio::config 'fan_ip'); do
+    args+=(--fan "${ip}")
+done
+if bashio::config.has_value 'advertise_ip'; then
+    args+=(--ip "$(bashio::config 'advertise_ip')")
+fi
+if bashio::config.true 'simulate'; then
+    bashio::log.info "Virtual fan enabled (for trying things without hardware)"
+    args+=(--simulate)
+fi
+if bashio::config.false 'lan_api'; then
+    args+=(--local-only)
+fi
+
+export RUST_LOG="$(bashio::config 'log_level' 'info')"
+bashio::log.info "Starting p56-server $(p56-server --version | cut -d' ' -f2)"
+exec /usr/bin/p56-server "${args[@]}"

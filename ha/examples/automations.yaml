@@ -1,0 +1,47 @@
+# Example automations for the P56 POV Display integration.
+# Replace the entity ids with your own.
+
+- alias: "P56 - energy price every hour"
+  triggers:
+    - trigger: time_pattern
+      minutes: 0
+  actions:
+    - action: p56_pov.show_text
+      data:
+        text: "{{ states('sensor.energy_price') | float(0) | round(2) }} €/kWh"
+        color: "#ffc800"
+        name: energy
+        show_seconds: 60
+
+- alias: "P56 - show new persistent notifications"
+  triggers:
+    - trigger: persistent_notification
+      update_type: added
+  actions:
+    - action: notify.send_message
+      target:
+        entity_id: notify.p56_message
+      data:
+        title: "{{ trigger.notification.title | default('', true) }}"
+        message: "{{ trigger.notification.message[:80] }}"
+
+- alias: "P56 - doorbell camera on the fan"
+  triggers:
+    - trigger: state
+      entity_id: binary_sensor.doorbell
+      to: "on"
+  actions:
+    - action: p56_pov.show_image
+      data:
+        camera: camera.front_door
+        mode: cast
+        show_seconds: 20
+
+- alias: "P56 - display off at night"
+  triggers:
+    - trigger: time
+      at: "23:30:00"
+  actions:
+    - action: light.turn_off
+      target:
+        entity_id: light.p56

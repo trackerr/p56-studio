@@ -1,0 +1,23 @@
+configuration:
+  fan_ip:
+    name: IP-adressen van fans
+    description: >-
+      Optioneel. Stuur het zoekpakket ook rechtstreeks naar deze fans (voor
+      fans in een ander subnet). Normaal worden de fans via broadcast gevonden.
+  advertise_ip:
+    name: Aangekondigd IP-adres
+    description: >-
+      Optioneel. Het adres waarmee de fans terug moeten verbinden. Leeg = elke
+      netwerkkaart kondigt zijn eigen adres aan.
+  lan_api:
+    name: API bereikbaar op het netwerk
+    description: >-
+      Aan: de HTTP-API en web-UI op poort 8765 antwoorden het hele netwerk
+      (nodig voor apps of scripts op andere computers). Uit: alleen Home
+      Assistant zelf (integratie, rest_command, het paneel).
+  simulate:
+    name: Virtuele fan
+    description: Start een gesimuleerde P56-fan, om alles zonder hardware te proberen.
+  log_level:
+    name: Logniveau
+    description: Hoeveel de add-on in zijn log schrijft.

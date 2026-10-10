@@ -19,8 +19,19 @@ export type P56Event = { type: string; data: any };
 const T: any = (window as any).__TAURI__;
 export const isTauri = !!T?.core?.invoke;
 
+// Served by p56-server (Home Assistant add-on)? Relative URLs keep working behind ingress.
+const serverProbe: Promise<boolean> = isTauri ? Promise.resolve(false)
+  : fetch('api/ping', { cache: 'no-store' }).then((r) => r.ok && r.json()).then((j) => !!j?.ok).catch(() => false);
+export const transport = serverProbe.then((s) => (isTauri ? 'tauri' : s ? 'server' : 'demo') as 'tauri' | 'server' | 'demo');
+
 export async function invoke<R = unknown>(cmd: string, args?: Record<string, unknown>): Promise<R> {
-  if (isTauri) return T.core.invoke(cmd, args);
+  if (isTauri) return T.core.invoke('p56', { cmd, args: args ?? {} });
+  if (await serverProbe) {
+    const r = await fetch(`api/call/${cmd}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(args ?? {}) });
+    const j = await r.json();
+    if (!j.ok) throw j.error;
+    return j.result as R;
+  }
   return demo(cmd, args ?? {}) as Promise<R>;
 }
 
@@ -29,8 +40,17 @@ export function onEvent(cb: (e: P56Event) => void): () => void {
   listeners.add(cb);
   return () => listeners.delete(cb);
 }
-if (isTauri) T.event.listen('p56', (e: { payload: P56Event }) => listeners.forEach((l) => l(e.payload)));
 function emit(e: P56Event) { listeners.forEach((l) => l(e)); }
+if (isTauri) T.event.listen('p56', (e: { payload: P56Event }) => emit(e.payload));
+serverProbe.then((s) => {
+  if (!s) return;
+  const connect = () => {
+    const es = new EventSource('api/events');
+    es.onmessage = (m) => { try { emit(JSON.parse(m.data)); } catch { /* ignore */ } };
+    es.onerror = () => { es.close(); setTimeout(connect, 3000); };
+  };
+  connect();
+});
 
 export const VIDEO_EXT = ['mp4', 'm4v', 'mov', 'webm', 'mkv', 'avi', '3gp'];
 export const IMAGE_EXT = ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp'];
@@ -56,6 +76,8 @@ export async function pickMedia(): Promise<Picked | null> {
     const bytes: Uint8Array = await T.fs.readFile(path);
     let name = decodeURIComponent(path.split(/[\\/]/).pop() || 'media');
     if (name.includes(':')) name = name.split(':').pop() || name;
+    // Android media URIs end in a number, not a file name.
+    if (/^\d+$/.test(name)) name = `foto-${name}`;
     let ext = extOf(name);
     const video = VIDEO_EXT.includes(ext) || (!IMAGE_EXT.includes(ext) && sniffVideo(bytes));
     if (!IMAGE_EXT.includes(ext) && !VIDEO_EXT.includes(ext)) { ext = video ? 'mp4' : 'jpg'; name = `${name}.${ext}`; }
@@ -192,6 +214,7 @@ async function demo(cmd: string, a: any): Promise<unknown> {
       if (a.what === 'rename') demoFan.files = demoFan.files.map(([n, f]) => [n, n === a.slot ? (a.a.endsWith('.mp4') ? a.a : a.a + '.mp4') : f]);
       return null;
     case 'media_load': demoMedia++; demoFrames.set(demoMedia, 1); return { id: demoMedia, name: a.name, frames: 1, width: 1024, height: 768 };
+    case 'media_text': demoMedia++; demoFrames.set(demoMedia, 1); return { id: demoMedia, name: a.name || 'tekst', frames: 1, width: 720, height: 720 };
     case 'media_begin': demoMedia++; demoFrames.set(demoMedia, 0); return demoMedia;
     case 'media_push': { const n = (demoFrames.get(a.media) ?? 0) + 1; demoFrames.set(a.media, n); return n; }
     case 'media_drop': return null;

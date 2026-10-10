@@ -1,0 +1,18 @@
+[package]
+name = "p56-service"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Command layer shared by P56 Studio (Tauri) and the Home Assistant add-on server"
+
+[dependencies]
+p56-core = { path = "../p56-core" }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp"] }
+base64 = "0.22"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ab_glyph = "0.2"
+log = "0.4"
+
+[target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
+xcap = "0.9"

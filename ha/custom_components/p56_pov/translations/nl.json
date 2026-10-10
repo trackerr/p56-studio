@@ -1,0 +1,165 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "P56 POV-server",
+        "description": "Adres van de P56 POV Display add-on (p56-server). Met de add-on op deze Home Assistant: 127.0.0.1 en poort 8765.",
+        "data": { "host": "Host", "port": "Poort" },
+        "data_description": {
+          "host": "Hostnaam of IP-adres waar p56-server draait.",
+          "port": "HTTP-poort van p56-server (standaard 8765)."
+        }
+      },
+      "hassio_confirm": {
+        "title": "P56 POV via add-on",
+        "description": "Home Assistant koppelen aan de P56 POV-fans van de add-on {addon}?"
+      },
+      "reconfigure": {
+        "title": "P56 POV-server",
+        "data": { "host": "Host", "port": "Poort" }
+      }
+    },
+    "error": {
+      "cannot_connect": "p56-server is op dit adres niet bereikbaar.",
+      "old_server": "Dit is de 1.x add-on. Werk de P56 POV Display add-on bij naar 2.0 of nieuwer.",
+      "unknown": "Onverwachte fout."
+    },
+    "abort": {
+      "already_configured": "Deze server is al ingesteld.",
+      "reconfigure_successful": "Opgeslagen."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Standaarden voor tekst",
+        "data": {
+          "mode": "Hoe tonen",
+          "show_seconds": "Tekst-entiteit: weghalen na (0 = laten staan)",
+          "notify_seconds": "Meldingen: tonen gedurende",
+          "color": "Tekstkleur",
+          "background": "Achtergrondkleur"
+        },
+        "data_description": {
+          "mode": "Opslaan op de fan (upload) of live streamen zonder op te slaan (cast).",
+          "color": "#rrggbb, r,g,b of een kleurnaam.",
+          "background": "#rrggbb, r,g,b of een kleurnaam."
+        }
+      }
+    }
+  },
+  "selector": {
+    "mode": {
+      "options": {
+        "upload": "Opslaan op de fan",
+        "cast": "Live (niet opslaan)"
+      }
+    }
+  },
+  "entity": {
+    "light": { "display": { "name": "Beeld" } },
+    "switch": {
+      "playing": { "name": "Afspelen" },
+      "breath": { "name": "Ademlicht" },
+      "autostart": { "name": "Starten bij stroom" },
+      "master": { "name": "Master" }
+    },
+    "select": {
+      "file": { "name": "Bestand" },
+      "color_mode": {
+        "name": "Kleurmodus",
+        "state": { "true_color": "Ware kleuren", "high_brightness": "Extra helder" }
+      },
+      "repeat": {
+        "name": "Herhalen",
+        "state": { "all": "Alle bestanden", "one": "Eén bestand" }
+      }
+    },
+    "number": {
+      "angle": { "name": "Beeldhoek" },
+      "volume": { "name": "Volume" }
+    },
+    "sensor": {
+      "current_file": { "name": "Speelt nu" },
+      "file_count": { "name": "Bestanden" },
+      "ip": { "name": "IP-adres" },
+      "last_error": { "name": "Laatste fout" },
+      "fans_connected": { "name": "Verbonden fans" },
+      "last_activity": { "name": "Laatste activiteit" }
+    },
+    "button": {
+      "refresh": { "name": "Verversen" },
+      "delete_current": { "name": "Huidig bestand wissen" }
+    },
+    "text": { "text": { "name": "Tekst" } },
+    "notify": { "message": { "name": "Melding" } },
+    "image": { "shown": { "name": "Getoond" } }
+  },
+  "exceptions": {
+    "server_unreachable": { "message": "P56-server niet bereikbaar: {error}" },
+    "command_failed": { "message": "P56-opdracht mislukt: {error}" },
+    "fan_offline": { "message": "De fan is niet verbonden." },
+    "not_loaded": { "message": "Er is geen P56 POV-server ingesteld." },
+    "unknown_device": { "message": "Apparaat {device} is geen P56 POV-apparaat." },
+    "file_not_on_fan": { "message": "Geen bestand {name} op de fan." },
+    "path_not_allowed": { "message": "{path} staat niet in allowlist_external_dirs." },
+    "file_not_found": { "message": "Bestand {path} niet gevonden." },
+    "file_too_large": { "message": "{path} is te groot." },
+    "download_failed": { "message": "Downloaden van {url} mislukt: {error}" },
+    "media_unresolvable": { "message": "Media {media} niet te vinden." },
+    "one_source": { "message": "Geef precies één van pad, url, camera of media." },
+    "no_source": { "message": "Geen afbeelding opgegeven." }
+  },
+  "services": {
+    "show_text": {
+      "name": "Tekst tonen",
+      "description": "Toont tekst op de fan, passend gemaakt voor het ronde beeld.",
+      "fields": {
+        "device_id": { "name": "Fans", "description": "Op welke fans (leeg: alle)." },
+        "text": { "name": "Tekst", "description": "De tekst; een nieuwe regel begint een nieuwe regel." },
+        "color": { "name": "Kleur", "description": "Tekstkleur." },
+        "background": { "name": "Achtergrond", "description": "Achtergrondkleur." },
+        "font_size": { "name": "Maximale lettergrootte", "description": "Bovengrens in pixels (0: zo groot als past)." },
+        "show_seconds": { "name": "Duur", "description": "Na zoveel seconden weer weghalen; het vorige bestand speelt weer (0: laten staan)." },
+        "mode": { "name": "Modus", "description": "Opslaan op de fan, of live tonen zonder opslaan." },
+        "name": { "name": "Bestandsnaam", "description": "Naam op de fan; dezelfde naam vervangt het eerdere bestand." }
+      }
+    },
+    "show_image": {
+      "name": "Afbeelding tonen",
+      "description": "Toont een afbeelding (of het eerste beeld van een GIF) op de fan.",
+      "fields": {
+        "device_id": { "name": "Fans", "description": "Op welke fans (leeg: alle)." },
+        "path": { "name": "Bestand", "description": "Pad van een afbeelding op Home Assistant (moet toegestaan zijn)." },
+        "url": { "name": "URL", "description": "Afbeelding om te downloaden." },
+        "camera": { "name": "Camera", "description": "Toon een momentopname van deze camera." },
+        "media": { "name": "Media", "description": "Afbeelding uit de mediabibliotheek." },
+        "show_seconds": { "name": "Duur", "description": "Na zoveel seconden weer weghalen (0: laten staan)." },
+        "mode": { "name": "Modus", "description": "Opslaan op de fan, of live tonen zonder opslaan." },
+        "name": { "name": "Bestandsnaam", "description": "Naam op de fan; dezelfde naam vervangt het eerdere bestand." },
+        "scale": { "name": "Schaal", "description": "1 = vult het beeld." },
+        "x_offset": { "name": "Horizontaal verschuiven", "description": "-1 … 1." },
+        "y_offset": { "name": "Verticaal verschuiven", "description": "-1 … 1." },
+        "mirror": { "name": "Spiegelen", "description": "Spiegel de afbeelding." }
+      }
+    },
+    "play_file": {
+      "name": "Bestand afspelen",
+      "description": "Speelt een bestand op de fan af, op plek of naam.",
+      "fields": {
+        "device_id": { "name": "Fan", "description": "De fan." },
+        "slot": { "name": "Plek", "description": "Plek in de afspeellijst (1 = eerste)." },
+        "name": { "name": "Naam", "description": "Bestandsnaam op de fan." }
+      }
+    },
+    "delete_file": {
+      "name": "Bestand wissen",
+      "description": "Wist een bestand van de fan, op plek of naam.",
+      "fields": {
+        "device_id": { "name": "Fan", "description": "De fan." },
+        "slot": { "name": "Plek", "description": "Plek in de afspeellijst (1 = eerste)." },
+        "name": { "name": "Naam", "description": "Bestandsnaam op de fan." }
+      }
+    }
+  }
+}

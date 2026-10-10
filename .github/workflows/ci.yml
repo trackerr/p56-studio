@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    name: Rust tests (core, CLI, simulator, server)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # The Tauri app needs WebKitGTK on Linux; it is built in the release workflow on Windows.
+      - run: cargo test --workspace --exclude p56-studio
+      - run: cargo build -p p56-server
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p56-server-debug
+          path: target/debug/p56-server
+
+  ui:
+    name: Web UI build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: pnpm --dir app/ui install --frozen-lockfile
+      - run: pnpm --dir app/ui run bundle
+      - name: Committed app/src/index.html is up to date
+        run: git diff --stat --exit-code -- app/src/index.html || echo "::warning::app/src/index.html differs from a fresh build"
+
+  home-assistant:
+    name: Home Assistant integration
+    needs: rust
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: p56-server-debug
+          path: bin
+      - run: chmod +x bin/p56-server
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - run: pip install pytest-homeassistant-custom-component
+      - run: pytest
+        working-directory: ha
+        env:
+          P56_SERVER: ${{ github.workspace }}/bin/p56-server
