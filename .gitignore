@@ -1,6 +1,5 @@
 target/
 node_modules/
-app/src-tauri/gen/
 emu/emu_*.bin
 emu/emu.log
 testdata/*.jpg
@@ -14,3 +13,10 @@ dist/
 app/ui/node_modules/
 e2e/out/
 app/ui/dist/
+app/src-tauri/gen/schemas/
+app/src-tauri/gen/android/app/build/
+app/src-tauri/gen/android/.gradle/
+app/src-tauri/gen/android/build/
+app/src-tauri/gen/android/local.properties
+app/src-tauri/gen/android/keystore.properties
+app/node_modules/

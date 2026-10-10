@@ -13,7 +13,17 @@ const target = process.env.CARGO_TARGET_DIR || join(root, 'target');
 const exe = (n) => join(target, profile, `${n}.exe`);
 const out = join(root, 'e2e', 'out');
 mkdirSync(out, { recursive: true });
-const CDP_PORT = 9333, SIM_HTTP = 8099;
+// --android: the app runs in an emulator/phone; adb forwards its WebView DevTools and TCP 6666.
+const android = process.argv.includes('--android');
+const CDP_PORT = android ? 9335 : 9333, SIM_HTTP = android ? 8098 : 8099;
+const ADB = join(process.env.ANDROID_HOME || join(process.env.USERPROFILE, '.p56-android', 'sdk'), 'platform-tools', 'adb.exe');
+async function adb(...args) {
+  return new Promise((res) => {
+    const p = spawn(ADB, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let o = ''; p.stdout.on('data', (d) => (o += d)); p.stderr.on('data', (d) => (o += d));
+    p.on('close', () => res(o.trim()));
+  });
+}
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const procs = [];
 let passed = 0, failed = 0;
@@ -115,20 +125,39 @@ const MAKE_VIDEO = `(async () => {
 })()`;
 
 async function main() {
-  for (const n of ['p56-sim', 'p56-studio']) if (!existsSync(exe(n))) throw new Error(`${exe(n)} ontbreekt; eerst bouwen`);
-  console.log(`P56 end-to-end (${profile})`);
-  start(exe('p56-sim'), ['--name', 'E2E-FAN', '--http', String(SIM_HTTP), '--max-files', '8']);
-  await sleep(500);
-  start(exe('p56-studio'), [], { WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${CDP_PORT}`, RUST_LOG: 'info' });
+  for (const n of android ? ['p56-sim'] : ['p56-sim', 'p56-studio']) if (!existsSync(exe(n))) throw new Error(`${exe(n)} ontbreekt; eerst bouwen`);
+  console.log(`P56 end-to-end (${android ? 'Android' : profile})`);
+  if (android) {
+    // fresh app start, then forward its WebView DevTools socket and the fan port
+    await adb('shell', 'am', 'force-stop', 'nl.trackerr.p56studio');
+    await adb('shell', 'monkey', '-p', 'nl.trackerr.p56studio', '-c', 'android.intent.category.LAUNCHER', '1');
+    let sock = '';
+    for (let i = 0; i < 60 && !sock; i++) {
+      await sleep(1000);
+      const unix = await adb('shell', 'cat', '/proc/net/unix');
+      sock = (unix.match(/@(webview_devtools_remote_\d+)/) || [])[1] || '';
+    }
+    if (!sock) throw new Error('geen WebView-debugsocket (is het een debug-build?)');
+    await adb('forward', `tcp:${CDP_PORT}`, `localabstract:${sock}`);
+    await adb('forward', 'tcp:16666', 'tcp:6666');
+    await sleep(2000);
+    start(exe('p56-sim'), ['--name', 'E2E-FAN', '--http', String(SIM_HTTP), '--max-files', '8', '--udp-port', '18988', '--pc', '127.0.0.1:16666']);
+  } else {
+    start(exe('p56-sim'), ['--name', 'E2E-FAN', '--http', String(SIM_HTTP), '--max-files', '8']);
+    await sleep(500);
+    start(exe('p56-studio'), [], { WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${CDP_PORT}`, RUST_LOG: 'info' });
+  }
   await cdpConnect();
   await cdp('Runtime.enable');
   await cdp('Page.enable');
   await sleep(1500);
   await js(HELPERS);
-  // point the app at the simulator on this pc, then reconnect
-  await js(`localStorage.setItem('p56.targets', '127.0.0.1'); localStorage.removeItem('p56.ip'); true`);
-  await js(`$tab('app')`); await sleep(300);
-  await js(`$click('apply-net')`);
+  if (!android) {
+    // point the app at the simulator on this pc, then reconnect
+    await js(`localStorage.setItem('p56.targets', '127.0.0.1'); localStorage.removeItem('p56.ip'); true`);
+    await js(`$tab('app')`); await sleep(300);
+    await js(`$click('apply-net')`);
+  }
 
   await test('fan verbindt en verschijnt in de app', async () => {
     await waitSim('verbonden', (s) => s.connected, 15000);

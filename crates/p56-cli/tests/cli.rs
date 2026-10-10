@@ -1,0 +1,98 @@
+//! The `p56` binary against the fan simulator.
+
+use std::net::{Ipv4Addr, TcpListener, UdpSocket};
+use std::process::Command;
+use std::time::Duration;
+
+use p56_sim::{Sim, SimConfig};
+
+fn free_tcp() -> u16 { TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap().local_addr().unwrap().port() }
+fn free_udp() -> u16 { UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap().local_addr().unwrap().port() }
+
+struct Env { sim: Sim, port: u16, udp: u16 }
+
+fn env() -> Env {
+    let (port, udp) = (free_tcp(), free_udp());
+    let sim = Sim::start(SimConfig { udp_port: udp, pc_port: port, name: "CLI-FAN".into(), ..Default::default() }).unwrap();
+    Env { sim, port, udp }
+}
+
+impl Env {
+    fn p56(&self, args: &[&str]) -> (bool, String) {
+        let out = Command::new(env!("CARGO_BIN_EXE_p56"))
+            .args(["--port", &self.port.to_string(), "--target", &format!("127.0.0.1:{}", self.udp), "--wait", "10"])
+            .args(args)
+            .env("RUST_LOG", "warn")
+            .output()
+            .expect("run p56");
+        let text = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+        (out.status.success(), text)
+    }
+    fn ok(&self, args: &[&str]) -> String {
+        let (ok, t) = self.p56(args);
+        assert!(ok, "p56 {args:?} failed:\n{t}");
+        t
+    }
+    fn wait(&self, pred: impl Fn(&p56_sim::SimState) -> bool) {
+        assert!(self.sim.wait_until(Duration::from_secs(5), pred), "sim: {:?}", self.sim.state().commands);
+    }
+}
+
+#[test]
+fn cli_full_workflow() {
+    let e = env();
+    let t = e.ok(&["info"]);
+    assert!(t.contains("naam CLI-FAN") && t.contains("type 8"), "{t}");
+    e.ok(&["off"]); e.wait(|s| !s.power);
+    e.ok(&["on"]); e.wait(|s| s.power);
+    e.ok(&["brightness", "5"]); e.wait(|s| s.brightness == 5);
+    e.ok(&["angle", "-90"]); e.wait(|s| s.angle == 90);
+    e.ok(&["color", "true"]); e.wait(|s| s.color_mode == 1);
+    e.ok(&["breath", "on"]); e.wait(|s| s.breath);
+    e.ok(&["repeat", "one"]); e.wait(|s| !s.repeat_all);
+    e.ok(&["name", "Keuken"]); e.wait(|s| s.device_name == "Keuken");
+    e.ok(&["router", "Thuis", "wachtwoord1"]); e.wait(|s| s.router.0 == "Thuis");
+    e.ok(&["upload", "test", "--name", "kaart", "--slot", "1"]); e.wait(|s| s.files.len() == 1 && s.files[0].name == "kaart.mp4");
+    e.ok(&["rename", "1", "ring"]); e.wait(|s| s.files[0].name == "ring.mp4");
+    let t = e.ok(&["cast", "test", "--seconds", "1.5", "--fps", "10"]);
+    assert!(t.contains("frames gecast"), "{t}");
+    e.wait(|s| s.cast_ok >= 5);
+    e.ok(&["ble", "on"]);
+    let t = e.ok(&["ble", "scan"]);
+    assert!(t.contains("BT-Speaker"), "{t}");
+    e.ok(&["delete", "1"]); e.wait(|s| s.files.is_empty());
+    assert!(e.sim.state().protocol_errors.is_empty(), "{:?}", e.sim.state().protocol_errors);
+}
+
+#[test]
+fn cli_refuses_without_confirmation_and_bad_values() {
+    let e = env();
+    let (ok, t) = e.p56(&["format"]);
+    assert!(!ok && t.contains("--yes"), "{t}");
+    let (ok, t) = e.p56(&["brightness", "40"]);
+    assert!(!ok && t.contains("1–16"), "{t}");
+    let (ok, t) = e.p56(&["hotspot", "x", "kort"]);
+    assert!(!ok && t.contains("8 tekens"), "{t}");
+    e.ok(&["format", "--yes"]); e.wait(|s| s.formats == 1);
+}
+
+#[test]
+fn cli_reports_fan_errors() {
+    let e = env();
+    e.sim.modify(|s| s.files.push(p56_sim::SimFile { name: "a.mp4".into(), frames: 1, width: 688, height: 240, jpegs: vec![] }));
+    let (ok, t) = e.p56(&["upload", "test", "--name", "a"]);
+    assert!(!ok && t.contains("bestaat al"), "{t}");
+}
+
+#[test]
+fn preview_and_types_work_offline() {
+    let dir = std::env::temp_dir().join(format!("p56cli{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let prefix = dir.join("pv");
+    let out = Command::new(env!("CARGO_BIN_EXE_p56")).args(["preview", "test", prefix.to_str().unwrap()]).output().unwrap();
+    assert!(out.status.success());
+    assert!(String::from_utf8_lossy(&out.stdout).contains("688x240"));
+    let out = Command::new(env!("CARGO_BIN_EXE_p56")).arg("types").output().unwrap();
+    let t = String::from_utf8_lossy(&out.stdout);
+    assert!(t.contains("type  8: 960×172") && t.contains("Unsupported"), "{t}");
+}
