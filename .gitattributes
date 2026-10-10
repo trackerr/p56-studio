@@ -5,3 +5,7 @@ ha/p56_pov_display/rootfs/** text eol=lf
 ha/p56_pov_display/Dockerfile text eol=lf
 *.ps1 text eol=crlf
 *.bat text eol=crlf
+
+# Language statistics: the bundled UI is generated, the old Python emulator is reference material
+app/src/index.html linguist-generated=true
+emu/** linguist-vendored=true

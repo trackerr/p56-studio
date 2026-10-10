@@ -175,21 +175,23 @@ The protocol was worked out from the Holoscope app and is documented in
 
 ```mermaid
 flowchart LR
-    core["p56-core<br/><sub>protocol · picture conversion · network</sub>"]
-    service["p56-service<br/><sub>upload · cast · text · settings</sub>"]
-    app["P56 Studio<br/><sub>Windows · Android</sub>"]
-    server["p56-server<br/><sub>HTTP API · web app</sub>"]
-    ha["Home Assistant<br/><sub>add-on + integration</sub>"]
-    cli["p56<br/><sub>command line</sub>"]
-    sim["p56-sim<br/><sub>virtual fans</sub>"]
+    core["p56-core<br/>protocol, pictures, network"]
+    service["p56-service<br/>upload, cast, text, settings"]
+    app["P56 Studio<br/>Windows and Android"]
+    server["p56-server<br/>HTTP API and web app"]
+    ha["Home Assistant<br/>add-on and integration"]
+    cli["p56<br/>command line"]
+    sim["p56-sim<br/>virtual fans"]
     fan(("POV fan"))
 
     core --> service
     service --> app
-    service --> server --> ha
+    service --> server
+    server --> ha
     core --> cli
     core --> sim
-    app -. "UDP 8988 / TCP 6666" .- fan
+    app -.->|"UDP 8988, TCP 6666"| fan
+    server -.-> fan
 ```
 
 <details>
