@@ -1,8 +1,8 @@
 # Android build / run helper for P56 Studio.
-#   powershell -File scripts\android.ps1 debug      # debug-APK (arm64 + x86_64) → dist\
-#   powershell -File scripts\android.ps1 build      # release-APK, ondertekend (arm64 + armv7 + x86_64) → dist\
-#   powershell -File scripts\android.ps1 emulator   # emulator starten
-#   powershell -File scripts\android.ps1 install    # laatste debug-APK op emulator/telefoon zetten
+#   powershell -File scripts\android.ps1 debug      # debug APK (arm64 + x86_64) → dist\
+#   powershell -File scripts\android.ps1 build      # signed release APK (arm64 + armv7 + x86_64) → dist\
+#   powershell -File scripts\android.ps1 emulator   # start the emulator
+#   powershell -File scripts\android.ps1 install    # install the latest debug APK on the emulator/phone
 # Toolchain in %USERPROFILE%\.p56-android (JDK 17, SDK, NDK).
 #
 # Tauri links the Rust library into jniLibs with a symlink, which Windows only allows in
@@ -33,12 +33,12 @@ function Build-Apk([string[]]$targets, [bool]$release) {
     $jni = Join-Path $gen 'app\src\main\jniLibs'
     if (Test-Path $jni) { Remove-Item -Recurse -Force $jni }
     foreach ($t in $targets) {
-      Write-Host "== Rust voor $t ($mode)"
+      Write-Host "== Rust for $t ($mode)"
       $targs = @('tauri', 'android', 'build', '--apk', '--target', $t)
       if (-not $release) { $targs += '--debug' }
       & npx @targs 2>&1 | Where-Object { "$_" -match 'error\[|warning: unused|Finished|symbolic link' } | ForEach-Object { Write-Host "   $_" }
       $so = Join-Path $root "target\$($abi[$t][0])\$mode\libp56_studio_lib.so"
-      if (-not (Test-Path $so)) { throw "Rust-bibliotheek voor $t ontbreekt: $so" }
+      if (-not (Test-Path $so)) { throw "Rust library for $t is missing: $so" }
       $dst = Join-Path $jni $abi[$t][1]
       New-Item -ItemType Directory -Force $dst | Out-Null
       Copy-Item $so $dst -Force
@@ -49,7 +49,7 @@ function Build-Apk([string[]]$targets, [bool]$release) {
   try {
     $task = if ($release) { 'Release' } else { 'Debug' }
     .\gradlew.bat "assembleUniversal$task" -x "rustBuildUniversal$task" --console=plain -q
-    if ($LASTEXITCODE -ne 0) { throw 'gradle mislukt' }
+    if ($LASTEXITCODE -ne 0) { throw 'gradle failed' }
   } finally { Pop-Location }
   New-Item -ItemType Directory -Force $dist | Out-Null
   $apk = Get-ChildItem (Join-Path $gen "app\build\outputs\apk\universal\$mode") -Filter *.apk | Select-Object -First 1
@@ -72,5 +72,5 @@ switch ($Cmd) {
     }
     Start-Process emulator -ArgumentList '-avd', 'p56', '-no-snapshot-save', '-no-boot-anim', '-no-audio', '-gpu', 'auto', '-memory', '3072'
   }
-  default { Write-Host 'gebruik: android.ps1 debug|build|install|emulator|env' }
+  default { Write-Host 'usage: android.ps1 debug|build|install|emulator|env' }
 }

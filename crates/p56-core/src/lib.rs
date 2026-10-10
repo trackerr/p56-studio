@@ -17,14 +17,14 @@ pub use transcode::{FanType, Frame, Placement, Support};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("geen fan verbonden")]
+    #[error("no fan connected")]
     NotConnected,
     #[error("i/o: {0}")]
     Io(String),
-    #[error("ongeldig: {0}")]
+    #[error("invalid: {0}")]
     Invalid(String),
-    #[error("fan meldt: {0}")]
+    #[error("fan reports: {0}")]
     Fan(FanError),
-    #[error("beeld: {0}")]
+    #[error("image: {0}")]
     Image(#[from] image::ImageError),
 }

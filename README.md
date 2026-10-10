@@ -125,7 +125,7 @@ p56 upload photo.jpg --slot 1         # also .gif, and video when ffmpeg is inst
 p56 cast test --seconds 10            # live test card
 p56 brightness 12
 p56 angle -45
-p56 name Woonkamer
+p56 name LivingRoom
 p56 router MyWifi mypassword          # put the fan on your Wi-Fi
 p56 --help
 ```
@@ -169,7 +169,7 @@ Full reference: [add-on documentation](ha/p56_pov_display/DOCS.md#http-api-port-
 | others | ❌ Not implemented yet |
 
 The protocol was worked out from the Holoscope app and is documented in
-[PROTOCOL.md](PROTOCOL.md) (Dutch). Everything is tested against the built-in simulator.
+[PROTOCOL.md](PROTOCOL.md). Everything is tested against the built-in simulator.
 
 ## 🏗️ How it fits together
 
@@ -238,19 +238,6 @@ cd ha && pytest                                   # Home Assistant integration a
 
 GitHub Actions runs the Rust tests, the UI build and the Home Assistant tests on every push,
 and builds all release files from a version tag.
-</details>
-
-<details>
-<summary>🇳🇱 <b>Nederlands — snel aan de slag</b></summary>
-
-P56 Studio vervangt de Holoscope-app voor P56-hologramfans.
-
-1. Download de **Windows-installer** of de **Android-APK** bij de [nieuwste release](https://github.com/trackerr/p56-studio/releases/latest).
-2. Verbind je pc of telefoon met de wifi van de fan (of zet beide op dezelfde router) en sluit Holoscope.
-3. Start P56 Studio: de fan verschijnt vanzelf. Windows vraagt de eerste keer om de firewall te openen: kies **Toestaan**.
-
-Geen fan bij de hand? Start `p56-sim` voor een virtuele fan. Voor Home Assistant: zie
-[home-assistant-p56](https://github.com/trackerr/home-assistant-p56). Het protocol staat in [PROTOCOL.md](PROTOCOL.md).
 </details>
 
 ---

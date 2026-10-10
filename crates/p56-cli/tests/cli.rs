@@ -42,7 +42,7 @@ impl Env {
 fn cli_full_workflow() {
     let e = env();
     let t = e.ok(&["info"]);
-    assert!(t.contains("naam CLI-FAN") && t.contains("type 8"), "{t}");
+    assert!(t.contains("name CLI-FAN") && t.contains("type 8"), "{t}");
     e.ok(&["off"]); e.wait(|s| !s.power);
     e.ok(&["on"]); e.wait(|s| s.power);
     e.ok(&["brightness", "5"]); e.wait(|s| s.brightness == 5);
@@ -50,12 +50,12 @@ fn cli_full_workflow() {
     e.ok(&["color", "true"]); e.wait(|s| s.color_mode == 1);
     e.ok(&["breath", "on"]); e.wait(|s| s.breath);
     e.ok(&["repeat", "one"]); e.wait(|s| !s.repeat_all);
-    e.ok(&["name", "Keuken"]); e.wait(|s| s.device_name == "Keuken");
-    e.ok(&["router", "Thuis", "wachtwoord1"]); e.wait(|s| s.router.0 == "Thuis");
-    e.ok(&["upload", "test", "--name", "kaart", "--slot", "1"]); e.wait(|s| s.files.len() == 1 && s.files[0].name == "kaart.mp4");
+    e.ok(&["name", "Kitchen"]); e.wait(|s| s.device_name == "Kitchen");
+    e.ok(&["router", "Home", "password1"]); e.wait(|s| s.router.0 == "Home");
+    e.ok(&["upload", "test", "--name", "card", "--slot", "1"]); e.wait(|s| s.files.len() == 1 && s.files[0].name == "card.mp4");
     e.ok(&["rename", "1", "ring"]); e.wait(|s| s.files[0].name == "ring.mp4");
     let t = e.ok(&["cast", "test", "--seconds", "1.5", "--fps", "10"]);
-    assert!(t.contains("frames gecast"), "{t}");
+    assert!(t.contains("frames cast"), "{t}");
     e.wait(|s| s.cast_ok >= 5);
     e.ok(&["ble", "on"]);
     let t = e.ok(&["ble", "scan"]);
@@ -71,8 +71,8 @@ fn cli_refuses_without_confirmation_and_bad_values() {
     assert!(!ok && t.contains("--yes"), "{t}");
     let (ok, t) = e.p56(&["brightness", "40"]);
     assert!(!ok && t.contains("1–16"), "{t}");
-    let (ok, t) = e.p56(&["hotspot", "x", "kort"]);
-    assert!(!ok && t.contains("8 tekens"), "{t}");
+    let (ok, t) = e.p56(&["hotspot", "x", "short"]);
+    assert!(!ok && t.contains("8 characters"), "{t}");
     e.ok(&["format", "--yes"]); e.wait(|s| s.formats == 1);
 }
 
@@ -81,7 +81,7 @@ fn cli_reports_fan_errors() {
     let e = env();
     e.sim.modify(|s| s.files.push(p56_sim::SimFile { name: "a.mp4".into(), frames: 1, width: 688, height: 240, jpegs: vec![] }));
     let (ok, t) = e.p56(&["upload", "test", "--name", "a"]);
-    assert!(!ok && t.contains("bestaat al"), "{t}");
+    assert!(!ok && t.contains("already exists"), "{t}");
 }
 
 #[test]

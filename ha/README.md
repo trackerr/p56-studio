@@ -178,19 +178,6 @@ Fans that use the Holoscope app (P56 and relatives). The add-on runs on **amd64*
 (Raspberry Pi 4/5, most mini PCs).
 </details>
 
-<details>
-<summary>🇳🇱 <b>Nederlands — snel aan de slag</b></summary>
-
-1. **Add-on:** klik op de eerste knop hierboven, installeer **P56 POV Display** en start hem.
-2. **Integratie:** klik op de HACS-knop, download **P56 POV Display** en herstart Home Assistant.
-3. **Koppelen:** Instellingen → Apparaten & diensten → **P56 POV Display gevonden** → Toevoegen.
-4. **Wifi:** zet de fan één keer op je eigen wifi: verbind een telefoon of pc met de hotspot van de
-   fan, open P56 Studio (of de Holoscope-app) → Netwerk → Router.
-
-Daarna: tekst via `p56_pov.show_text`, meldingen via `notify.send_message`, afbeeldingen via
-`p56_pov.show_image`, en het tekstveld op je dashboard.
-</details>
-
 ---
 
 ## 🏗️ How it works

@@ -8,7 +8,8 @@ static FONT: &[u8] = include_bytes!("../assets/DejaVuSans-Bold.ttf");
 /// Side of the square picture the text is drawn on (the transcoder maps it onto the disc).
 pub const SIDE: u32 = 720;
 
-/// Parse `#rgb`, `#rrggbb`, `r,g,b` or a common colour name.
+/// Parse `#rgb`, `#rrggbb`, `r,g,b` or a common colour name (English, or Dutch for
+/// existing automations).
 pub fn parse_color(s: &str) -> Option<[u8; 3]> {
     let s = s.trim().to_ascii_lowercase();
     let named = match s.as_str() {
@@ -115,13 +116,14 @@ mod tests {
         assert_eq!(parse_color("#ff8000"), Some([255, 128, 0]));
         assert_eq!(parse_color("#fff"), Some([255, 255, 255]));
         assert_eq!(parse_color("10, 20,30"), Some([10, 20, 30]));
-        assert_eq!(parse_color("Rood"), Some([255, 40, 40]));
+        assert_eq!(parse_color("Red"), Some([255, 40, 40]));
+        assert_eq!(parse_color("rood"), Some([255, 40, 40]));
         assert_eq!(parse_color("nope"), None);
     }
 
     #[test]
     fn text_is_drawn_inside_the_disc() {
-        let img = render("0,23 euro/kWh en een heel lange zin die moet afbreken", [255, 255, 255], [0, 0, 0], 0.0);
+        let img = render("0,23 euro/kWh and a very long sentence that has to wrap", [255, 255, 255], [0, 0, 0], 0.0);
         let c = SIDE as f64 / 2.0;
         let (mut lit, mut outside) = (0, 0);
         for (x, y, p) in img.enumerate_pixels() {

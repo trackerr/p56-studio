@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "P56 Studio",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "identifier": "nl.trackerr.p56studio",
   "build": {
     "frontendDist": "../src",
@@ -26,7 +26,7 @@
     "active": true,
     "targets": ["nsis"],
     "publisher": "trackerr",
-    "shortDescription": "Bediening voor P56 / Holoscope hologramfans",
+    "shortDescription": "Control for P56 / Holoscope hologram fans",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

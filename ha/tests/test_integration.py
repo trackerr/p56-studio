@@ -52,7 +52,7 @@ async def setup(hass: HomeAssistant, server: tuple[str, int]) -> MockConfigEntry
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
-    await wait_for(hass, "fan entities", lambda: hass.states.get("light.virtuele_p56") is not None)
+    await wait_for(hass, "fan entities", lambda: hass.states.get("light.virtual_p56") is not None)
     return entry
 
 
@@ -92,7 +92,7 @@ async def test_hassio_discovery(hass: HomeAssistant, p56_server) -> None:
 
 async def test_entities_and_actions(hass: HomeAssistant, p56_server, tmp_path: Path) -> None:
     entry = await setup(hass, p56_server)
-    light = "light.virtuele_p56"
+    light = "light.virtual_p56"
     assert hass.states.get(light).state == "on"
 
     # power and brightness
@@ -110,14 +110,14 @@ async def test_entities_and_actions(hass: HomeAssistant, p56_server, tmp_path: P
 
     # text action with response, stored under its own name
     resp = await hass.services.async_call(
-        DOMAIN, "show_text", {"text": "0,23 €/kWh", "color": [255, 200, 0], "name": "prijs"},
+        DOMAIN, "show_text", {"text": "0,23 €/kWh", "color": [255, 200, 0], "name": "price"},
         blocking=True, return_response=True,
     )
     assert resp["results"][0]["success"] is True
     files = entity_id(hass, "sensor", "file_count")
     select = entity_id(hass, "select", "file")
-    await wait_for(hass, "text file", lambda: "prijs.mp4" in hass.states.get(select).attributes.get("options", []))
-    await wait_for(hass, "plays text", lambda: hass.states.get(select).state == "prijs.mp4")
+    await wait_for(hass, "text file", lambda: "price.mp4" in hass.states.get(select).attributes.get("options", []))
+    await wait_for(hass, "plays text", lambda: hass.states.get(select).state == "price.mp4")
 
     # image entity shows what was sent
     image = entity_id(hass, "image", "shown")
@@ -133,26 +133,26 @@ async def test_entities_and_actions(hass: HomeAssistant, p56_server, tmp_path: P
     device = next(d for d in devices if d.via_device_id)
     assert any(d.id == device.via_device_id for d in devices)
     await hass.services.async_call(
-        DOMAIN, "show_image", {"device_id": device.id, "path": str(pic), "name": "kort", "show_seconds": 1}, blocking=True
+        DOMAIN, "show_image", {"device_id": device.id, "path": str(pic), "name": "short", "show_seconds": 1}, blocking=True
     )
-    await wait_for(hass, "picture shown", lambda: "kort.mp4" in hass.states.get(select).attributes.get("options", []))
-    await wait_for(hass, "picture gone again", lambda: "kort.mp4" not in hass.states.get(select).attributes.get("options", []), 20)
+    await wait_for(hass, "picture shown", lambda: "short.mp4" in hass.states.get(select).attributes.get("options", []))
+    await wait_for(hass, "picture gone again", lambda: "short.mp4" not in hass.states.get(select).attributes.get("options", []), 20)
 
     # play / delete by name
-    await hass.services.async_call(DOMAIN, "delete_file", {"device_id": device.id, "name": "prijs"}, blocking=True)
-    await wait_for(hass, "deleted", lambda: "prijs.mp4" not in hass.states.get(select).attributes.get("options", []))
+    await hass.services.async_call(DOMAIN, "delete_file", {"device_id": device.id, "name": "price"}, blocking=True)
+    await wait_for(hass, "deleted", lambda: "price.mp4" not in hass.states.get(select).attributes.get("options", []))
     count_before = int(hass.states.get(files).state)
     before_opts = hass.states.get(select).attributes.get("options")
 
     # text entity replaces its own file
     text = entity_id(hass, "text", "text")
-    await hass.services.async_call("text", "set_value", {"entity_id": text, "value": "hallo"}, blocking=True)
-    await hass.services.async_call("text", "set_value", {"entity_id": text, "value": "wereld"}, blocking=True)
+    await hass.services.async_call("text", "set_value", {"entity_id": text, "value": "hello"}, blocking=True)
+    await hass.services.async_call("text", "set_value", {"entity_id": text, "value": "world"}, blocking=True)
     await wait_for(hass, "one text file", lambda: int(hass.states.get(files).state) == count_before + 1, msg=lambda: (count_before, before_opts, hass.states.get(files).state, hass.states.get(select).attributes.get("options")))
 
     # notify entity
     notify = entity_id(hass, "notify", "message")
-    await hass.services.async_call("notify", "send_message", {"entity_id": notify, "message": "Wasmachine klaar"}, blocking=True)
+    await hass.services.async_call("notify", "send_message", {"entity_id": notify, "message": "Washing machine done"}, blocking=True)
     await wait_for(hass, "notification shown", lambda: "ha_melding.mp4" in hass.states.get(select).attributes.get("options", []))
 
     # switches
@@ -228,7 +228,7 @@ async def test_options_and_diagnostics(hass: HomeAssistant, p56_server) -> None:
     await hass.async_block_till_done()
     entry = hass.config_entries.async_get_entry(entry.entry_id)
     assert entry.options["mode"] == "cast"
-    await wait_for(hass, "reloaded", lambda: entry.state is ConfigEntryState.LOADED and hass.states.get("light.virtuele_p56").state != "unavailable")
+    await wait_for(hass, "reloaded", lambda: entry.state is ConfigEntryState.LOADED and hass.states.get("light.virtual_p56").state != "unavailable")
     diag = await async_get_config_entry_diagnostics(hass, entry)
     assert diag["server_state"]["devices"][0]["mac"] == "**REDACTED**"
     assert await hass.config_entries.async_unload(entry.entry_id)
@@ -256,7 +256,7 @@ async def test_follows_virtual_fan_and_addon_restarts(hass: HomeAssistant, tmp_p
         entry = MockConfigEntry(domain=DOMAIN, version=2, data={CONF_HOST: "127.0.0.1", CONF_PORT: http})
         entry.add_to_hass(hass)
         assert await hass.config_entries.async_setup(entry.entry_id)
-        light = "light.virtuele_p56"
+        light = "light.virtual_p56"
         state = lambda: (hass.states.get(light) or type("S", (), {"state": "missing"})).state  # noqa: E731
         await wait_for(hass, "fan on", lambda: state() == "on", 20)
         await wait_for(hass, "live events", lambda: entry.runtime_data.live)

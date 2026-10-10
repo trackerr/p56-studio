@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""holofan.py - referentie-transcode + cast (kopie van de laptop, zie PROTOCOL.md)."""
+"""holofan.py - reference transcode + cast (copy from the laptop, see PROTOCOL.md)."""
 import argparse, socket, threading, time, select, sys
 import numpy as np, cv2
 

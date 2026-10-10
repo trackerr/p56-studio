@@ -61,8 +61,8 @@ fn main() {
             reconnect: true,
         };
         match Sim::start(cfg) {
-            Ok(s) => { log::info!("fan {} luistert op UDP {}", s.config().name, s.udp_port); sims.push(s); }
-            Err(e) => { eprintln!("kan simulator niet starten: {e} (draait er al een op UDP {}?)", a.udp_port); std::process::exit(1); }
+            Ok(s) => { log::info!("fan {} listening on UDP {}", s.config().name, s.udp_port); sims.push(s); }
+            Err(e) => { eprintln!("cannot start simulator: {e} (is one already running on UDP {}?)", a.udp_port); std::process::exit(1); }
         }
     }
     let sims = Arc::new(sims);
@@ -83,19 +83,19 @@ fn main() {
     if a.http > 0 {
         match TcpListener::bind((Ipv4Addr::LOCALHOST, a.http)) {
             Ok(l) => {
-                log::info!("weergave: http://localhost:{}/", a.http);
+                log::info!("web view: http://localhost:{}/", a.http);
                 let s = sims.clone();
                 thread::spawn(move || for c in l.incoming().flatten() { let s = s.clone(); thread::spawn(move || serve(c, &s)); });
             }
-            Err(e) => log::warn!("geen webweergave op {}: {e}", a.http),
+            Err(e) => log::warn!("no web view on {}: {e}", a.http),
         }
     }
     loop {
         thread::sleep(Duration::from_secs(10));
         for s in sims.iter() {
             let st = s.state();
-            log::info!("[{}] {} | aan={} speelt={} slot={} bestanden={} cast={} fouten={}", s.config().name,
-                if st.connected { "verbonden" } else { "wacht op pc" }, st.power, st.playing, st.current, st.files.len(), st.cast_ok, st.protocol_errors.len());
+            log::info!("[{}] {} | on={} playing={} slot={} files={} cast={} errors={}", s.config().name,
+                if st.connected { "connected" } else { "waiting for pc" }, st.power, st.playing, st.current, st.files.len(), st.cast_ok, st.protocol_errors.len());
         }
     }
 }
@@ -120,16 +120,16 @@ fn serve(mut c: TcpStream, sims: &[Sim]) {
         let cards: String = (0..sims.len()).map(|i| format!(
             "<div class=c><img id=f{i} src='/frame/{i}.png'><pre id=s{i}></pre></div>")).collect();
         ("text/html; charset=utf-8", format!(r#"<!doctype html><html><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
-<title>P56-simulator</title><style>body{{background:#0b0d12;color:#cfd3dc;font:13px system-ui;margin:16px}}.c{{display:inline-block;vertical-align:top;margin:0 16px 16px 0}}
-img{{width:360px;height:360px;border-radius:50%;background:#000;display:block}}pre{{width:360px;white-space:pre-wrap}}</style></head><body><h3>P56-simulator</h3>{cards}
+<title>P56 simulator</title><style>body{{background:#0b0d12;color:#cfd3dc;font:13px system-ui;margin:16px}}.c{{display:inline-block;vertical-align:top;margin:0 16px 16px 0}}
+img{{width:360px;height:360px;border-radius:50%;background:#000;display:block}}pre{{width:360px;white-space:pre-wrap}}</style></head><body><h3>P56 simulator</h3>{cards}
 <script>setInterval(async()=>{{const s=await (await fetch('/state.json')).json();s.forEach((x,i)=>{{document.getElementById('f'+i).src='/frame/'+i+'.png?'+Date.now();
-document.getElementById('s'+i).textContent=`${{x.device_name}} — ${{x.connected?'verbonden met '+x.pc:'wacht op pc'}}
-aan ${{x.power}} · speelt ${{x.playing}} · slot ${{x.current}} · helderheid ${{x.brightness}} · hoek ${{x.angle}} · kleur ${{x.color_mode}}
-ademlicht ${{x.breath}} · autostart ${{x.autostart}} · master ${{x.master}} · volume ${{x.volume}} · bluetooth ${{x.ble_on}}
+document.getElementById('s'+i).textContent=`${{x.device_name}} — ${{x.connected?'connected to '+x.pc:'waiting for pc'}}
+on ${{x.power}} · playing ${{x.playing}} · slot ${{x.current}} · brightness ${{x.brightness}} · angle ${{x.angle}} · colour ${{x.color_mode}}
+breathing ${{x.breath}} · autostart ${{x.autostart}} · master ${{x.master}} · volume ${{x.volume}} · bluetooth ${{x.ble_on}}
 hotspot ${{x.hotspot[0]}} · router ${{x.router[0]||'-'}}
-bestanden: ${{x.files.map((f,j)=>(j+1)+' '+f.name+' ('+f.frames+')').join(', ')||'-'}}
-cast-frames ${{x.cast_ok}} (fout ${{x.cast_bad}}) · uploads ${{x.uploads}}
-protocolfouten: ${{x.protocol_errors.length?x.protocol_errors.join('\n'):'geen'}}`}})}},500)</script></body></html>"#).into_bytes())
+files: ${{x.files.map((f,j)=>(j+1)+' '+f.name+' ('+f.frames+')').join(', ')||'-'}}
+cast frames ${{x.cast_ok}} (bad ${{x.cast_bad}}) · uploads ${{x.uploads}}
+protocol errors: ${{x.protocol_errors.length?x.protocol_errors.join('\n'):'none'}}`}})}},500)</script></body></html>"#).into_bytes())
     };
     let _ = write!(c, "HTTP/1.1 200 OK\r\nContent-Type: {ctype}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n", body.len());
     let _ = c.write_all(&body);

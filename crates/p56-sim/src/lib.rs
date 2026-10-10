@@ -285,12 +285,12 @@ fn connect_loop(sh: Arc<Shared>) {
                     g.pc = Some(addr.to_string());
                 }
                 sh.changed.notify_all();
-                log::info!("[sim {}] verbonden met {addr}", sh.cfg.name);
+                log::info!("[sim {}] connected to {addr}", sh.cfg.name);
                 session(&sh, s);
                 *sh.conn.lock().unwrap() = None;
                 sh.state.lock().unwrap().connected = false;
                 sh.changed.notify_all();
-                log::info!("[sim {}] verbinding met {addr} weg", sh.cfg.name);
+                log::info!("[sim {}] connection to {addr} lost", sh.cfg.name);
                 if !sh.cfg.reconnect { break; }
                 if sh.cfg.pc.is_none() { *sh.want_pc.lock().unwrap() = None; }
                 thread::sleep(Duration::from_millis(300));
@@ -333,7 +333,7 @@ impl Out<'_> {
     fn ready(&mut self) { self.send(&[SOF, op::READY, op::READY, EOF]); }
 }
 
-/// Length of the PC â†’ fan packet at `b[0]` (= `5A`), `None` if more bytes are needed,
+/// Length of the PC → fan packet at `b[0]` (= `5A`), `None` if more bytes are needed,
 /// `Some(Err)` if the length cannot be derived from the opcode.
 fn command_len(b: &[u8]) -> Option<Result<usize, ()>> {
     let o = *b.get(1)?;
@@ -395,10 +395,10 @@ fn jpegs_in(data: &[u8]) -> Vec<Vec<u8>> {
 
 /// Check a JPEG has the layout this fan type expects. Returns (w, h).
 fn check_jpeg(jpeg: &[u8], fan_type: u8) -> Result<(u32, u32), String> {
-    let img = image::load_from_memory_with_format(jpeg, image::ImageFormat::Jpeg).map_err(|e| format!("JPEG onleesbaar: {e}"))?;
+    let img = image::load_from_memory_with_format(jpeg, image::ImageFormat::Jpeg).map_err(|e| format!("JPEG unreadable: {e}"))?;
     let (w, h) = (img.width(), img.height());
     if let Some(ft) = FanType::known(fan_type) {
-        if (w, h) != ft.jpeg_size() { return Err(format!("JPEG {w}×{h}, verwacht {:?} voor type {fan_type}", ft.jpeg_size())); }
+        if (w, h) != ft.jpeg_size() { return Err(format!("JPEG {w}×{h}, expected {:?} for type {fan_type}", ft.jpeg_size())); }
     }
     Ok((w, h))
 }
@@ -431,7 +431,7 @@ fn session(sh: &Shared, stream: TcpStream) {
                 if buf.len() < 8 { break; }
                 let size = u32::from_le_bytes([buf[4], buf[5], buf[6], buf[7]]) as usize;
                 if size > 64 * 1024 * 1024 {
-                    sh.err(format!("upload {name}: onmogelijke grootte {size}"));
+                    sh.err(format!("upload {name}: impossible size {size}"));
                     buf.clear();
                     mode = Mode::Commands;
                     break;
@@ -442,12 +442,12 @@ fn session(sh: &Shared, stream: TcpStream) {
                 let name = name.clone();
                 mode = Mode::Commands;
                 if content[..proto::UPLOAD_PADDING.min(content.len())].iter().any(|&b| b != 0) {
-                    sh.err(format!("upload {name}: de 1600 opvulbytes zijn niet allemaal 0"));
+                    sh.err(format!("upload {name}: the 1600 padding bytes are not all 0"));
                 }
                 let jpegs = jpegs_in(&content[proto::UPLOAD_PADDING.min(content.len())..]);
                 let mut dims = (0, 0);
                 let mut ok = !jpegs.is_empty();
-                if jpegs.is_empty() { sh.err(format!("upload {name}: geen JPEG-frames")); }
+                if jpegs.is_empty() { sh.err(format!("upload {name}: no JPEG frames")); }
                 for (i, j) in jpegs.iter().enumerate() {
                     match check_jpeg(j, ft) {
                         Ok(d) => dims = d,
@@ -475,12 +475,12 @@ fn session(sh: &Shared, stream: TcpStream) {
                 continue;
             }
             let Some(start) = buf.iter().position(|&b| b == SOF) else {
-                if !buf.is_empty() { sh.err(format!("onverwachte bytes {:02x?}", &buf[..buf.len().min(16)])); }
+                if !buf.is_empty() { sh.err(format!("unexpected bytes {:02x?}", &buf[..buf.len().min(16)])); }
                 buf.clear();
                 break;
             };
             if start > 0 {
-                sh.err(format!("onverwachte bytes {:02x?}", &buf[..start.min(16)]));
+                sh.err(format!("unexpected bytes {:02x?}", &buf[..start.min(16)]));
                 buf.drain(..start);
             }
             let len = match command_len(&buf) {
@@ -488,7 +488,7 @@ fn session(sh: &Shared, stream: TcpStream) {
                 Some(Ok(l)) => l,
                 Some(Err(())) => match buf.iter().skip(2).position(|&b| b == EOF) {
                     Some(p) => p + 3,
-                    None => { if buf.len() > 4096 { sh.err("onbekend pakket zonder F5".into()); buf.clear(); } break; }
+                    None => { if buf.len() > 4096 { sh.err("unknown packet without F5".into()); buf.clear(); } break; }
                 },
             };
             if buf[1] == op::CAST_FRAME && !cast_acked && buf.len() >= CAST_CHUNK {
@@ -506,7 +506,7 @@ fn session(sh: &Shared, stream: TcpStream) {
 
 impl Shared {
     fn err(&self, e: String) {
-        log::warn!("[sim {}] protocolfout: {e}", self.cfg.name);
+        log::warn!("[sim {}] protocol error: {e}", self.cfg.name);
         self.state.lock().unwrap().protocol_errors.push(e);
         self.changed.notify_all();
     }
@@ -526,7 +526,7 @@ fn handle(sh: &Shared, out: &mut Out, pkt: &[u8], ft: u8, just_uploaded: &mut bo
     let o = pkt[1];
     let n = pkt.len();
     if pkt[n - 1] != EOF && o != op::CAST_FRAME {
-        sh.err(format!("{}: laatste byte {:02x} i.p.v. F5", op_name(o), pkt[n - 1]));
+        sh.err(format!("{}: last byte {:02x} instead of F5", op_name(o), pkt[n - 1]));
         return None;
     }
     {
@@ -538,11 +538,11 @@ fn handle(sh: &Shared, out: &mut Out, pkt: &[u8], ft: u8, just_uploaded: &mut bo
     }
     let status = |sh: &Shared| { let g = sh.state.lock().unwrap(); g.status(ft).to_packet() };
     let files = |sh: &Shared| proto::filelist_packet(&sh.state.lock().unwrap().file_names());
-    let check_dup = |pkt: &[u8], what: &str| if pkt[2] != pkt[3] { sh.err(format!("{what}: waarde {:02x} â‰  controle {:02x}", pkt[2], pkt[3])); false } else { true };
+    let check_dup = |pkt: &[u8], what: &str| if pkt[2] != pkt[3] { sh.err(format!("{what}: value {:02x} ≠ check {:02x}", pkt[2], pkt[3])); false } else { true };
     let xor_ok = |pkt: &[u8], what: &str| {
         let n = pkt.len();
         let x = proto::xorsum(&pkt[2..n - 2]);
-        if x != pkt[n - 2] { sh.err(format!("{what}: checksum {:02x} â‰  {:02x}", pkt[n - 2], x)); false } else { true }
+        if x != pkt[n - 2] { sh.err(format!("{what}: checksum {:02x} ≠ {:02x}", pkt[n - 2], x)); false } else { true }
     };
     let simple = |pkt: &[u8]| if pkt.len() == 4 && pkt[2] != pkt[1] && pkt[1] != op::SELECT_DEVICE { sh.err(format!("{}: byte 2 is {:02x}", op_name(pkt[1]), pkt[2])); };
     if n == 4 { simple(pkt); }
@@ -614,28 +614,28 @@ fn handle(sh: &Shared, out: &mut Out, pkt: &[u8], ft: u8, just_uploaded: &mut bo
         op::BRIGHTNESS => {
             if check_dup(pkt, "brightness") {
                 let v = pkt[2];
-                if !(1..=16).contains(&v) { sh.err(format!("helderheid {v} buiten 1–16")); }
+                if !(1..=16).contains(&v) { sh.err(format!("brightness {v} outside 1–16")); }
                 set(&|g| g.brightness = v.clamp(1, 16)); out.ready(); out.send(&status(sh));
             }
         }
         op::VOLUME => {
             if check_dup(pkt, "volume") {
                 let v = pkt[2];
-                if v > 10 { sh.err(format!("volume {v} buiten 0–10")); }
+                if v > 10 { sh.err(format!("volume {v} outside 0–10")); }
                 set(&|g| g.volume = v.min(10)); out.ready(); out.send(&status(sh));
             }
         }
         op::ANGLE => {
-            if pkt[4] != pkt[2] ^ pkt[3] { sh.err("angle: checksum fout".into()); }
+            if pkt[4] != pkt[2] ^ pkt[3] { sh.err("angle: bad checksum".into()); }
             let a = u16::from_be_bytes([pkt[2], pkt[3]]);
-            if a > 360 { sh.err(format!("hoek {a} > 360")); }
+            if a > 360 { sh.err(format!("angle {a} > 360")); }
             set(&|g| g.angle = a.min(360)); out.ready(); out.send(&status(sh));
         }
         op::RENAME => {
             if xor_ok(pkt, "rename") {
                 let slot = pkt[2];
                 let name = String::from_utf8_lossy(&pkt[4..4 + pkt[3] as usize]).to_string();
-                if !name.ends_with(".mp4") { sh.err(format!("rename: naam {name:?} eindigt niet op .mp4")); }
+                if !name.ends_with(".mp4") { sh.err(format!("rename: name {name:?} does not end in .mp4")); }
                 let (exists, dup) = { let g = sh.state.lock().unwrap(); (slot >= 1 && (slot as usize) <= g.files.len(), g.files.iter().enumerate().any(|(i, f)| f.name == name && i + 1 != slot as usize)) };
                 if dup { out.send(&FanError::DuplicateName.to_packet()); }
                 else if exists { set(&|g| g.files[slot as usize - 1].name = name.clone()); out.ready(); }
@@ -653,7 +653,7 @@ fn handle(sh: &Shared, out: &mut Out, pkt: &[u8], ft: u8, just_uploaded: &mut bo
         }
         op::COMMIT => {
             let x = proto::xorsum(&pkt[2..6]);
-            if x != pkt[6] { sh.err("commit: checksum fout".into()); }
+            if x != pkt[6] { sh.err("commit: bad checksum".into()); }
             out.ready();
             if *just_uploaded {
                 *just_uploaded = false;
@@ -665,7 +665,7 @@ fn handle(sh: &Shared, out: &mut Out, pkt: &[u8], ft: u8, just_uploaded: &mut bo
         op::FILE_NAME => {
             if !xor_ok(pkt, "filename") { return None; }
             let name = String::from_utf8_lossy(&pkt[3..3 + pkt[2] as usize]).to_string();
-            if !name.ends_with(".mp4") { sh.err(format!("filename {name:?} eindigt niet op .mp4")); }
+            if !name.ends_with(".mp4") { sh.err(format!("filename {name:?} does not end in .mp4")); }
             let (full, dup) = { let g = sh.state.lock().unwrap(); (g.files.len() >= sh.cfg.max_files, g.files.iter().any(|f| f.name == name)) };
             if dup { out.send(&FanError::DuplicateName.to_packet()); return None; }
             if full { out.send(&FanError::TooManyFiles.to_packet()); return None; }
@@ -675,9 +675,9 @@ fn handle(sh: &Shared, out: &mut Out, pkt: &[u8], ft: u8, just_uploaded: &mut bo
         op::CAST_FRAME => {
             let good = pkt[n - 2] == 0x55 && pkt[n - 1] == EOF;
             let jp = jpegs_in(&pkt[2..n - 2]);
-            let res = if !good { Err("cast: staart is geen 55 F5".to_string()) }
-                else if jp.len() != 1 { Err(format!("cast: {} JPEG's in frame", jp.len())) }
-                else if pkt[2..4] != [0xFF, 0xD8] { Err("cast: JPEG begint niet direct na 5A 28".into()) }
+            let res = if !good { Err("cast: tail is not 55 F5".to_string()) }
+                else if jp.len() != 1 { Err(format!("cast: {} JPEGs in frame", jp.len())) }
+                else if pkt[2..4] != [0xFF, 0xD8] { Err("cast: JPEG does not start right after 5A 28".into()) }
                 else { check_jpeg(&jp[0], ft).map(|_| ()) };
             match res {
                 Ok(()) => { let j = jp.into_iter().next().unwrap(); set(&|g| { g.cast_ok += 1; g.last_cast = Some((Instant::now(), j.clone())); }); }
@@ -686,7 +686,7 @@ fn handle(sh: &Shared, out: &mut Out, pkt: &[u8], ft: u8, just_uploaded: &mut bo
             out.ready();
         }
         other => {
-            sh.err(format!("onbekend commando {other:02x}: {:02x?}", &pkt[..pkt.len().min(16)]));
+            sh.err(format!("unknown command {other:02x}: {:02x?}", &pkt[..pkt.len().min(16)]));
             out.ready();
         }
     }

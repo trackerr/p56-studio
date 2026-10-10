@@ -405,9 +405,9 @@ impl FanError {
 impl std::fmt::Display for FanError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            FanError::DuplicateName => write!(f, "bestandsnaam bestaat al op de fan"),
-            FanError::TooManyFiles => write!(f, "maximaal aantal bestanden bereikt"),
-            FanError::TransferFailed(c) => write!(f, "overdracht mislukt (code {c:#04x}); controleer de geheugenkaart"),
+            FanError::DuplicateName => write!(f, "a file with this name already exists on the fan"),
+            FanError::TooManyFiles => write!(f, "maximum number of files reached"),
+            FanError::TransferFailed(c) => write!(f, "transfer failed (code {c:#04x}); check the memory card"),
         }
     }
 }

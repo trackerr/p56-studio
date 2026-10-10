@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
+import { t } from '@/lib/i18n';
 import { invoke, onEvent, type Device, type FanTypeInfo, type MediaInfo, type Picked, type Placement } from '@/lib/api';
 
 export type CurrentMedia = MediaInfo & { picked?: Picked };
@@ -33,7 +34,7 @@ type Ctx = {
 const C = createContext<Ctx | null>(null);
 export const useP56 = () => {
   const c = useContext(C);
-  if (!c) throw new Error('useP56 buiten provider');
+  if (!c) throw new Error('useP56 used outside P56Provider');
   return c;
 };
 
@@ -59,8 +60,8 @@ export function P56Provider({ children }: { children: ReactNode }) {
   const started = useRef(false);
 
   const addLog = useCallback((m: string) => {
-    const t = new Date().toLocaleTimeString();
-    setLog((l) => [...l.slice(-300), `[${t}] ${m}`]);
+    const time = new Date().toLocaleTimeString();
+    setLog((l) => [...l.slice(-300), `[${time}] ${m}`]);
   }, []);
 
   const refresh = useCallback(async () => {
@@ -79,11 +80,11 @@ export function P56Provider({ children }: { children: ReactNode }) {
       setLocalIp(ip);
       setLinkState('searching');
       setLinkError('');
-      addLog(`verbinding gestart, uitzenden als ${ip}${s.targets.length ? ` + ${s.targets.join(', ')}` : ''}`);
+      addLog(t('log.linkStarted', { ip, extra: s.targets.length ? ` + ${s.targets.join(', ')}` : '' }));
     } catch (e) {
       setLinkState('error');
       setLinkError(String(e));
-      addLog(`kan niet starten: ${e}`);
+      addLog(t('log.cannotStart', { error: String(e) }));
     }
   }, [addLog]);
 
@@ -102,21 +103,21 @@ export function P56Provider({ children }: { children: ReactNode }) {
   }, [startLink, refresh]);
 
   useEffect(() => {
-    const t = setInterval(() => {
+    const timer = setInterval(() => {
       refresh();
       invoke<{ discovered: string[] }>('link_info').then((i) => setDiscovered(i.discovered)).catch(() => {});
     }, 1500);
-    return () => clearInterval(t);
+    return () => clearInterval(timer);
   }, [refresh]);
 
   useEffect(() => onEvent((e) => {
     const d = e.data ?? {};
     if (e.type === 'log') addLog(d.msg);
-    else if (e.type === 'connected') { addLog(`fan #${d.id} verbonden (${d.ip})`); toast.success('Fan verbonden', { description: d.ip }); refresh(); }
-    else if (e.type === 'disconnected') { addLog(`fan #${d.id} weg`); toast.warning('Verbinding met fan verbroken'); refresh(); }
-    else if (e.type === 'discovered') addLog(`fan gezien: ${d.ip}`);
+    else if (e.type === 'connected') { addLog(t('log.fanConnected', { id: d.id, ip: d.ip })); toast.success(t('toast.fanConnected'), { description: d.ip }); refresh(); }
+    else if (e.type === 'disconnected') { addLog(t('log.fanGone', { id: d.id })); toast.warning(t('toast.fanDisconnected')); refresh(); }
+    else if (e.type === 'discovered') addLog(t('log.fanSeen', { ip: d.ip }));
     else if (e.type === 'packet') {
-      if (d.kind === 'error') toast.error('De fan meldt een fout', { description: d.msg });
+      if (d.kind === 'error') toast.error(t('toast.fanError'), { description: d.msg });
       refresh();
     }
   }), [addLog, refresh]);
@@ -124,7 +125,7 @@ export function P56Provider({ children }: { children: ReactNode }) {
   const fan = useMemo(() => devices.find((d) => d.id === sel) ?? null, [devices, sel]);
 
   const run = useCallback(async <R,>(label: string, f: (id: number) => Promise<R>) => {
-    if (!fan) { toast.error('Geen fan verbonden'); return undefined; }
+    if (!fan) { toast.error(t('common.noFan')); return undefined; }
     try {
       const r = await f(fan.id);
       setTimeout(refresh, 150);

@@ -10,11 +10,13 @@ import { CastPanel } from '@/panels/CastPanel';
 import { NetworkPanel } from '@/panels/NetworkPanel';
 import { AppPanel } from '@/panels/AppPanel';
 import { cn } from '@/lib/utils';
+import { I18nProvider, LangSwitch, useT } from '@/lib/i18n';
 
 function Header() {
   const { devices, fan, selectFan, linkState } = useP56();
+  const { t } = useT();
   const dot = { connected: 'bg-emerald-400 shadow-[0_0_8px_#34d399]', searching: 'bg-amber-400 animate-pulse', starting: 'bg-zinc-500', error: 'bg-red-500' }[linkState];
-  const text = { connected: fan ? `${fan.name} · ${fan.ip}` : 'verbonden', searching: 'zoeken naar fan…', starting: 'starten…', error: 'fout' }[linkState];
+  const text = linkState === 'connected' && fan ? `${fan.name} · ${fan.ip}` : t(`link.${linkState}`);
   return (
     <header className="flex flex-wrap items-center gap-3 border-b border-border bg-card/80 px-4 py-2.5 pt-[max(0.625rem,env(safe-area-inset-top))] backdrop-blur">
       <div className="flex items-center gap-2">
@@ -29,24 +31,28 @@ function Header() {
           <SelectContent>{devices.map((d) => <SelectItem key={d.id} value={String(d.id)}>{d.name} ({d.ip})</SelectItem>)}</SelectContent>
         </Select>
       )}
-      <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground" data-testid="link-status">
-        <span className={cn('h-2 w-2 rounded-full', dot)} />{text}
-        {devices.length > 1 && <span>· {devices.length} fans</span>}
+      <div className="ml-auto flex min-w-0 items-center gap-3">
+        <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground" data-testid="link-status">
+          <span className={cn('h-2 w-2 shrink-0 rounded-full', dot)} /><span className="truncate">{text}</span>
+          {devices.length > 1 && <span className="shrink-0">· {t('header.fans', { count: devices.length })}</span>}
+        </div>
+        <LangSwitch className="shrink-0" />
       </div>
     </header>
   );
 }
 
 const tabs = [
-  ['fan', 'Fan', Fan, FanPanel],
-  ['playlist', 'Afspeellijst', ListVideo, PlaylistPanel],
-  ['media', 'Media', ImagePlus, MediaPanel],
-  ['cast', 'Casten', Cast, CastPanel],
-  ['network', 'Netwerk', Wifi, NetworkPanel],
-  ['app', 'App', SlidersHorizontal, AppPanel],
+  ['fan', 'tab.fan', Fan, FanPanel],
+  ['playlist', 'tab.playlist', ListVideo, PlaylistPanel],
+  ['media', 'tab.media', ImagePlus, MediaPanel],
+  ['cast', 'tab.cast', Cast, CastPanel],
+  ['network', 'tab.network', Wifi, NetworkPanel],
+  ['app', 'tab.app', SlidersHorizontal, AppPanel],
 ] as const;
 
-export default function App() {
+function Shell() {
+  const { t } = useT();
   return (
     <P56Provider>
       <div className="flex h-full flex-col">
@@ -54,9 +60,9 @@ export default function App() {
         <Tabs defaultValue="fan" className="flex min-h-0 flex-1 flex-col">
           <div className="border-b border-border bg-card/40">
             <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto rounded-none bg-transparent px-3 py-1.5 [scrollbar-width:none]">
-              {tabs.map(([v, l, Icon]) => (
+              {tabs.map(([v, label, Icon]) => (
                 <TabsTrigger key={v} value={v} data-testid={`tab-${v}`} className="gap-1.5 rounded-md px-3 py-1.5 data-[state=active]:bg-secondary">
-                  <Icon className="h-4 w-4" /><span>{l}</span>
+                  <Icon className="h-4 w-4" /><span>{t(label)}</span>
                 </TabsTrigger>
               ))}
             </TabsList>
@@ -72,5 +78,13 @@ export default function App() {
       </div>
       <Toaster position="bottom-center" theme="dark" richColors closeButton />
     </P56Provider>
+  );
+}
+
+export default function App() {
+  return (
+    <I18nProvider>
+      <Shell />
+    </I18nProvider>
   );
 }

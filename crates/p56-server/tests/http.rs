@@ -63,7 +63,7 @@ fn ui_and_status_without_fan() {
     assert_eq!(st["connected"], false);
     let h = s.get("/health");
     assert_eq!(h["status"], "waiting");
-    let (code, _) = s.post("/text", json!({ "text": "hoi" }));
+    let (code, _) = s.post("/text", json!({ "text": "hi" }));
     assert_eq!(code, 503);
     let (code, _) = s.post("/on", json!({}));
     assert_eq!(code, 503);
@@ -74,7 +74,7 @@ fn api_controls_the_virtual_fan() {
     let s = start(true);
     let st = s.wait("virtual fan connects", |v| v["connected"] == true && v["devices"][0]["status"].is_object());
     let id = st["devices"][0]["id"].as_u64().unwrap();
-    assert_eq!(st["devices"][0]["name"], "VIRTUELE-P56");
+    assert_eq!(st["devices"][0]["name"], "VIRTUAL-P56");
     s.call("control", json!({ "id": id, "action": "off" }));
     s.wait("off", |v| v["devices"][0]["status"]["power"] == false);
     s.call("set_value", json!({ "id": id, "what": "brightness", "value": 6 }));
@@ -104,14 +104,14 @@ fn text_and_image_like_addon_1x() {
         let img = image_png();
         base64_encode(&img)
     };
-    let (code, v) = s.post("/api/show", json!({ "data": png, "name": "plaatje" }));
+    let (code, v) = s.post("/api/show", json!({ "data": png, "name": "picture" }));
     assert_eq!(code, 200, "{v}");
-    s.wait("image kept", |st| st["playlist"].as_array().is_some_and(|p| p.iter().any(|e| e["name"] == "plaatje.mp4")));
+    s.wait("image kept", |st| st["playlist"].as_array().is_some_and(|p| p.iter().any(|e| e["name"] == "picture.mp4")));
     // same name again replaces the file instead of adding a second one
-    let (code, v) = s.post("/api/show", json!({ "text": "nieuw", "name": "plaatje" }));
+    let (code, v) = s.post("/api/show", json!({ "text": "new", "name": "picture" }));
     assert_eq!(code, 200, "{v}");
     std::thread::sleep(Duration::from_millis(500));
-    s.wait("replaced", |st| st["playlist"].as_array().is_some_and(|p| p.iter().filter(|e| e["name"] == "plaatje.mp4").count() == 1));
+    s.wait("replaced", |st| st["playlist"].as_array().is_some_and(|p| p.iter().filter(|e| e["name"] == "picture.mp4").count() == 1));
     let mac = s.get("/api/state")["devices"][0]["mac"].as_str().unwrap().to_string();
     let shown = ureq::get(&format!("{}/api/shown/{mac}", s.base)).call().unwrap();
     assert_eq!(shown.content_type(), "image/png");
@@ -122,7 +122,7 @@ fn text_and_image_like_addon_1x() {
     let lit = img.pixels().filter(|p| p[0] > 128).count() as f64 / (img.width() * img.height()) as f64;
     assert!((0.02..0.5).contains(&lit), "shown picture is not text: {:.1}% lit", lit * 100.0);
     // live cast mode stores nothing
-    let (code, v) = s.post("/api/show", json!({ "text": "LIVE", "mode": "cast", "show_seconds": 1, "color": "geel" }));
+    let (code, v) = s.post("/api/show", json!({ "text": "LIVE", "mode": "cast", "show_seconds": 1, "color": "yellow" }));
     assert_eq!(code, 200, "{v}");
     assert_eq!(v["mode"], "cast");
     // 1.x /delete

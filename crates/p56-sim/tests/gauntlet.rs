@@ -80,12 +80,12 @@ fn strip(mut s: SimState) -> SimState { s.commands.truncate(0); s }
 
 #[test]
 fn connects_and_reports_info_and_status() {
-    let r = rig_with(|c| c.name = "Woonkamer".into());
+    let r = rig_with(|c| c.name = "LivingRoom".into());
     let d = r.link.device(r.id).unwrap();
     let info = d.info.unwrap();
-    assert_eq!(info.name, "Woonkamer");
+    assert_eq!(info.name, "LivingRoom");
     assert_eq!(info.mac, "02:e0:e0:56:00:f5");
-    assert_eq!(info.hotspot, "Woonkamer-AP");
+    assert_eq!(info.hotspot, "LivingRoom-AP");
     let st = d.status.unwrap();
     assert_eq!(st.fan_type, 8);
     assert!(st.power && st.playing);
@@ -139,9 +139,9 @@ fn names_hotspot_router() {
     r.wait_dev(|d| d.info.as_ref().is_some_and(|i| i.name == "Hal"));
     r.link.set_hotspot(r.id, "HoloNet", "geheim123").unwrap();
     r.wait_sim(|s| s.hotspot == ("HoloNet".into(), "geheim123".into()));
-    r.link.set_router(r.id, "ThuisWifi", "pass word!").unwrap();
-    r.wait_sim(|s| s.router == ("ThuisWifi".into(), "pass word!".into()));
-    r.wait_dev(|d| d.info.as_ref().is_some_and(|i| i.hotspot == "HoloNet" && i.router == "ThuisWifi"));
+    r.link.set_router(r.id, "HomeWifi", "pass word!").unwrap();
+    r.wait_sim(|s| s.router == ("HomeWifi".into(), "pass word!".into()));
+    r.wait_dev(|d| d.info.as_ref().is_some_and(|i| i.hotspot == "HoloNet" && i.router == "HomeWifi"));
     // 32-byte fields: longer values are cut, not overflowing into the next field
     r.link.set_router(r.id, &"R".repeat(40), &"P".repeat(40)).unwrap();
     r.wait_sim(|s| s.router == ("R".repeat(32), "P".repeat(32)));

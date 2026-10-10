@@ -59,7 +59,7 @@ entity and for notifications, text and background colour.
 action: p56_pov.show_text
 data:
   text: "{{ states('sensor.energy_price') }} €/kWh"
-  color: [255, 200, 0]       # or "#ffc800", "geel", "255,200,0"
+  color: [255, 200, 0]       # or "#ffc800", "yellow", "255,200,0"
   background: [0, 0, 0]
   show_seconds: 60           # remove again after 60 s; 0 = keep
   name: energy               # same name replaces the earlier file

@@ -1,6 +1,8 @@
 // End-to-end test: the real P56 Studio app (WebView2) against the fan simulator.
 // Drives the UI through the Chrome DevTools Protocol and checks the simulated fan.
 //   node --experimental-websocket e2e/app-e2e.mjs [--release] [--keep]
+// The UI is switched to English for the run (the previous language is restored at the end);
+// checks use data-testids and data-* attributes, so they do not depend on the visible text.
 import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -44,7 +46,7 @@ async function waitSim(desc, pred, ms = 8000) {
   const end = Date.now() + ms;
   let s;
   while (Date.now() < end) { s = await sim(); if (pred(s)) return s; await sleep(100); }
-  throw new Error(`simulator: ${desc} — staat: ${JSON.stringify({ ...s, commands: s?.commands?.slice(-8) })}`);
+  throw new Error(`simulator: ${desc} — state: ${JSON.stringify({ ...s, commands: s?.commands?.slice(-8) })}`);
 }
 
 // ---- CDP ----
@@ -65,7 +67,7 @@ async function cdpConnect() {
     } catch {}
     await sleep(500);
   }
-  throw new Error('geen webview met debugpoort gevonden');
+  throw new Error('no webview with a debug port found');
 }
 function cdp(method, params = {}) {
   const id = ++msgId;
@@ -82,15 +84,24 @@ async function shot(name) {
   if (r.result?.data) writeFileSync(join(out, `${name}.png`), Buffer.from(r.result.data, 'base64'));
 }
 
+// UI language: forced to English for the run, the owner's choice is put back afterwards.
+let prevLang;
+async function restoreLang() {
+  if (prevLang === undefined || !ws || ws.readyState !== 1) return;
+  const expr = prevLang ? `localStorage.setItem('p56.lang', ${JSON.stringify(prevLang)}); true` : `localStorage.removeItem('p56.lang'); true`;
+  await Promise.race([js(expr).catch(() => {}), sleep(2000)]);
+}
+
 // page helpers (installed into the page)
 const HELPERS = `
 window.$t = (id) => document.querySelector('[data-testid="' + id + '"]');
-window.$click = (id) => { const e = $t(id); if (!e) throw new Error('niet gevonden: ' + id); e.click(); return true; };
+window.$click = (id) => { const e = $t(id); if (!e) throw new Error('not found: ' + id); e.click(); return true; };
 window.$tab = (v) => { const e = $t('tab-' + v); e.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 })); e.focus(); e.click(); return true; };
 window.$type = (id, v) => { const e = $t(id); const s = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; s.call(e, v); e.dispatchEvent(new Event('input', { bubbles: true })); return true; };
 window.$key = (id, key) => { const th = $t(id).querySelector('[role=slider]'); th.focus(); th.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true })); th.dispatchEvent(new KeyboardEvent('keyup', { key, bubbles: true })); return true; };
-window.$dialogBtn = (text) => { const b = [...document.querySelectorAll('[role=dialog] button')].find((b) => b.textContent.trim() === text); if (!b) throw new Error('dialoogknop niet gevonden: ' + text); b.click(); return true; };
+window.$confirm = () => { const b = document.querySelector('[role=dialog] [data-testid="confirm-ok"]'); if (!b) throw new Error('confirm button not found in dialog'); b.click(); return true; };
 window.$text = (id) => ($t(id) || {}).textContent || '';
+window.$data = (id, k) => (($t(id) || {}).dataset || {})[k] || '';
 `;
 
 async function test(name, f) {
@@ -106,7 +117,7 @@ async function test(name, f) {
   }
 }
 
-// a small PNG and GIF made in the page itself
+// a small PNG and a WebM video made in the page itself
 const MAKE_IMAGE = `(async () => {
   const c = document.createElement('canvas'); c.width = 640; c.height = 480; const g = c.getContext('2d');
   g.fillStyle = '#102030'; g.fillRect(0, 0, 640, 480); g.fillStyle = '#ffcc00'; g.beginPath(); g.arc(320, 240, 150, 0, 7); g.fill();
@@ -125,7 +136,7 @@ const MAKE_VIDEO = `(async () => {
 })()`;
 
 async function main() {
-  for (const n of android ? ['p56-sim'] : ['p56-sim', 'p56-studio']) if (!existsSync(exe(n))) throw new Error(`${exe(n)} ontbreekt; eerst bouwen`);
+  for (const n of android ? ['p56-sim'] : ['p56-sim', 'p56-studio']) if (!existsSync(exe(n))) throw new Error(`${exe(n)} is missing; build it first`);
   console.log(`P56 end-to-end (${android ? 'Android' : profile})`);
   if (android) {
     // fresh app start, then forward its WebView DevTools socket and the fan port
@@ -137,7 +148,7 @@ async function main() {
       const unix = await adb('shell', 'cat', '/proc/net/unix');
       sock = (unix.match(/@(webview_devtools_remote_\d+)/) || [])[1] || '';
     }
-    if (!sock) throw new Error('geen WebView-debugsocket (is het een debug-build?)');
+    if (!sock) throw new Error('no WebView debug socket (is this a debug build?)');
     await adb('forward', `tcp:${CDP_PORT}`, `localabstract:${sock}`);
     await adb('forward', 'tcp:16666', 'tcp:6666');
     await sleep(2000);
@@ -152,6 +163,10 @@ async function main() {
   await cdp('Page.enable');
   await sleep(1500);
   await js(HELPERS);
+  // run the UI in English; the switch applies at once (no reload) and stores 'p56.lang'
+  prevLang = await js(`localStorage.getItem('p56.lang')`);
+  await js(`localStorage.setItem('p56.lang', 'en'); $click('lang-en')`);
+  await sleep(200);
   if (!android) {
     // point the app at the simulator on this pc, then reconnect
     await js(`localStorage.setItem('p56.targets', '127.0.0.1'); localStorage.removeItem('p56.ip'); true`);
@@ -159,62 +174,70 @@ async function main() {
     await js(`$click('apply-net')`);
   }
 
-  await test('fan verbindt en verschijnt in de app', async () => {
-    await waitSim('verbonden', (s) => s.connected, 15000);
+  await test('fan connects and appears in the app', async () => {
+    await waitSim('connected', (s) => s.connected, 15000);
     const end = Date.now() + 10000;
     while (!(await js(`$text('link-status')`)).includes('E2E-FAN')) { if (Date.now() > end) throw new Error('status: ' + await js(`$text('link-status')`)); await sleep(200); }
     await js(`$tab('fan')`); await sleep(400);
-    if (!(await js(`$text('fan-name')`)).includes('E2E-FAN')) throw new Error('fannaam niet getoond');
+    if (!(await js(`$text('fan-name')`)).includes('E2E-FAN')) throw new Error('fan name not shown');
     await shot('01-fan');
   });
 
-  await test('aan/uit en pauze/afspelen', async () => {
-    await js(`$click('btn-power')`); await waitSim('uit', (s) => !s.power);
-    await sleep(400); await js(`$click('btn-power')`); await waitSim('aan', (s) => s.power);
-    await sleep(400); await js(`$click('btn-play')`); await waitSim('pauze', (s) => !s.playing);
-    await sleep(400); await js(`$click('btn-play')`); await waitSim('speelt', (s) => s.playing);
+  await test('language switch NL / EN', async () => {
+    await js(`$click('lang-nl')`); await sleep(200);
+    if ((await js(`document.documentElement.lang`)) !== 'nl' || !(await js(`$text('tab-playlist')`)).includes('Afspeellijst')) throw new Error('Dutch not applied: ' + await js(`$text('tab-playlist')`));
+    await js(`$click('lang-en')`); await sleep(200);
+    if ((await js(`document.documentElement.lang`)) !== 'en' || !(await js(`$text('tab-playlist')`)).includes('Playlist')) throw new Error('English not applied: ' + await js(`$text('tab-playlist')`));
+    if ((await js(`localStorage.getItem('p56.lang')`)) !== 'en') throw new Error('language not stored');
   });
 
-  await test('helderheid en hoek via schuifregelaars', async () => {
-    await js(`$key('sl-brightness', 'Home')`); await waitSim('helderheid 1', (s) => s.brightness === 1);
-    await js(`$key('sl-brightness', 'End')`); await waitSim('helderheid 16', (s) => s.brightness === 16);
-    await js(`$key('sl-angle', 'Home')`); await waitSim('hoek -180 → 0', (s) => s.angle === 0);
-    await js(`$key('sl-angle', 'End')`); await waitSim('hoek 180 → 360', (s) => s.angle === 360);
+  await test('power on/off and pause/play', async () => {
+    await js(`$click('btn-power')`); await waitSim('off', (s) => !s.power);
+    await sleep(400); await js(`$click('btn-power')`); await waitSim('on', (s) => s.power);
+    await sleep(400); await js(`$click('btn-play')`); await waitSim('paused', (s) => !s.playing);
+    await sleep(400); await js(`$click('btn-play')`); await waitSim('playing', (s) => s.playing);
+  });
+
+  await test('brightness and angle via sliders', async () => {
+    await js(`$key('sl-brightness', 'Home')`); await waitSim('brightness 1', (s) => s.brightness === 1);
+    await js(`$key('sl-brightness', 'End')`); await waitSim('brightness 16', (s) => s.brightness === 16);
+    await js(`$key('sl-angle', 'Home')`); await waitSim('angle -180 → 0', (s) => s.angle === 0);
+    await js(`$key('sl-angle', 'End')`); await waitSim('angle 180 → 360', (s) => s.angle === 360);
     await sleep(1600);
     const shown = await js(`$text('sl-angle')`);
-    if (!shown.includes('180°')) throw new Error('UI toont hoek niet terug: ' + shown);
+    if (!shown.includes('180°')) throw new Error('UI does not show the angle back: ' + shown);
   });
 
-  await test('kleur, herhalen, ademlicht, autostart, master', async () => {
+  await test('color, repeat, breathing light, autostart, master', async () => {
     await js(`$click('color-true')`); await waitSim('true color', (s) => s.color_mode === 1);
-    await sleep(300); await js(`$click('color-bright')`); await waitSim('hoge helderheid', (s) => s.color_mode === 2);
-    await js(`$click('repeat-one')`); await waitSim('herhaal huidig', (s) => !s.repeat_all);
-    await sleep(300); await js(`$click('repeat-all')`); await waitSim('herhaal alles', (s) => s.repeat_all);
-    await js(`$click('sw-breath')`); await waitSim('ademlicht aan', (s) => s.breath);
-    await sleep(300); await js(`$click('sw-autostart')`); await waitSim('autostart uit', (s) => !s.autostart);
-    await sleep(300); await js(`$click('sw-master')`); await waitSim('master aan', (s) => s.master);
+    await sleep(300); await js(`$click('color-bright')`); await waitSim('high brightness', (s) => s.color_mode === 2);
+    await js(`$click('repeat-one')`); await waitSim('repeat current', (s) => !s.repeat_all);
+    await sleep(300); await js(`$click('repeat-all')`); await waitSim('repeat all', (s) => s.repeat_all);
+    await js(`$click('sw-breath')`); await waitSim('breathing light on', (s) => s.breath);
+    await sleep(300); await js(`$click('sw-autostart')`); await waitSim('autostart off', (s) => !s.autostart);
+    await sleep(300); await js(`$click('sw-master')`); await waitSim('master on', (s) => s.master);
     await js(`$key('sl-volume', 'Home')`); await waitSim('volume 0', (s) => s.volume === 0);
-    await shot('02-instellingen');
+    await shot('02-settings');
   });
 
-  await test('foto uploaden via Media', async () => {
+  await test('upload a photo via Media', async () => {
     await js(`$tab('media')`); await sleep(400);
     const png = await js(MAKE_IMAGE);
     await js(`window.__p56pick('zon.png', ${JSON.stringify(png)}, 'image/png')`);
     await sleep(800);
     if (!(await js(`$text('media-info')`)).includes('zon.png')) throw new Error('media-info: ' + await js(`$text('media-info')`));
     await js(`$click('upload')`);
-    await waitSim('bestand zon.mp4', (s) => s.files.some((f) => f.name === 'zon.mp4' && f.width === 688 && f.height === 240), 15000);
+    await waitSim('file zon.mp4', (s) => s.files.some((f) => f.name === 'zon.mp4' && f.width === 688 && f.height === 240), 15000);
     await shot('03-media');
   });
 
-  await test('video omzetten naar frames en uploaden', async () => {
+  await test('convert a video to frames and upload it', async () => {
     const webm = await js(MAKE_VIDEO);
     await js(`window.__p56pick('clip.webm', ${JSON.stringify(webm)}, 'video/webm')`);
     await sleep(500);
     await js(`$click('make-frames')`);
     const end = Date.now() + 30000;
-    while (!/frame\(s\)/.test(await js(`$text('media-info')`))) { if (Date.now() > end) throw new Error('geen frames: ' + await js(`$text('media-info')`)); await sleep(300); }
+    while (!(Number(await js(`$data('media-info', 'frames')`)) > 0)) { if (Date.now() > end) throw new Error('no frames: ' + await js(`$text('media-info')`) + ' | toasts: ' + await js(`[...document.querySelectorAll('[data-sonner-toast]')].map((t) => t.textContent).join(' / ')`)); await sleep(300); }
     await js(`$type('up-name', 'clip')`);
     await sleep(200);
     await js(`$click('upload')`);
@@ -222,72 +245,73 @@ async function main() {
     results.push(`    video: ${s.files.find((f) => f.name === 'clip.mp4').frames} frames`);
   });
 
-  await test('afspeellijst: tonen, hernoemen, wissen', async () => {
+  await test('playlist: show, rename, delete', async () => {
     await js(`$tab('playlist')`); await sleep(600);
     await js(`$click('show-1')`); await waitSim('slot 1', (s) => s.current === 1);
     await js(`$click('rename-1')`); await sleep(300);
-    await js(`$type('rename-input', 'zonnetje')`); await sleep(100);
-    await js(`$click('rename-ok')`); await waitSim('hernoemd', (s) => s.files[0]?.name === 'zonnetje.mp4');
+    await js(`$type('rename-input', 'sunshine')`); await sleep(100);
+    await js(`$click('rename-ok')`); await waitSim('renamed', (s) => s.files[0]?.name === 'sunshine.mp4');
     await sleep(800);
-    await js(`$click('delete-2')`); await sleep(300); await js(`$dialogBtn('Wissen')`);
-    await waitSim('gewist', (s) => s.files.length === 1);
+    await js(`$click('delete-2')`); await sleep(300); await js(`$confirm()`);
+    await waitSim('deleted', (s) => s.files.length === 1);
     await sleep(800);
-    await shot('04-afspeellijst');
+    await shot('04-playlist');
   });
 
-  await test('netwerk: naam, router, bluetooth', async () => {
+  await test('network: name, router, bluetooth', async () => {
     await js(`$tab('network')`); await sleep(400);
-    await js(`$type('dev-name', 'Woonkamer')`); await js(`$click('dev-name-save')`);
-    await waitSim('naam', (s) => s.device_name === 'Woonkamer');
-    await js(`$type('rt-ssid', 'ThuisNet')`); await js(`$type('rt-pw', 'geheim')`); await sleep(100); await js(`$click('rt-go')`);
-    await waitSim('router', (s) => s.router[0] === 'ThuisNet' && s.router[1] === 'geheim');
-    await js(`$click('ble-on')`); await waitSim('bt aan', (s) => s.ble_on);
+    await js(`$type('dev-name', 'LivingRoom')`); await js(`$click('dev-name-save')`);
+    await waitSim('name', (s) => s.device_name === 'LivingRoom');
+    await js(`$type('rt-ssid', 'HomeNet')`); await js(`$type('rt-pw', 'secret')`); await sleep(100); await js(`$click('rt-go')`);
+    await waitSim('router', (s) => s.router[0] === 'HomeNet' && s.router[1] === 'secret');
+    await js(`$click('ble-on')`); await waitSim('bt on', (s) => s.ble_on);
     await sleep(300); await js(`$click('ble-scan')`);
     const end = Date.now() + 6000;
-    while (!(await js(`$text('ble-list')`)).includes('BT-Speaker')) { if (Date.now() > end) throw new Error('bt-lijst: ' + await js(`$text('ble-list')`)); await sleep(200); }
-    await shot('05-netwerk');
+    while (!(await js(`$text('ble-list')`)).includes('BT-Speaker')) { if (Date.now() > end) throw new Error('bt list: ' + await js(`$text('ble-list')`)); await sleep(200); }
+    await shot('05-network');
   });
 
-  await test('live casten: testkaart en media', async () => {
+  await test('live cast: test card and media', async () => {
     await js(`$tab('cast')`); await sleep(400);
     const before = (await sim()).cast_ok;
     await js(`$click('src-test')`); await js(`$click('cast-start')`);
-    await waitSim('cast-frames', (s) => s.cast_ok >= before + 20, 15000);
+    await waitSim('cast frames', (s) => s.cast_ok >= before + 20, 15000);
     await sleep(800);
-    if (!/fps/.test(await js(`$text('cast-stats')`))) throw new Error('geen statistiek: ' + await js(`$text('cast-stats')`));
-    await shot('06-casten');
+    if (!(await js(`$data('cast-stats', 'fps')`))) throw new Error('no statistics: ' + await js(`$text('cast-stats')`));
+    await shot('06-cast');
     await js(`$click('cast-stop')`); await sleep(800);
     const b2 = (await sim()).cast_ok;
     await js(`$click('src-media')`); await js(`$click('cast-start')`);
-    await waitSim('media-cast', (s) => s.cast_ok >= b2 + 10, 15000);
+    await waitSim('media cast', (s) => s.cast_ok >= b2 + 10, 15000);
     await js(`$click('cast-stop')`); await sleep(500);
   });
 
-  await test('live casten: video (live)', async () => {
+  await test('live cast: video (live)', async () => {
     const b = (await sim()).cast_ok;
     await js(`$click('src-video')`); await js(`$click('cast-start')`);
-    await waitSim('video-cast', (s) => s.cast_ok >= b + 10, 20000);
+    await waitSim('video cast', (s) => s.cast_ok >= b + 10, 20000);
     await js(`$click('cast-stop')`); await sleep(500);
   });
 
-  await test('formatteren en fabrieksinstellingen (met bevestiging)', async () => {
+  await test('format and factory reset (with confirmation)', async () => {
     await js(`$tab('fan')`); await sleep(400);
-    await js(`$click('btn-reset')`); await sleep(300); await js(`$dialogBtn('Herstellen')`);
+    await js(`$click('btn-reset')`); await sleep(300); await js(`$confirm()`);
     await waitSim('reset', (s) => s.resets === 1 && s.device_name === 'E2E-FAN');
-    await js(`$click('btn-format')`); await sleep(300); await js(`$dialogBtn('Formatteren')`);
+    await js(`$click('btn-format')`); await sleep(300); await js(`$confirm()`);
     await waitSim('format', (s) => s.formats === 1 && s.files.length === 0);
   });
 
-  await test('geen protocolfouten in de simulator', async () => {
+  await test('no protocol errors in the simulator', async () => {
     const s = await sim();
     if (s.protocol_errors.length) throw new Error(s.protocol_errors.join(' | '));
-    results.push(`    commando's ontvangen: ${s.commands.length}, cast-frames: ${s.cast_ok}, uploads: ${s.uploads}`);
+    results.push(`    commands received: ${s.commands.length}, cast frames: ${s.cast_ok}, uploads: ${s.uploads}`);
   });
 
-  console.log(`\n${passed} geslaagd, ${failed} mislukt`);
-  writeFileSync(join(out, 'result.txt'), results.join('\n') + `\n\n${passed} geslaagd, ${failed} mislukt\n`);
+  await restoreLang();
+  console.log(`\n${passed} passed, ${failed} failed`);
+  writeFileSync(join(out, 'result.txt'), results.join('\n') + `\n\n${passed} passed, ${failed} failed\n`);
   cleanup();
   process.exit(failed ? 1 : 0);
 }
 
-main().catch((e) => { console.error('E2E afgebroken:', e); cleanup(); process.exit(2); });
+main().catch(async (e) => { console.error('E2E aborted:', e); await restoreLang(); cleanup(); process.exit(2); });

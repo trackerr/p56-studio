@@ -3,14 +3,16 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Slider } from '@/components/ui/slider';
 import { cn } from '@/lib/utils';
+import { useT } from '@/lib/i18n';
 
 /** Round "blade" view of what the fan shows. */
 export function RoundView({ src, label, spinning }: { src?: string | null; label?: ReactNode; spinning?: boolean }) {
+  const { t } = useT();
   return (
     <div className="flex flex-col items-center gap-2">
       <div className={cn('relative aspect-square w-[min(320px,78vw)] overflow-hidden rounded-full border border-border bg-black shadow-[inset_0_0_60px_rgba(57,208,255,0.10)]')}>
         {src ? <img src={src} alt="" className="h-full w-full" /> : (
-          <div className="absolute inset-0 grid place-items-center text-xs text-muted-foreground">geen beeld</div>
+          <div className="absolute inset-0 grid place-items-center text-xs text-muted-foreground">{t('common.noImage')}</div>
         )}
         <div className={cn('pointer-events-none absolute inset-0 rounded-full', spinning && 'blade-sweep')} />
         <div className="pointer-events-none absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-zinc-800 ring-1 ring-zinc-600" />
@@ -25,6 +27,7 @@ export function Confirm({ trigger, title, body, action, onConfirm, danger = true
   trigger: (open: () => void) => ReactNode; title: string; body: ReactNode; action: string; onConfirm: () => void; danger?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const { t } = useT();
   return (
     <>
       {trigger(() => setOpen(true))}
@@ -35,8 +38,8 @@ export function Confirm({ trigger, title, body, action, onConfirm, danger = true
             <DialogDescription asChild><div>{body}</div></DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2">
-            <Button variant="ghost" onClick={() => setOpen(false)}>Annuleren</Button>
-            <Button variant={danger ? 'destructive' : 'default'} onClick={() => { setOpen(false); onConfirm(); }}>{action}</Button>
+            <Button variant="ghost" data-testid="confirm-cancel" onClick={() => setOpen(false)}>{t('common.cancel')}</Button>
+            <Button variant={danger ? 'destructive' : 'default'} data-testid="confirm-ok" onClick={() => { setOpen(false); onConfirm(); }}>{action}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

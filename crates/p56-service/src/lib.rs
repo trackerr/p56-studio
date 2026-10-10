@@ -127,7 +127,7 @@ fn png_bytes(img: &image::RgbImage) -> Vec<u8> {
 
 pub fn b64(s: &str) -> Result<Vec<u8>, String> {
     let s = s.split_once("base64,").map(|(_, d)| d).unwrap_or(s);
-    base64::engine::general_purpose::STANDARD.decode(s.trim()).map_err(|e| format!("ongeldige data: {e}"))
+    base64::engine::general_purpose::STANDARD.decode(s.trim()).map_err(|e| format!("invalid data: {e}"))
 }
 
 fn err<E: std::fmt::Display>(e: E) -> String { e.to_string() }
@@ -142,7 +142,7 @@ fn arg<T: serde::de::DeserializeOwned>(a: &Value, key: &str) -> Option<T> {
     a.get(key).or_else(|| a.get(&camel)).filter(|v| !v.is_null()).and_then(|v| serde_json::from_value(v.clone()).ok())
 }
 fn need<T: serde::de::DeserializeOwned>(a: &Value, key: &str) -> Result<T, String> {
-    arg(a, key).ok_or_else(|| format!("argument '{key}' ontbreekt of is ongeldig"))
+    arg(a, key).ok_or_else(|| format!("argument '{key}' is missing or invalid"))
 }
 
 fn color(v: &Option<Value>, default: [u8; 3]) -> [u8; 3] {
@@ -166,7 +166,7 @@ impl Service {
     }
 
     pub fn link(&self) -> Result<Link, String> {
-        self.link.lock().unwrap().clone().ok_or_else(|| "verbinding niet gestart".into())
+        self.link.lock().unwrap().clone().ok_or_else(|| "link not started".into())
     }
 
     fn emit(&self, t: &str, data: Value) { (self.emit)(t, data); }
@@ -214,7 +214,7 @@ impl Service {
             "show_text" | "show_image" => self.show(serde_json::from_value(a.clone()).map_err(err)?),
             "platform" => Ok(json!({ "os": std::env::consts::OS, "screen": cfg!(any(target_os = "windows", target_os = "macos")),
                 "version": env!("CARGO_PKG_VERSION") })),
-            other => Err(format!("onbekend commando {other}")),
+            other => Err(format!("unknown command {other}")),
         }
     }
 
@@ -329,7 +329,7 @@ impl Service {
             "color_true" => l.color_mode(id, ColorMode::True), "color_bright" => l.color_mode(id, ColorMode::Bright),
             "ble_on" => l.ble(id, true), "ble_off" => l.ble(id, false), "ble_scan" => l.ble_scan(id), "ble_disconnect" => l.ble_disconnect(id),
             "format" => l.format_card(id), "reset" => l.factory_reset(id),
-            other => Err(p56_core::Error::Invalid(format!("onbekende actie {other}"))),
+            other => Err(p56_core::Error::Invalid(format!("unknown action {other}"))),
         }.map_err(err)
     }
 
@@ -342,7 +342,7 @@ impl Service {
             "select" => l.select(id, value.clamp(1, 255) as u8),
             "delete" => l.delete(id, value.clamp(1, 255) as u8),
             "ble_connect" => l.ble_connect(id, value.clamp(0, 255) as u8),
-            other => Err(p56_core::Error::Invalid(format!("onbekende instelling {other}"))),
+            other => Err(p56_core::Error::Invalid(format!("unknown setting {other}"))),
         }.map_err(err)
     }
 
@@ -350,8 +350,8 @@ impl Service {
         let l = self.link()?;
         let b = b.unwrap_or_default();
         match what {
-            "hotspot" if b.len() < 8 => return Err("wachtwoord moet minstens 8 tekens zijn".into()),
-            "hotspot" | "router" | "name" if a.trim().is_empty() => return Err("naam mag niet leeg zijn".into()),
+            "hotspot" if b.len() < 8 => return Err("password must be at least 8 characters".into()),
+            "hotspot" | "router" | "name" if a.trim().is_empty() => return Err("name must not be empty".into()),
             _ => {}
         }
         match what {
@@ -359,7 +359,7 @@ impl Service {
             "name" => l.device_name(id, &a),
             "hotspot" => l.set_hotspot(id, &a, &b),
             "router" => l.set_router(id, &a, &b),
-            other => Err(p56_core::Error::Invalid(format!("onbekend veld {other}"))),
+            other => Err(p56_core::Error::Invalid(format!("unknown field {other}"))),
         }.map_err(err)
     }
 
@@ -376,7 +376,7 @@ impl Service {
     /// Load an image or GIF file (bytes as base64).
     pub fn media_load(&self, name: String, data: &str) -> Result<Value, String> {
         let bytes = b64(data)?;
-        let fr = transcode::decode_frames(&bytes, 600).map_err(|e| format!("kan beeld niet lezen: {e}"))?;
+        let fr = transcode::decode_frames(&bytes, 600).map_err(|e| format!("cannot read image: {e}"))?;
         let (w, h) = fr[0].0.dimensions();
         let frames = if fr.len() == 1 { vec![(bytes, 0)] } else {
             fr.into_iter().map(|(f, ms)| (transcode::jpeg(&transcode::fit(f, MAX_SIDE), 92), ms)).collect()
@@ -390,7 +390,7 @@ impl Service {
     fn media_text(&self, a: &Value) -> Result<Value, String> {
         let t: String = need(a, "text")?;
         let img = text::render(&t, color(&arg(a, "color"), [255, 255, 255]), color(&arg(a, "background"), [0, 0, 0]), arg(a, "font_size").unwrap_or(0.0));
-        let name = arg::<String>(a, "name").unwrap_or_else(|| "tekst".into());
+        let name = arg::<String>(a, "name").unwrap_or_else(|| "text".into());
         let id = self.store_media(name.clone(), vec![(png_bytes(&img), 0)]);
         Ok(json!({ "id": id, "name": name, "frames": 1, "width": text::SIDE, "height": text::SIDE }))
     }
@@ -400,8 +400,8 @@ impl Service {
     fn media_push(&self, media: u32, data: &str, delay: u32) -> Result<usize, String> {
         let bytes = b64(data)?;
         let mut m = self.media.lock().unwrap();
-        let md = m.get_mut(&media).ok_or("media bestaat niet meer")?;
-        if md.frames.len() >= 3000 { return Err("maximaal 3000 frames".into()); }
+        let md = m.get_mut(&media).ok_or("media no longer exists")?;
+        if md.frames.len() >= 3000 { return Err("at most 3000 frames".into()); }
         md.frames.push((bytes, delay));
         Ok(md.frames.len())
     }
@@ -411,8 +411,8 @@ impl Service {
         let ft = self.fan_type_for(id)?;
         let (src, n) = if media == 0 { (None, 1) } else {
             let m = self.media.lock().unwrap();
-            let md = m.get(&media).ok_or("media bestaat niet meer")?;
-            if md.frames.is_empty() { return Err("nog geen frames".into()); }
+            let md = m.get(&media).ok_or("media no longer exists")?;
+            if md.frames.is_empty() { return Err("no frames yet".into()); }
             (Some(md.frames[frame.unwrap_or(0).min(md.frames.len() - 1)].0.clone()), md.frames.len())
         };
         let img = match src { None => transcode::test_card(), Some(b) => decode_source(&b)? };
@@ -432,9 +432,9 @@ impl Service {
         let l = self.link()?;
         let ft = self.fan_type_for(Some(id))?;
         let seq = self.upload_seq.fetch_add(1, Ordering::SeqCst) + 1;
-        let (src, default_name): (Vec<Vec<u8>>, String) = if media == 0 { (vec![], "testkaart".into()) } else {
+        let (src, default_name): (Vec<Vec<u8>>, String) = if media == 0 { (vec![], "testcard".into()) } else {
             let m = self.media.lock().unwrap();
-            let md = m.get(&media).ok_or("media bestaat niet meer")?;
+            let md = m.get(&media).ok_or("media no longer exists")?;
             let mut v: Vec<Vec<u8>> = md.frames.iter().map(|(b, _)| b.clone()).collect();
             if max_frames > 0 { v.truncate(max_frames); }
             (v, md.name.rsplit_once('.').map(|(a, _)| a.to_string()).unwrap_or(md.name.clone()))
@@ -446,14 +446,14 @@ impl Service {
         } else {
             let total = src.len();
             src.iter().enumerate().map(|(i, b)| {
-                if i % 5 == 0 { progress("transcoderen", i, total); }
+                if i % 5 == 0 { progress("transcoding", i, total); }
                 decode_source(b).map(|img| transcode::encode(&img, &ft, &pl).jpeg)
             }).collect::<Result<_, _>>()?
         };
-        progress("versturen", 0, frames.len());
+        progress("sending", 0, frames.len());
         l.upload(id, &frames, &name, Some(slot), seq).map_err(err)?;
         self.remember(&[id], &frames[0], &ft);
-        progress("klaar", frames.len(), frames.len());
+        progress("done", frames.len(), frames.len());
         Ok(Value::from(format!("{} ({} frame(s))", p56_core::protocol::mp4_name(&name), frames.len())))
     }
 
@@ -474,14 +474,14 @@ impl Service {
         let media: Option<Vec<(Vec<u8>, u32)>> = match source.strip_prefix("media:") {
             Some(id) => {
                 let id: u32 = id.parse().map_err(err)?;
-                Some(self.media.lock().unwrap().get(&id).ok_or("media bestaat niet meer")?.frames.clone())
+                Some(self.media.lock().unwrap().get(&id).ok_or("media no longer exists")?.frames.clone())
             }
             None => None,
         };
         if source == "screen" && !cfg!(any(target_os = "windows", target_os = "macos")) {
-            return Err("scherm casten kan op dit platform niet; gebruik camera of een bestand".into());
+            return Err("screen casting is not available on this platform; use the camera or a file".into());
         }
-        if self.cast_running.swap(true, Ordering::SeqCst) { return Err("er loopt al een cast".into()); }
+        if self.cast_running.swap(true, Ordering::SeqCst) { return Err("a cast is already running".into()); }
         let me = self.clone();
         thread::spawn(move || {
             let period = Duration::from_secs_f64(1.0 / fps.clamp(0.5, 60.0));
@@ -569,7 +569,7 @@ impl Service {
             (None, Some(mac)) => l.ids().into_iter().filter(|i| l.device(*i).and_then(|d| d.info).is_some_and(|inf| inf.mac.eq_ignore_ascii_case(mac))).collect(),
             (None, None) => l.ids(),
         };
-        if ids.is_empty() { return Err("geen fan verbonden".into()); }
+        if ids.is_empty() { return Err("no fan connected".into()); }
         let img = if let Some(t) = r.text.as_deref().filter(|t| !t.trim().is_empty()) {
             text::render(t, color(&r.color, [255, 255, 255]), color(&r.background, [0, 0, 0]), r.font_size.unwrap_or(0.0))
         } else if let Some(d) = &r.data {
@@ -577,7 +577,7 @@ impl Service {
         } else if let Some(p) = &r.path {
             decode_source(&std::fs::read(p).map_err(|e| format!("{p}: {e}"))?)?
         } else {
-            return Err("geef 'text', 'data' of 'path' mee".into());
+            return Err("provide 'text', 'data' or 'path'".into());
         };
         let pl: Placement = r.placement.unwrap_or_default().into();
         let secs = r.show_seconds.unwrap_or(0.0).max(0.0);
@@ -627,7 +627,7 @@ impl Service {
                 thread::sleep(Duration::from_millis(300));
             }
             if slot == 0 {
-                results.push(json!({ "id": id, "success": false, "error": "upload verstuurd maar niet in de afspeellijst gevonden" }));
+                results.push(json!({ "id": id, "success": false, "error": "upload sent but not found in the playlist" }));
                 continue;
             }
             let _ = l.select(id, slot);
@@ -676,7 +676,7 @@ mod preview_tests {
 
     #[test]
     fn text_survives_the_round_trip() {
-        for t in ["HALLO", "0,23 kWh", "0,23 €/kWh"] {
+        for t in ["HELLO", "0,23 kWh", "0,23 €/kWh"] {
             let (src, out) = lit(t);
             let frac = out as f64 / (360.0 * 360.0);
             assert!(src > 2000 && (0.02..0.5).contains(&frac), "{t}: {src} lit pixels in, {:.1}% of the preview lit", frac * 100.0);

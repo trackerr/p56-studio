@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
-"""fan_emu.py - emulator van een Holoscope/P56 POV-fan (cloud-kopie; zie PROTOCOL.md)."""
+"""fan_emu.py - emulator of a Holoscope/P56 POV fan (cloud copy; see PROTOCOL.md)."""
 import os, argparse, socket, threading, time, http.server, socketserver, re
 import numpy as np, cv2
 RAW = open('emu_raw.bin', 'ab')
 from holofan import TYPES, ARMS, unlayout, FRAME_SIZE, CHUNK
 
 class State:
-    def __init__(s): s.lock = threading.Lock(); s.polar = None; s.frames = 0; s.bad = 0; s.info = 'wacht op pc...'; s.view = None; s.logged = 0; s.playlist = []; s.live_t = 0; s.files = {}; s.cur = 0; s.playing = True; s.flags = 0x1E; s.power = True
+    def __init__(s): s.lock = threading.Lock(); s.polar = None; s.frames = 0; s.bad = 0; s.info = 'waiting for pc...'; s.view = None; s.logged = 0; s.playlist = []; s.live_t = 0; s.files = {}; s.cur = 0; s.playing = True; s.flags = 0x1E; s.power = True
 
 def decode(frame, ftype):
     if frame[:2] != b'\x5a\x28' or frame[-2:] != b'\x55\xf5':
-        raise ValueError(f'header/footer fout: {frame[:2].hex()}..{frame[-2:].hex()}')
+        raise ValueError(f'bad header/footer: {frame[:2].hex()}..{frame[-2:].hex()}')
     end = frame.find(b'\xff\xd9', 2)
-    if end < 0: raise ValueError('geen JPEG-einde')
+    if end < 0: raise ValueError('no JPEG end')
     mat = cv2.imdecode(np.frombuffer(frame[2:end+2], np.uint8), cv2.IMREAD_COLOR)
-    if mat is None: raise ValueError('JPEG onleesbaar')
+    if mat is None: raise ValueError('JPEG unreadable')
     angles, rad = TYPES[ftype]; arms = ARMS.get(ftype, 0)
     exp = (angles // max(arms, 1), rad * max(arms, 1)) if arms else (angles, rad)
     if mat.shape[:2] != exp:
@@ -23,7 +23,7 @@ def decode(frame, ftype):
             if mat.shape[:2] == ((a // n, r * n) if n else (a, r)):
                 ftype, angles, rad, arms = t, a, r, n; break
         else:
-            raise ValueError(f'onbekende afmeting {mat.shape[1]}x{mat.shape[0]}')
+            raise ValueError(f'unknown size {mat.shape[1]}x{mat.shape[0]}')
     return unlayout(mat, arms, rad), ftype, mat.shape, end - 1
 
 NAME = b'EMU-P56'
@@ -57,7 +57,7 @@ def select_file(st, n):
     if 1 <= n <= len(names):
         st.cur, st.playing = n, True
         st.playlist = st.files[names[n-1]]
-        st.info = f'SPEELT {n}: {names[n-1]} | {len(st.playlist)} frame(s)'
+        st.info = f'PLAYING {n}: {names[n-1]} | {len(st.playlist)} frame(s)'
         return True
     return False
 
@@ -86,12 +86,12 @@ def run_link(st, pc_ip, ftype, ack):
     while True:
         try:
             c = socket.create_connection((pc_ip, 6666), timeout=5); c.settimeout(None)
-            st.info = f'verbonden met {pc_ip}:6666'; print('[emu]', st.info, flush=True)
+            st.info = f'connected to {pc_ip}:6666'; print('[emu]', st.info, flush=True)
             buf, half, up = bytearray(), False, None
             def log(*m): print('[emu]', *m, flush=True)
             while True:
                 d = c.recv(65536)
-                if not d: raise ConnectionError('pc sloot verbinding')
+                if not d: raise ConnectionError('pc closed the connection')
                 RAW.write(d); RAW.flush(); buf += d
                 while buf:
                     if up is not None:
@@ -106,13 +106,13 @@ def run_link(st, pc_ip, ftype, ack):
                         for jpg in jpegs_in(content):
                             pol, t = polar_from_jpeg(jpg, ftype)
                             if pol is not None: frames.append(pol)
-                        log(f"upload klaar: {up['name']}, {len(frames)} frame(s)")
+                        log(f"upload done: {up['name']}, {len(frames)} frame(s)")
                         with st.lock:
                             st.files[up['name']] = frames
                             select_file(st, list(st.files).index(up['name']) + 1)
                             if frames:
                                 st.playlist = frames
-                                st.info = f"BESTAND {up['name']} | {len(frames)} frame(s) | {len(content)} B"
+                                st.info = f"FILE {up['name']} | {len(frames)} frame(s) | {len(content)} B"
                         c.sendall(READY); later(c, reply_filelist(list(st.files)), 0.5); up = None
                         continue
                     if buf[0] == 0x5A and len(buf) >= 2 and buf[1] == 0x28:
@@ -124,13 +124,13 @@ def run_link(st, pc_ip, ftype, ack):
                             polar, t, shp, jl = decode(fr, ftype)
                             with st.lock:
                                 st.polar = polar; st.frames += 1; st.live_t = time.time()
-                                st.info = f'LIVE type {t} | {shp[1]}x{shp[0]} | jpeg {jl} B | frames {st.frames} | fout {st.bad}'
+                                st.info = f'LIVE type {t} | {shp[1]}x{shp[0]} | jpeg {jl} B | frames {st.frames} | bad {st.bad}'
                         except ValueError as e:
-                            st.bad += 1; log('frame fout:', e)
+                            st.bad += 1; log('frame error:', e)
                     elif buf[0] == 0x5A:
                         end = buf.find(b'\xf5', 2)
                         if end < 0:
-                            if len(buf) > 4096: log('geen F5, gooi weg:', buf[:32].hex(' ')); buf.clear()
+                            if len(buf) > 4096: log('no F5, discarding:', buf[:32].hex(' ')); buf.clear()
                             break
                         pkt = bytes(buf[:end+1]); del buf[:end+1]
                         if len(pkt) == 4 and buf[:1] != b'\x5a' and len(buf) >= 1: del buf[:1]
@@ -143,7 +143,7 @@ def run_link(st, pc_ip, ftype, ack):
                         if cmd == 0x0D:   c.sendall(reply_state(st, ftype))
                         elif cmd == 0x87:
                             with st.lock: ok = select_file(st, pkt[2])
-                            log(f'cmd 87: kies bestand {pkt[2]} -> {"ok" if ok else "bestaat niet"}')
+                            log(f'cmd 87: select file {pkt[2]} -> {"ok" if ok else "does not exist"}')
                             c.sendall(READY); later(c, reply_state(st, ftype), 0.3)
                         elif cmd in (0x01, 0x02, 0x03, 0x04):
                             with st.lock:
@@ -151,7 +151,7 @@ def run_link(st, pc_ip, ftype, ack):
                                 if cmd == 0x02: st.power = False
                                 if cmd == 0x03: st.playing = False
                                 if cmd == 0x04: st.playing = True; st.power = True
-                            log(f'cmd {cmd:02X}: {["","AAN","UIT","PAUZE","PLAY"][cmd]}')
+                            log(f'cmd {cmd:02X}: {["","ON","OFF","PAUSE","PLAY"][cmd]}')
                             c.sendall(READY); later(c, reply_state(st, ftype), 0.3)
                         elif cmd == 0x80:
                             names = list(st.files); n = pkt[2]
@@ -163,18 +163,18 @@ def run_link(st, pc_ip, ftype, ack):
                                     if st.cur == n: st.cur, st.playlist = 0, []
                                     elif st.cur > n: st.cur -= 1
                                 else: gone = None
-                            log(f'cmd 80: wis bestand {n} -> {gone}')
+                            log(f'cmd 80: delete file {n} -> {gone}')
                             c.sendall(READY); later(c, reply_filelist(list(st.files)), 0.3)
                         elif cmd == 0x1C:
-                            c.sendall(reply_info()); later(c, reply_filelist(list(st.files)), 0.5); log(f'1C get machine -> 8D info + lijst {list(st.files)}')
+                            c.sendall(reply_info()); later(c, reply_filelist(list(st.files)), 0.5); log(f'1C get machine -> 8D info + list {list(st.files)}')
                         else:
-                            log(f'cmd {cmd:02X}: {pkt.hex(" ")}  -> 0E klaar + lijst')
+                            log(f'cmd {cmd:02X}: {pkt.hex(" ")}  -> 0E ready + list')
                             c.sendall(READY); later(c, reply_filelist(list(st.files)))
                             if cmd in (0x91, 0x8E, 0x10): later(c, reply_state(st, ftype), 0.8)
                     else:
-                        log('onbekende data:', bytes(buf[:32]).hex(' ')); buf.clear(); break
+                        log('unknown data:', bytes(buf[:32]).hex(' ')); buf.clear(); break
         except OSError as e:
-            st.info = f'geen verbinding met {pc_ip}:6666 ({e.__class__.__name__}), opnieuw...'
+            st.info = f'no connection to {pc_ip}:6666 ({e.__class__.__name__}), retrying...'
             print('[emu]', st.info, flush=True); time.sleep(2)
 
 def discovery(st, ftype, ack, fixed_pc):
@@ -183,7 +183,7 @@ def discovery(st, ftype, ack, fixed_pc):
     u = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     u.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1); u.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
     u.bind(('', 8988)); started = set()
-    print('[emu] wacht op broadcast op UDP 8988...', flush=True)
+    print('[emu] waiting for a broadcast on UDP 8988...', flush=True)
     while True:
         d, a = u.recvfrom(2048)
         m = re.fullmatch(rb'(\d+\.\d+\.\d+\.\d+)HS', d.strip())
@@ -192,7 +192,7 @@ def discovery(st, ftype, ack, fixed_pc):
         me = socket.gethostbyname(socket.gethostname())
         u.sendto(f'{me}HS'.encode(), (a[0], 8988))
         if pc not in started:
-            started.add(pc); print(f'[emu] pc gevonden: {pc}', flush=True)
+            started.add(pc); print(f'[emu] pc found: {pc}', flush=True)
             threading.Thread(target=run_link, args=(st, pc, ftype, ack), daemon=True).start()
 
 PANEL = 480
@@ -224,13 +224,13 @@ class Renderer:
         for img in (left, right): cv2.circle(img, (c, c), c - 1, (60, 60, 60), 1)
         v = np.zeros((PANEL + 30, PANEL * 2, 3), np.uint8); v[:PANEL, :PANEL] = left; v[:PANEL, PANEL:] = right
         cv2.putText(v, info, (8, PANEL + 21), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
-        cv2.putText(v, 'oog (volle snelheid)', (8, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (150, 150, 150), 1)
-        cv2.putText(v, f'slow-motion {s.rps} omw/s', (PANEL + 8, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (150, 150, 150), 1)
+        cv2.putText(v, 'eye (full speed)', (8, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (150, 150, 150), 1)
+        cv2.putText(v, f'slow motion {s.rps} rev/s', (PANEL + 8, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (150, 150, 150), 1)
         return v
 
 PAGE = b'''<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Fan emulator</title>
 <style>body{margin:0;background:#000;color:#aaa;font:14px sans-serif;text-align:center}img{max-width:100%;height:auto}</style></head>
-<body><img src="/stream"><p>Holoscope POV-fan emulator</p></body></html>'''
+<body><img src="/stream"><p>Holoscope POV fan emulator</p></body></html>'''
 
 def http_server(st, port):
     class H(http.server.BaseHTTPRequestHandler):
@@ -250,7 +250,7 @@ def http_server(st, port):
                 self.send_response(200); self.send_header('Content-Type', 'text/html'); self.end_headers(); self.wfile.write(PAGE)
     socketserver.ThreadingTCPServer.allow_reuse_address = True
     srv = socketserver.ThreadingTCPServer(('', port), H); srv.daemon_threads = True
-    print(f'[emu] weergave: http://localhost:{port}/', flush=True); srv.serve_forever()
+    print(f'[emu] view: http://localhost:{port}/', flush=True); srv.serve_forever()
 
 def main():
     ap = argparse.ArgumentParser()
@@ -264,7 +264,7 @@ def main():
         frames = [p for p in (polar_from_jpeg(j, a.type)[0] for j in jpegs_in(open(fn, 'rb').read())) if p is not None]
         st.files[name] = frames
         if frames: st.playlist = frames; st.cur = len(st.files)
-    if st.files: print(f'[emu] {len(st.files)} bestand(en) geladen: {list(st.files)}', flush=True)
+    if st.files: print(f'[emu] {len(st.files)} file(s) loaded: {list(st.files)}', flush=True)
     threading.Thread(target=discovery, args=(st, a.type, bytes.fromhex(a.ack), a.pc), daemon=True).start()
     threading.Thread(target=http_server, args=(st, a.port), daemon=True).start()
     r, last_save = Renderer(a.rps, a.decay), 0
@@ -273,8 +273,8 @@ def main():
             polar, info = st.polar, st.info
             if st.playlist and time.time() - st.live_t > 1:
                 polar = st.playlist[int(time.time() * 25) % len(st.playlist)]
-                if not st.power: polar = np.zeros_like(polar); info = 'UIT | ' + info
-                elif not st.playing: polar = np.zeros_like(polar); info = 'PAUZE | ' + info
+                if not st.power: polar = np.zeros_like(polar); info = 'OFF | ' + info
+                elif not st.playing: polar = np.zeros_like(polar); info = 'PAUSED | ' + info
         v = r.render(polar, ARMS.get(a.type, 0), info)
         st.view = cv2.imencode('.jpg', v, [cv2.IMWRITE_JPEG_QUALITY, 85])[1].tobytes()
         if a.save and time.time() - last_save > 1: cv2.imwrite(a.save, v); last_save = time.time()

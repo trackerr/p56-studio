@@ -137,7 +137,7 @@ impl Link {
     pub fn start(cfg: Config) -> Result<(Link, Receiver<Event>), Error> {
         let (tx, rx) = mpsc::channel();
         let listener = TcpListener::bind((Ipv4Addr::UNSPECIFIED, cfg.tcp_port))
-            .map_err(|e| Error::Io(format!("poort {} is bezet of geblokkeerd ({e}); sluit Holoscope of een andere P56-app", cfg.tcp_port)))?;
+            .map_err(|e| Error::Io(format!("port {} is in use or blocked ({e}); close Holoscope or any other P56 app", cfg.tcp_port)))?;
         let tcp_port = listener.local_addr().map(|a| a.port()).unwrap_or(cfg.tcp_port);
         let ip = cfg.local_ip.unwrap_or_else(local_ip);
         let link = Link {
@@ -149,7 +149,7 @@ impl Link {
             tcp_port,
             tx_lock: Arc::new(Mutex::new(())),
         };
-        link.log(format!("TCP-server op :{tcp_port} (adverteert {ip})"));
+        link.log(format!("TCP server on :{tcp_port} (advertising {ip})"));
         { let l = link.clone(); thread::spawn(move || l.accept_loop(listener)); }
         { let l = link.clone(); let c = cfg.clone(); thread::spawn(move || l.udp_loop(c)); }
         if cfg.heartbeat { let l = link.clone(); thread::spawn(move || l.heartbeat_loop()); }
@@ -233,7 +233,7 @@ impl Link {
                 g.conns.insert(id, Conn { stream, dev: Device { id, ip: peer, last_seen: Some(Instant::now()), ..Default::default() }, inbox: inbox.clone() });
                 id
             };
-            self.log(format!("fan #{id} verbonden vanaf {}", peer.map(|p| p.to_string()).unwrap_or_default()));
+            self.log(format!("fan #{id} connected from {}", peer.map(|p| p.to_string()).unwrap_or_default()));
             let _ = self.events.send(Event::Connected { id, ip: peer.unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED)) });
             self.connected.1.notify_all();
             let l = self.clone();
@@ -282,7 +282,7 @@ impl Link {
             }
         }
         if self.inner.lock().unwrap().conns.remove(&id).is_some() {
-            self.log(format!("fan #{id} verbinding verbroken"));
+            self.log(format!("fan #{id} disconnected"));
             let _ = self.events.send(Event::Disconnected { id });
         }
     }
@@ -479,7 +479,7 @@ impl Link {
     /// Upload one or more fan-layout JPEG frames as a playlist entry and show it.
     /// Mirrors the verified Holoscope / v25 sequence; fails if the fan reports an error.
     pub fn upload(&self, id: u32, frames: &[Vec<u8>], name: &str, show_slot: Option<u8>, seq: u32) -> Result<(), Error> {
-        if frames.is_empty() { return Err(Error::Invalid("geen frames".into())); }
+        if frames.is_empty() { return Err(Error::Invalid("no frames".into())); }
         let name = proto::mp4_name(name);
         let _g = self.tx_lock.lock().unwrap();
         // Let late answers to earlier commands arrive first, so they are not counted below.
@@ -530,7 +530,7 @@ impl Link {
         step(&proto::on(), 600)?;
         if let Some(slot) = show_slot { step(&proto::select(slot), 1000)?; }
         if let Some(e) = fan_error() { return Err(Error::Fan(e)); }
-        self.log(format!("geüpload: {name}, {} frame(s), {} bytes", frames.len(), p2.len()));
+        self.log(format!("uploaded: {name}, {} frame(s), {} bytes", frames.len(), p2.len()));
         Ok(())
     }
 

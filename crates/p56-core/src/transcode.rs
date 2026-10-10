@@ -109,8 +109,8 @@ impl FanType {
     pub fn check(id: u8) -> Option<String> {
         match FanType::support(id) {
             Support::Unsupported => Some(match FanType::apk_geometry(id) {
-                Some((a, l, _)) => format!("fantype {id} ({a}×{l}) wordt nog niet ondersteund: het beeldformaat is onbekend"),
-                None => format!("onbekend fantype {id}"),
+                Some((a, l, _)) => format!("fan type {id} ({a}×{l}) is not supported yet: its image format is unknown"),
+                None => format!("unknown fan type {id}"),
             }),
             _ => None,
         }

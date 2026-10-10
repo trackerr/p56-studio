@@ -73,10 +73,10 @@ fn main() {
     let subs: Subscribers = Arc::new(Mutex::new(Vec::new()));
     let svc = start_service(&args, subs.clone());
     let server = Server::http((Ipv4Addr::UNSPECIFIED, args.http_port)).unwrap_or_else(|e| {
-        eprintln!("kan HTTP-poort {} niet openen: {e}", args.http_port);
+        eprintln!("cannot open HTTP port {}: {e}", args.http_port);
         std::process::exit(1)
     });
-    log::info!("HTTP-API en web-UI op :{}", args.http_port);
+    log::info!("HTTP API and web UI on :{}", args.http_port);
     if args.discovery { thread::spawn(move || announce(args.http_port)); }
     for req in server.incoming_requests() {
         if args.local_only && !allowed(req.remote_addr()) {
@@ -99,8 +99,8 @@ fn start_service(args: &Args, subs: Subscribers) -> Arc<Service> {
     if args.simulate || args.options_file.is_some() { targets.push(format!("127.0.0.1:{}", args.sim_udp_port)); }
     let svc = Service::new(emit, Defaults { ip: args.ip.clone(), targets, port: Some(args.tcp_port) });
     match svc.start_link(None, None, None) {
-        Ok(ip) => log::info!("fan-verbinding gestart op TCP {} (adverteert {ip})", args.tcp_port),
-        Err(e) => log::error!("fan-verbinding niet gestart: {e}"),
+        Ok(ip) => log::info!("fan link started on TCP {} (advertising {ip})", args.tcp_port),
+        Err(e) => log::error!("fan link not started: {e}"),
     }
     let virtual_fan = Arc::new(VirtualFan { udp_port: args.sim_udp_port, tcp_port: args.tcp_port, sim: Mutex::new(None) });
     if args.options_file.is_some() || args.options_url.is_some() {
@@ -158,15 +158,15 @@ impl VirtualFan {
         if on == sim.is_some() { return; }
         if let Some(s) = sim.take() {
             s.stop();
-            log::info!("virtuele fan gestopt");
+            log::info!("virtual fan stopped");
             return;
         }
         // the UDP port of a just-stopped simulator can take a moment to be released
         for attempt in 0..10 {
-            let cfg = p56_sim::SimConfig { name: "VIRTUELE-P56".into(), udp_port: self.udp_port, pc_port: self.tcp_port, ..Default::default() };
+            let cfg = p56_sim::SimConfig { name: "VIRTUAL-P56".into(), udp_port: self.udp_port, pc_port: self.tcp_port, ..Default::default() };
             match p56_sim::Sim::start(cfg) {
-                Ok(s) => { log::info!("virtuele fan gestart"); *sim = Some(s); return; }
-                Err(e) if attempt == 9 => log::warn!("virtuele fan niet gestart: {e}"),
+                Ok(s) => { log::info!("virtual fan started"); *sim = Some(s); return; }
+                Err(e) if attempt == 9 => log::warn!("virtual fan not started: {e}"),
                 Err(_) => thread::sleep(Duration::from_millis(300)),
             }
         }
@@ -314,13 +314,13 @@ fn sse(req: Request, subs: &Subscribers) {
 
 /// Tell Home Assistant about this server so the integration is offered automatically.
 fn announce(port: u16) {
-    let Ok(token) = std::env::var("SUPERVISOR_TOKEN") else { log::info!("geen SUPERVISOR_TOKEN: discovery overgeslagen"); return };
+    let Ok(token) = std::env::var("SUPERVISOR_TOKEN") else { log::info!("no SUPERVISOR_TOKEN: discovery skipped"); return };
     thread::sleep(Duration::from_secs(3));
     let host = std::env::var("HOSTNAME").ok().filter(|h| !h.is_empty()).unwrap_or_else(|| "127.0.0.1".into());
     let body = json!({ "service": "p56_pov", "config": { "host": "127.0.0.1", "port": port, "addon_host": host } }).to_string();
     let req = format!("POST /discovery HTTP/1.1\r\nHost: supervisor\r\nAuthorization: Bearer {token}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
     match TcpStream::connect(("supervisor", 80)).and_then(|mut s| { s.write_all(req.as_bytes())?; let mut r = String::new(); s.read_to_string(&mut r)?; Ok(r) }) {
-        Ok(r) => log::info!("discovery naar Home Assistant: {}", r.lines().next().unwrap_or("")),
-        Err(e) => log::warn!("discovery mislukt: {e}"),
+        Ok(r) => log::info!("discovery to Home Assistant: {}", r.lines().next().unwrap_or("")),
+        Err(e) => log::warn!("discovery failed: {e}"),
     }
 }
