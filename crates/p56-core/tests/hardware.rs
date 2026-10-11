@@ -331,3 +331,61 @@ fn cancel_then_upload() {
     eprintln!("after cancel: {r:?}; files {:?}", link.device(id).unwrap().files);
     remove_test_files(&link, id);
 }
+
+/// Every change in the fan's status (and every other packet) during and after a ~15 MB upload,
+/// to find the "file stored" signal.
+#[test]
+#[ignore]
+fn upload_status_trace() {
+    let Some((link, id, ft)) = fan() else { return };
+    let mut seed = 5u32;
+    let frames: Vec<Vec<u8>> = (0..260)
+        .map(|i| {
+            let img = image::RgbImage::from_fn(720, 720, |x, _| {
+                seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+                let v = (seed >> 24) as u8 / 3;
+                if (x as usize + i * 9) % 200 < 30 {
+                    image::Rgb([0, 200, 255])
+                } else {
+                    image::Rgb([v, v, v])
+                }
+            });
+            transcode::encode_upload(&img, &ft, &Placement::default()).jpeg
+        })
+        .collect();
+    let start = link.packet_seq(id);
+    let t0 = std::time::Instant::now();
+    let watch = {
+        let link = link.clone();
+        std::thread::spawn(move || {
+            let (mut n, mut last) = (1, String::new());
+            while t0.elapsed() < Duration::from_secs(90) {
+                if let Some(p) = link.wait_nth(id, start, n, Duration::from_millis(500), |_| true) {
+                    n += 1;
+                    let line = match &p {
+                        p56_core::protocol::Packet::Status(s) => {
+                            format!("status flags {:#04x} power {} playing {} slot {} extra {}", s.flags, s.power, s.playing, s.play_index, s.extra)
+                        }
+                        p56_core::protocol::Packet::Bluetooth(_) => continue,
+                        other => format!("{other:?}").chars().take(120).collect(),
+                    };
+                    // every status as a dot, so silence during the upload shows
+                    if line.starts_with("status") && line == last {
+                        eprint!(".");
+                    } else {
+                        eprintln!(
+                            "
+{:>6} ms  {line}",
+                            t0.elapsed().as_millis()
+                        );
+                        last = line;
+                    }
+                }
+            }
+        })
+    };
+    let r = link.upload(id, &frames, "hwtest-status", None);
+    eprintln!("{:>6} ms  upload returned {r:?}", t0.elapsed().as_millis());
+    watch.join().unwrap();
+    remove_test_files(&link, id);
+}
