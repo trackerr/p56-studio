@@ -32,6 +32,9 @@ The Home Assistant add-on and integration have their own changelog in
   the CLI.
 - Bluetooth state (on, connected, connecting) and the speaker volume as the fan reports them.
 - Model names per fan type (P56, P50, P62, …); turn a picture in 90° steps.
+- **Moving text:** a ticker ("lichtkrant") across the middle or text turning round the rim, at
+  an adjustable speed and direction; in the Media tab and in `/api/show` (`motion`: `scroll` /
+  `orbit`, `speed`, `reverse`), uploaded as an animation or cast live.
 - **Several controllers for one fan:** P56 Studio can control the fans through a p56-server
   (App tab) instead of its own engine, so phones, computers and Home Assistant share one fan.
 

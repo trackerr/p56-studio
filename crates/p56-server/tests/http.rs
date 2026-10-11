@@ -504,6 +504,23 @@ fn the_network_is_refused_unless_lan_is_given() {
     assert!(s.get("/api/state")["version"].is_string(), "this machine does");
 }
 
+#[test]
+fn moving_text_ticker_and_orbit() {
+    let s = start(true);
+    s.wait("virtual fan", |v| v["devices"].as_array().is_some_and(|d| !d.is_empty() && d[0]["status"].is_object()));
+    let (code, v) = s.post("/api/show", json!({ "text": "Lichtkrant", "motion": "scroll", "name": "ticker" }));
+    assert_eq!(code, 200, "{v}");
+    let n = v["results"][0]["fan_frames"].as_u64().unwrap();
+    assert!(n > 20, "a ticker is an animation at 20 fps: {v}");
+    let (code, v) = s.post("/api/show", json!({ "text": "Rondje", "motion": "orbit", "speed": 2, "name": "orbit", "color": "orange" }));
+    assert_eq!(code, 200, "{v}");
+    assert_eq!(v["results"][0]["fan_frames"], 40, "one turn in 2 s: {v}");
+    let (code, v) = s.post("/api/show", json!({ "text": "x", "motion": "spin" }));
+    assert_eq!(code, 500);
+    assert!(v["error"].as_str().unwrap_or("").contains("scroll or orbit"), "{v}");
+    s.wait("files on the fan", |st| st["playlist"].as_array().is_some_and(|p| ["ticker.mp4", "orbit.mp4"].iter().all(|n| p.iter().any(|e| e["name"] == *n))));
+}
+
 /// A web page on another site may not make this machine's browser call the API (CSRF through
 /// localhost); P56 Studio's own origin gets CORS headers; clients without an Origin keep working.
 #[test]

@@ -149,7 +149,7 @@ fn fit(font: &FontRef, text: &str, box_w: f32, box_h: f32, start: f32) -> (Vec<S
 }
 
 fn blend(img: &mut RgbImage, x: i32, y: i32, c: [u8; 3], cov: f32) {
-    if x < 0 || y < 0 || x >= SIDE as i32 || y >= SIDE as i32 || cov <= 0.0 {
+    if x < 0 || y < 0 || x >= img.width() as i32 || y >= img.height() as i32 || cov <= 0.0 {
         return;
     }
     let p = img.get_pixel_mut(x as u32, y as u32);
@@ -241,6 +241,128 @@ fn draw_ring(img: &mut RgbImage, c: [u8; 3], ticks: bool) {
 
 /// Render `text` centred on a square picture so that it fits inside the round display.
 /// `max_size` caps the font size in pixels (0 = as large as fits).
+/// Text that moves, rendered as frames for the fan's 20 frames per second (50 ms each).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Motion {
+    /// One line moving across the middle, like a news ticker (a "lichtkrant").
+    Scroll,
+    /// Around the rim of the disc, turning.
+    Orbit,
+}
+
+impl Motion {
+    /// `scroll` / `orbit`, or nothing (`""`, `none`, `static`).
+    pub fn parse(s: &str) -> Result<Option<Motion>, String> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "" | "none" | "static" => Ok(None),
+            "scroll" | "ticker" | "marquee" => Ok(Some(Motion::Scroll)),
+            "orbit" | "rotate" | "circle" => Ok(Some(Motion::Orbit)),
+            other => Err(format!("unknown motion '{other}': use scroll or orbit")),
+        }
+    }
+}
+
+/// Most frames a moving text may use (30 s at 20 fps); faster beyond that.
+pub const MAX_MOTION_FRAMES: usize = 600;
+
+/// `text` on a single line (newlines become spaces) at font `size`: (strip, text width).
+/// The strip is one line high, `pad` px of background left and right.
+fn strip(text: &str, size: f32, fg: [u8; 3], bg: [u8; 3], pad: u32) -> (RgbImage, u32) {
+    let font = FontRef::try_from_slice(FONT).expect("embedded font");
+    let sf = font.as_scaled(PxScale::from(size));
+    let line = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let w = line_width(&sf, &line).ceil().max(1.0) as u32;
+    let h = (sf.ascent() - sf.descent()).ceil() as u32;
+    let mut img = RgbImage::from_pixel(w + 2 * pad, h, Rgb(bg));
+    let (mut x, y) = (pad as f32, sf.ascent());
+    let mut prev = None;
+    for ch in line.chars() {
+        let id = sf.glyph_id(ch);
+        if let Some(p) = prev {
+            x += sf.kern(p, id);
+        }
+        draw_glyph(&mut img, &font, id.with_scale_and_position(PxScale::from(size), point(x, y)), fg);
+        x += sf.h_advance(id);
+        prev = Some(id);
+    }
+    (img, w)
+}
+
+/// Frames for `text` in `motion`. `speed` 1.0 is normal (a ticker moves 14 px per frame of the
+/// 720 px picture, an orbit turns once in 4 s); `reverse` moves left to right / anticlockwise.
+pub fn render_motion(text: &str, motion: Motion, fg: [u8; 3], bg: [u8; 3], speed: f32, reverse: bool) -> Vec<RgbImage> {
+    let speed = if speed.is_finite() && speed > 0.0 { speed.clamp(0.1, 10.0) } else { 1.0 };
+    match motion {
+        Motion::Scroll => scroll(text, fg, bg, speed, reverse),
+        Motion::Orbit => orbit(text, fg, bg, speed, reverse),
+    }
+}
+
+/// A news ticker: the text enters at one edge, crosses the middle of the disc and leaves at the other.
+fn scroll(text: &str, fg: [u8; 3], bg: [u8; 3], speed: f32, reverse: bool) -> Vec<RgbImage> {
+    let (strip, w) = strip(text, SIDE as f32 * 0.28, fg, bg, SIDE);
+    let travel = (SIDE + w) as f32;
+    let step = (14.0 * speed).max(travel / MAX_MOTION_FRAMES as f32);
+    let n = (travel / step).ceil() as usize;
+    let top = (SIDE - strip.height().min(SIDE)) / 2;
+    (0..n)
+        .map(|k| {
+            let moved = (k as f32 * step).round() as u32;
+            let off = if reverse { (strip.width() - SIDE).saturating_sub(moved) } else { moved };
+            let mut img = RgbImage::from_pixel(SIDE, SIDE, Rgb(bg));
+            image::imageops::replace(&mut img, &image::imageops::crop_imm(&strip, off, 0, SIDE, strip.height().min(SIDE)).to_image(), 0, top as i64);
+            img
+        })
+        .collect()
+}
+
+/// Text along the rim, turning: a strip of text mapped onto a ring (the same polar idea as the
+/// fan itself), repeated so it goes all the way round when it is short.
+fn orbit(text: &str, fg: [u8; 3], bg: [u8; 3], speed: f32, reverse: bool) -> Vec<RgbImage> {
+    let c = SIDE as f32 / 2.0;
+    let (r1, band) = (c * 0.97, c * 0.24);
+    let r0 = r1 - band;
+    let circumference = std::f32::consts::TAU * (r1 - band / 2.0);
+    // the line's ascent+descent fills the band
+    let (one, _) = strip(&format!("{}  •  ", text.trim()), band * 0.82, fg, bg, 0);
+    let copies = ((circumference / one.width() as f32).floor() as u32).max(1);
+    let sw = one.width() * copies;
+    let sh = one.height();
+    let mut ring = RgbImage::from_pixel(sw, sh, Rgb(bg));
+    for i in 0..copies {
+        image::imageops::replace(&mut ring, &one, (i * one.width()) as i64, 0);
+    }
+    // arc length (in strip pixels) of one full turn: the text is spread evenly round the ring
+    let per_turn = if sw as f32 >= circumference { circumference } else { sw as f32 };
+    let n = ((80.0 / speed).round() as usize).clamp(10, MAX_MOTION_FRAMES);
+    // where every ring pixel samples the strip (u along the text, v across it)
+    let mut map: Vec<(u32, u32, f32, u32)> = Vec::new();
+    for y in 0..SIDE {
+        for x in 0..SIDE {
+            let (dx, dy) = (x as f32 + 0.5 - c, y as f32 + 0.5 - c);
+            let rho = (dx * dx + dy * dy).sqrt();
+            if rho < r0 || rho >= r1 {
+                continue;
+            }
+            let theta = dx.atan2(-dy).rem_euclid(std::f32::consts::TAU); // 0 at the top, clockwise
+            let u = theta / std::f32::consts::TAU * per_turn;
+            let v = (((r1 - rho) / band) * sh as f32).min(sh as f32 - 1.0) as u32;
+            map.push((x, y, u, v));
+        }
+    }
+    (0..n)
+        .map(|k| {
+            let shift = k as f32 / n as f32 * sw as f32 * if reverse { -1.0 } else { 1.0 };
+            let mut img = RgbImage::from_pixel(SIDE, SIDE, Rgb(bg));
+            for &(x, y, u, v) in &map {
+                let su = ((u + shift).rem_euclid(sw as f32)) as u32 % sw;
+                img.put_pixel(x, y, *ring.get_pixel(su, v));
+            }
+            img
+        })
+        .collect()
+}
+
 pub fn render(text: &str, fg: [u8; 3], bg: [u8; 3], max_size: f32) -> RgbImage {
     render_card(&Card::text(text, fg, bg, max_size))
 }
@@ -288,6 +410,73 @@ pub fn render_card(c: &Card) -> RgbImage {
         }
     }
     img
+}
+
+#[cfg(test)]
+mod motion_tests {
+    use super::*;
+
+    fn lit(img: &RgbImage) -> Vec<(u32, u32)> {
+        img.enumerate_pixels().filter(|(_, _, p)| p[0] > 128).map(|(x, y, _)| (x, y)).collect()
+    }
+
+    /// Set P56_DUMP=<folder> to write a few frames as PNG for a look.
+    fn dump(name: &str, frames: &[RgbImage]) {
+        if let Ok(dir) = std::env::var("P56_DUMP") {
+            for (i, f) in frames.iter().enumerate().step_by((frames.len() / 4).max(1)) {
+                f.save(format!("{dir}/{name}-{i:03}.png")).unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn ticker_crosses_the_middle_band() {
+        let frames = render_motion("Welkom thuis", Motion::Scroll, [255, 255, 255], [0, 0, 0], 1.0, false);
+        dump("scroll", &frames);
+        assert!(frames.len() > 20 && frames.len() <= MAX_MOTION_FRAMES, "{}", frames.len());
+        assert!(lit(&frames[0]).is_empty(), "starts just outside the right edge");
+        let mid = lit(&frames[frames.len() / 2]);
+        assert!(mid.len() > 5_000, "text in view halfway");
+        assert!(mid.iter().all(|(_, y)| (200..520).contains(y)), "a band across the middle");
+        // it moves right to left (a short word stays fully in view): its left edge goes down
+        let left = |f: &RgbImage| lit(f).iter().map(|(x, _)| *x).min().unwrap();
+        let hi = render_motion("Hi", Motion::Scroll, [255, 255, 255], [0, 0, 0], 1.0, false);
+        assert!(left(&hi[hi.len() / 2]) > left(&hi[hi.len() / 2 + 3]));
+        let rev = render_motion("Hi", Motion::Scroll, [255, 255, 255], [0, 0, 0], 1.0, true);
+        assert!(left(&rev[rev.len() / 2]) < left(&rev[rev.len() / 2 + 3]), "reverse: left to right");
+        assert!(
+            render_motion("x", Motion::Scroll, [255; 3], [0; 3], 2.0, false).len() < render_motion("x", Motion::Scroll, [255; 3], [0; 3], 1.0, false).len()
+        );
+    }
+
+    #[test]
+    fn orbit_turns_along_the_rim() {
+        let frames = render_motion("P56 Studio", Motion::Orbit, [255, 200, 0], [0, 0, 0], 1.0, false);
+        dump("orbit", &frames);
+        assert_eq!(frames.len(), 80, "one turn in 4 s");
+        let c = SIDE as f32 / 2.0;
+        for f in [&frames[0], &frames[40]] {
+            let px = lit(f);
+            assert!(px.len() > 5_000);
+            assert!(
+                px.iter().all(|(x, y)| {
+                    let r = ((*x as f32 + 0.5 - c).powi(2) + (*y as f32 + 0.5 - c).powi(2)).sqrt();
+                    r >= c * 0.72 && r < c * 0.97
+                }),
+                "only on the ring along the rim"
+            );
+        }
+        assert!(frames[0].as_raw() != frames[1].as_raw(), "it turns");
+        assert_eq!(render_motion("x", Motion::Orbit, [255; 3], [0; 3], 2.0, false).len(), 40, "twice as fast");
+    }
+
+    #[test]
+    fn motion_names() {
+        assert_eq!(Motion::parse("scroll").unwrap(), Some(Motion::Scroll));
+        assert_eq!(Motion::parse("Orbit").unwrap(), Some(Motion::Orbit));
+        assert_eq!(Motion::parse("").unwrap(), None);
+        assert!(Motion::parse("spin").unwrap_err().contains("scroll or orbit"));
+    }
 }
 
 #[cfg(test)]

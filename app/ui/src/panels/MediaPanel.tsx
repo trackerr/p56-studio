@@ -7,7 +7,10 @@ import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
-import { RoundView, Section, ValueSlider } from '@/components/bits';
+import { Choice, RoundView, Section, ValueSlider } from '@/components/bits';
+
+/** Text that moves: a ticker across the middle or round along the rim ('' = still). */
+type Motion = '' | 'scroll' | 'orbit';
 import { DEFAULT_PLACEMENT, decodeAudio, decodeVideo, invoke, onEvent, pickMedia, toBase64, type MediaInfo, type Picked, type Preview } from '@/lib/api';
 import { useT, type Key, type TFunc } from '@/lib/i18n';
 import { useP56 } from '@/state';
@@ -65,11 +68,11 @@ export function MediaPanel() {
   const [maxFrames, setMaxFrames] = useState(0);
   const [sound, setSound] = useState(true);
   const cancel = useRef(false);
-  const [txt, setTxt] = useState({ text: '', color: '#ffffff', bg: '#000000' });
+  const [txt, setTxt] = useState({ text: '', color: '#ffffff', bg: '#000000', motion: '' as Motion, speed: 1 });
 
   async function makeText() {
     try {
-      const m = await invoke<MediaInfo>('media_text', { text: txt.text, color: txt.color, background: txt.bg, name: txt.text.slice(0, 24) });
+      const m = await invoke<MediaInfo>('media_text', { text: txt.text, color: txt.color, background: txt.bg, name: txt.text.slice(0, 24), motion: txt.motion, speed: txt.speed });
       setPicked(null); setMedia(m); setFrame(0); setName(txt.text.slice(0, 24).replace(/[^\w -]/g, '').trim() || t('media.textName'));
       addLog(t('media.logText', { text: txt.text }));
     } catch (e) { toast.error(t('media.textFailed'), { description: String(e) }); }
@@ -193,6 +196,19 @@ export function MediaPanel() {
             <input type="color" aria-label={t('media.background')} title={t('media.background')} value={txt.bg} onChange={(e) => setTxt({ ...txt, bg: e.target.value })} className="h-11 w-11 cursor-pointer rounded-full border border-line bg-transparent" />
             <Button type="submit" variant="secondary" disabled={!txt.text.trim() || !!busy} data-testid="text-make"><IconType />{t('media.text')}</Button>
           </form>
+          <div className="mt-2 flex flex-wrap items-center gap-x-6">
+            <Choice label={t('media.motion')} value={txt.motion} onChange={(motion) => setTxt({ ...txt, motion })}
+              options={[
+                { value: '', label: t('media.still'), testId: 'motion-none' },
+                { value: 'scroll', label: t('media.scroll'), testId: 'motion-scroll' },
+                { value: 'orbit', label: t('media.orbit'), testId: 'motion-orbit' },
+              ]} />
+            {txt.motion && (
+              <div className="min-w-56 flex-1">
+                <ValueSlider label={t('media.speed')} value={txt.speed} min={0.25} max={3} step={0.25} format={(v) => `${v}×`} onCommit={(speed) => setTxt({ ...txt, speed })} />
+              </div>
+            )}
+          </div>
           {/* data-frames / data-size let tests check the result without depending on the UI language */}
           <p className="mt-3 text-xs text-muted-foreground" data-testid="media-info" data-frames={media?.frames ?? 0} data-size={media?.width ? `${media.width}x${media.height}` : ''}>
             {media ? <>{t('media.info', { name: media.name, count: media.frames })}{media.width ? ` · ${media.width}×${media.height}` : ''}{media.audioMs ? ` · ${t('media.withSound', { s: (media.audioMs / 1000).toFixed(1) })}` : ''}</>

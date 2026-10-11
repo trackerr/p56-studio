@@ -237,9 +237,18 @@ pub struct ShowRequest {
     /// Time per frame when casting an animation (ms, default 100).
     #[serde(default)]
     pub frame_ms: Option<u64>,
-    /// At most this many frames of a GIF or rames (default 200).
+    /// At most this many frames of a GIF or of `frames` (default 200).
     #[serde(default)]
     pub max_frames: Option<usize>,
+    /// Moving text: "scroll" (a ticker across the middle) or "orbit" (round along the rim).
+    #[serde(default)]
+    pub motion: Option<String>,
+    /// Speed of the motion, 1 = normal (a ticker: 14 px per frame; an orbit: one turn in 4 s).
+    #[serde(default)]
+    pub speed: Option<f32>,
+    /// Move the other way: left to right / anticlockwise.
+    #[serde(default)]
+    pub reverse: Option<bool>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -773,10 +782,19 @@ impl Service {
     /// Render text as a media item.
     fn media_text(&self, a: &Value) -> Result<Value, String> {
         let t: String = need(a, "text")?;
-        let img = text::render(&t, color(&arg(a, "color"), [255, 255, 255]), color(&arg(a, "background"), [0, 0, 0]), arg(a, "font_size").unwrap_or(0.0));
+        let (fg, bg) = (color(&arg(a, "color"), [255, 255, 255]), color(&arg(a, "background"), [0, 0, 0]));
         let name = arg::<String>(a, "name").unwrap_or_else(|| "text".into());
-        let id = self.store_media(name.clone(), vec![(png_bytes(&img), 0)]);
-        Ok(json!({ "id": id, "name": name, "frames": 1, "width": text::SIDE, "height": text::SIDE }))
+        let frames = match text::Motion::parse(&arg::<String>(a, "motion").unwrap_or_default())? {
+            // moving text: frames of 50 ms (the fan's 20 fps), stored as JPEG like GIF frames
+            Some(m) => text::render_motion(&t, m, fg, bg, arg(a, "speed").unwrap_or(1.0), arg(a, "reverse").unwrap_or(false))
+                .iter()
+                .map(|f| (transcode::jpeg(f, 92), p56_core::protocol::FRAME_MS))
+                .collect(),
+            None => vec![(png_bytes(&text::render(&t, fg, bg, arg(a, "font_size").unwrap_or(0.0))), 0)],
+        };
+        let n = frames.len();
+        let id = self.store_media(name.clone(), frames);
+        Ok(json!({ "id": id, "name": name, "frames": n, "width": text::SIDE, "height": text::SIDE }))
     }
 
     pub fn media_begin(&self, name: String) -> u32 {
@@ -1028,22 +1046,25 @@ impl Service {
         let has_text = r.text.as_deref().is_some_and(|t| !t.trim().is_empty());
         let has_icon = r.icon.as_deref().is_some_and(|i| !i.trim().is_empty() && i.trim() != "none");
         // (pictures, ms per frame when casting)
-        let (images, frame_ms): (Vec<image::RgbImage>, u64) =
-            if has_text || has_icon || (r.style.is_some() && r.data.is_none() && r.path.is_none() && r.frames.is_none()) {
-                (vec![text::render_card(&card_for(&r)?)], 100)
-            } else if let Some(fr) = r.frames.as_ref().filter(|f| !f.is_empty()) {
-                let imgs = fr.iter().take(max_frames).map(|f| decode_source(&b64(f)?)).collect::<Result<Vec<_>, String>>()?;
-                (imgs, r.frame_ms.unwrap_or(100))
-            } else {
-                let bytes = match (&r.data, &r.path) {
-                    (Some(d), _) => b64(d)?,
-                    (None, Some(p)) => std::fs::read(self.media_path(p)?).map_err(|e| format!("{p}: {e}"))?,
-                    _ => return Err("provide 'text', 'icon', 'data', 'path' or 'frames'".into()),
-                };
-                let fr = transcode::decode_frames(&bytes, max_frames).map_err(|e| format!("cannot read image: {e}"))?;
-                let ms = r.frame_ms.unwrap_or_else(|| fr.first().map(|(_, d)| *d as u64).filter(|d| *d > 0).unwrap_or(100));
-                (fr.into_iter().map(|(img, _)| transcode::fit(img, MAX_SIDE)).collect(), ms)
+        let (images, frame_ms): (Vec<image::RgbImage>, u64) = if let Some(m) = text::Motion::parse(r.motion.as_deref().unwrap_or(""))?.filter(|_| has_text) {
+            // moving text: one frame per 50 ms, the fan's own rate
+            let card = card_for(&r)?;
+            (text::render_motion(&card.text, m, card.fg, card.bg, r.speed.unwrap_or(1.0), r.reverse.unwrap_or(false)), 50)
+        } else if has_text || has_icon || (r.style.is_some() && r.data.is_none() && r.path.is_none() && r.frames.is_none()) {
+            (vec![text::render_card(&card_for(&r)?)], 100)
+        } else if let Some(fr) = r.frames.as_ref().filter(|f| !f.is_empty()) {
+            let imgs = fr.iter().take(max_frames).map(|f| decode_source(&b64(f)?)).collect::<Result<Vec<_>, String>>()?;
+            (imgs, r.frame_ms.unwrap_or(100))
+        } else {
+            let bytes = match (&r.data, &r.path) {
+                (Some(d), _) => b64(d)?,
+                (None, Some(p)) => std::fs::read(self.media_path(p)?).map_err(|e| format!("{p}: {e}"))?,
+                _ => return Err("provide 'text', 'icon', 'data', 'path' or 'frames'".into()),
             };
+            let fr = transcode::decode_frames(&bytes, max_frames).map_err(|e| format!("cannot read image: {e}"))?;
+            let ms = r.frame_ms.unwrap_or_else(|| fr.first().map(|(_, d)| *d as u64).filter(|d| *d > 0).unwrap_or(100));
+            (fr.into_iter().map(|(img, _)| transcode::fit(img, MAX_SIDE)).collect(), ms)
+        };
         let pl: Placement = r.placement.unwrap_or_default().into();
         let secs = r.show_seconds.unwrap_or(0.0).max(0.0);
         let cast = r.mode.as_deref() == Some("cast");

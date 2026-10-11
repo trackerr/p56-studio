@@ -372,7 +372,7 @@ async function demo(cmd: string, a: any): Promise<unknown> {
       if (a.what === 'rename') demoFan.files = demoFan.files.map(([n, f]) => [n, n === a.slot ? (a.a.endsWith('.mp4') ? a.a : a.a + '.mp4') : f]);
       return null;
     case 'media_load': demoMedia++; demoFrames.set(demoMedia, 1); return { id: demoMedia, name: a.name, frames: 1, width: 1024, height: 768 };
-    case 'media_text': demoMedia++; demoFrames.set(demoMedia, 1); demoTexts.set(demoMedia, { text: a.text, color: a.color, bg: a.background }); return { id: demoMedia, name: a.name || t('demo.textName'), frames: 1, width: 720, height: 720 };
+    case 'media_text': demoMedia++; demoFrames.set(demoMedia, a.motion ? 40 : 1); demoTexts.set(demoMedia, { text: a.text, color: a.color, bg: a.background }); return { id: demoMedia, name: a.name || t('demo.textName'), frames: a.motion ? 40 : 1, width: 720, height: 720 };
     case 'media_begin': demoMedia++; demoFrames.set(demoMedia, 0); return demoMedia;
     case 'media_audio': return Math.round((atob(a.data).length / 2 / 16000) * 1000);
     case 'media_push': { const n = (demoFrames.get(a.media) ?? 0) + 1; demoFrames.set(a.media, n); return n; }

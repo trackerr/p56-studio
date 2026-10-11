@@ -237,6 +237,18 @@ async function main() {
     await shot('03-media');
   });
 
+  await test('moving text: a ticker uploaded as an animation', async () => {
+    await js(`$type('text-input', 'Lichtkrant')`); await sleep(100);
+    await js(`$click('motion-scroll')`); await sleep(100);
+    await js(`$click('text-make')`);
+    const end = Date.now() + 15000;
+    while (!(Number(await js(`$data('media-info', 'frames')`)) > 20)) { if (Date.now() > end) throw new Error('no ticker frames: ' + await js(`$text('media-info')`)); await sleep(200); }
+    await js(`$type('up-name', 'ticker')`); await sleep(100);
+    await js(`$click('upload')`);
+    await waitSim('ticker.mp4', (s) => s.files.some((f) => f.name === 'ticker.mp4' && f.frames > 20), 30000);
+    await js(`$click('motion-none')`);
+  });
+
   await test('convert a video to frames and upload it', async () => {
     const webm = await js(MAKE_VIDEO, true);
     await js(`window.__p56pick('clip.webm', ${JSON.stringify(webm)}, 'video/webm')`);
@@ -259,8 +271,9 @@ async function main() {
     await js(`$type('rename-input', 'sunshine')`); await sleep(100);
     await js(`$click('rename-ok')`); await waitSim('renamed', (s) => s.files[0]?.name === 'sunshine.mp4');
     await sleep(800);
+    const files = (await sim()).files.length;
     await js(`$click('delete-2')`); await sleep(300); await js(`$confirm()`);
-    await waitSim('deleted', (s) => s.files.length === 1);
+    await waitSim('deleted', (s) => s.files.length === files - 1);
     await sleep(800);
     await shot('04-playlist');
   });
