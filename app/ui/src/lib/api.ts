@@ -72,6 +72,17 @@ function authHeaders(h: Record<string, string> = {}): Record<string, string> {
 // so several devices can control one fan through it. In a browser: to the p56-server that served
 // the page (relative URLs keep working behind Home Assistant's ingress), else to the demo fan.
 const SERVER_KEY = 'p56.server';
+// the last server address entered, kept when switching back to this app's own engine
+const LAST_SERVER_KEY = 'p56.serverLast';
+/** The p56-server address last used or tested here, for the App tab's field. */
+export const lastServer: string = (() => {
+  try { return (localStorage.getItem(LAST_SERVER_KEY) || '').trim(); } catch { return ''; }
+})();
+/** Remember `url` as the last server address (also when it is not used yet). */
+export function rememberServer(url: string) {
+  const u = serverUrl(url);
+  try { if (u) localStorage.setItem(LAST_SERVER_KEY, u); } catch { /* private mode */ }
+}
 /** The p56-server this app uses instead of its own engine ('' = none). */
 export const remoteServer: string = (() => {
   if (!isTauri) return '';
@@ -94,6 +105,7 @@ export async function setRemoteServer(url: string) {
   // let go of the fan, so it can connect to the server instead (the engine keeps running otherwise)
   if (isTauri && u && !remoteServer) await T.core.invoke('p56', { cmd: 'stop_link', args: {} }).catch(() => {});
   try { if (u) localStorage.setItem(SERVER_KEY, u); else localStorage.removeItem(SERVER_KEY); } catch { /* private mode */ }
+  rememberServer(u);
   window.location.reload();
 }
 /** Is a p56-server answering at `url`? (for the App tab's "test" button) */

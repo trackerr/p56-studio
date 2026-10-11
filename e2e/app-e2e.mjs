@@ -85,12 +85,13 @@ async function shot(name) {
 }
 
 // UI language: forced to English for the run, the owner's choice is put back afterwards.
-let prevLang;
+let prevLang, prevLastServer;
 async function restoreLang() {
   if (prevLang === undefined || !ws || ws.readyState !== 1) return;
   // also never leave the owner's app in "through a server" mode
   const expr = (prevLang ? `localStorage.setItem('p56.lang', ${JSON.stringify(prevLang)});` : `localStorage.removeItem('p56.lang');`)
-    + ` localStorage.removeItem('p56.server'); true`;
+    + ` localStorage.removeItem('p56.server');`
+    + (prevLastServer ? ` localStorage.setItem('p56.serverLast', ${JSON.stringify(prevLastServer)});` : ` localStorage.removeItem('p56.serverLast');`) + ' true';
   await Promise.race([js(expr).catch(() => {}), sleep(2000)]);
 }
 
@@ -172,6 +173,7 @@ async function main() {
   await js(HELPERS);
   // run the UI in English; the switch applies at once (no reload) and stores 'p56.lang'
   prevLang = await js(`localStorage.getItem('p56.lang')`);
+  prevLastServer = await js(`localStorage.getItem('p56.serverLast')`);
   await js(`localStorage.setItem('p56.lang', 'en'); $click('lang-en')`);
   await sleep(200);
   if (!android) {
@@ -362,6 +364,12 @@ async function main() {
     await js(`$click('mode-local')`);
     await sleep(2500);
     await js(HELPERS);
+    // the address is still filled in when choosing a server again
+    await js(`$tab('app')`); await sleep(300);
+    await js(`$click('mode-server')`); await sleep(200);
+    const kept = await js(`$t('server-url').value`);
+    await js(`$click('mode-local')`);
+    if (!String(kept).includes(`127.0.0.1:${http}`)) throw new Error(`server address not kept: "${kept}"`);
   });
 
   await test('no protocol errors in the simulator', async () => {

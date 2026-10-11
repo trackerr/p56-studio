@@ -20,6 +20,8 @@ The Home Assistant add-on and integration have their own changelog in
   "Camera" is offered only where the browser provides a camera.
 
 ### Fixed
+- App tab: the server address stays filled in when switching between "this app controls the
+  fan" and "through a P56 server".
 - Android: "Control through a P56 server" could not reach a server (such as the Home Assistant
   add-on) in release builds, which blocked plain http; only debug builds allowed it.
 

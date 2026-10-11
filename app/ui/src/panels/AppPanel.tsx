@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Choice, Section } from '@/components/bits';
-import { invoke, isTauri, pingServer, remoteServer, serverUrl, setRemoteServer } from '@/lib/api';
+import { invoke, isTauri, lastServer, pingServer, rememberServer, remoteServer, serverUrl, setRemoteServer } from '@/lib/api';
 import { LangSwitch, useT } from '@/lib/i18n';
 import { useP56 } from '@/state';
 
@@ -82,9 +82,10 @@ export function AppPanel() {
 function ServerMode() {
   const { t } = useT();
   const [mode, setMode] = useState<'local' | 'server'>(remoteServer ? 'server' : 'local');
-  const [url, setUrl] = useState(remoteServer);
+  // the address stays filled in when switching back and forth
+  const [url, setUrl] = useState(remoteServer || lastServer);
   const [found, setFound] = useState<boolean | null>(null);
-  const test = async () => setFound(await pingServer(url));
+  const test = async () => { rememberServer(url); setFound(await pingServer(url)); };
   return (
     <Section title={t('app.serverTitle')} className="lg:col-span-2">
       <Choice label={t('app.serverTitle')} value={mode} onChange={(m) => { setMode(m); if (m === 'local' && remoteServer) setRemoteServer(''); }}
