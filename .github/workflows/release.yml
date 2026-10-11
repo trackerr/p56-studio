@@ -163,6 +163,9 @@ jobs:
       # after every asset is in place, so the checksums cover all of them (the APK included)
       - run: |
           cd dl
+          # GitHub turns spaces in asset names into dots; name the files that way first, so
+          # SHA256SUMS matches the downloads
+          for f in *\ *; do if [ -e "$f" ]; then mv "$f" "${f// /.}"; fi; done
           sha256sum * > SHA256SUMS
           cat SHA256SUMS
       - uses: softprops/action-gh-release@v2
