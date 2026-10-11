@@ -74,8 +74,8 @@ function cdp(method, params = {}) {
   ws.send(JSON.stringify({ id, method, params }));
   return new Promise((res) => pending.set(id, res));
 }
-async function js(expr) {
-  const r = await cdp('Runtime.evaluate', { expression: expr, awaitPromise: true, returnByValue: true });
+async function js(expr, userGesture = false) {
+  const r = await cdp('Runtime.evaluate', { expression: expr, awaitPromise: true, returnByValue: true, userGesture });
   if (r.result?.exceptionDetails) throw new Error(`JS: ${r.result.exceptionDetails.exception?.description || r.result.exceptionDetails.text}`);
   return r.result?.result?.value;
 }
@@ -124,13 +124,17 @@ const MAKE_IMAGE = `(async () => {
   g.fillStyle = '#000'; g.font = 'bold 80px sans-serif'; g.fillText('P56', 250, 270);
   return c.toDataURL('image/png').split(',')[1];
 })()`;
+// a moving square with a 440 Hz tone, so the sound path (WebView decode → fan records) is tested too
 const MAKE_VIDEO = `(async () => {
   const c = document.createElement('canvas'); c.width = 320; c.height = 240; const g = c.getContext('2d');
-  const rec = new MediaRecorder(c.captureStream(20), { mimeType: 'video/webm' });
+  const ac = new AudioContext(); await ac.resume();
+  const osc = ac.createOscillator(); osc.frequency.value = 440; const dest = ac.createMediaStreamDestination(); osc.connect(dest); osc.start();
+  const stream = new MediaStream([...c.captureStream(20).getVideoTracks(), ...dest.stream.getAudioTracks()]);
+  const rec = new MediaRecorder(stream, { mimeType: 'video/webm' });
   const chunks = []; rec.ondataavailable = (e) => chunks.push(e.data);
   rec.start(100);
   for (let i = 0; i < 30; i++) { g.fillStyle = 'hsl(' + i * 12 + ',90%,50%)'; g.fillRect(0, 0, 320, 240); g.fillStyle = '#fff'; g.fillRect(i * 10, 100, 40, 40); await new Promise((r) => setTimeout(r, 50)); }
-  rec.stop(); await new Promise((r) => (rec.onstop = r));
+  rec.stop(); await new Promise((r) => (rec.onstop = r)); osc.stop(); ac.close();
   const b = new Blob(chunks, { type: 'video/webm' });
   const buf = new Uint8Array(await b.arrayBuffer()); let s = ''; for (const x of buf) s += String.fromCharCode(x); return btoa(s);
 })()`;
@@ -232,7 +236,7 @@ async function main() {
   });
 
   await test('convert a video to frames and upload it', async () => {
-    const webm = await js(MAKE_VIDEO);
+    const webm = await js(MAKE_VIDEO, true);
     await js(`window.__p56pick('clip.webm', ${JSON.stringify(webm)}, 'video/webm')`);
     await sleep(500);
     await js(`$click('make-frames')`);
@@ -241,8 +245,9 @@ async function main() {
     await js(`$type('up-name', 'clip')`);
     await sleep(200);
     await js(`$click('upload')`);
-    const s = await waitSim('video clip.mp4', (s) => s.files.some((f) => f.name === 'clip.mp4' && f.frames > 5), 30000);
-    results.push(`    video: ${s.files.find((f) => f.name === 'clip.mp4').frames} frames`);
+    const s = await waitSim('video clip.mp4 with sound', (s) => s.files.some((f) => f.name === 'clip.mp4' && f.frames > 5 && f.sound_frames > 0), 30000);
+    const f = s.files.find((f) => f.name === 'clip.mp4');
+    results.push(`    video: ${f.frames} frames, ${f.sound_frames} with sound`);
   });
 
   await test('playlist: show, rename, delete', async () => {

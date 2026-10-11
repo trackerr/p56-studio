@@ -437,6 +437,31 @@ fn encode_within(img: &RgbImage, ft: &FanType, pl: &Placement, max: usize) -> Fr
     Frame { jpeg: data, layout: lay, quality: q }
 }
 
+/// Which source frame the fan shows at each of its 20 fps frames: frame `k` (at `k × 50 ms`)
+/// is the source frame on screen at that moment, given each source frame's display time in ms.
+/// Long frames repeat, frames shorter than 50 ms may be skipped, and the total length is kept,
+/// so an animation keeps its speed and stays in time with its sound. A display time of 0 counts
+/// as one fan frame (50 ms). At most `max` frames.
+pub fn fan_rate_indices(delays_ms: &[u32], max: usize) -> Vec<usize> {
+    let step = crate::protocol::FRAME_MS as u64;
+    let mut ends = Vec::with_capacity(delays_ms.len());
+    let mut t = 0u64;
+    for &d in delays_ms {
+        t += if d == 0 { step } else { d as u64 };
+        ends.push(t);
+    }
+    let n = t.div_ceil(step).min(max as u64) as usize;
+    let mut out = Vec::with_capacity(n);
+    let mut i = 0;
+    for k in 0..n as u64 {
+        while i + 1 < ends.len() && ends[i] <= k * step {
+            i += 1;
+        }
+        out.push(i);
+    }
+    out
+}
+
 /// Render a polar image (angles × radius) back to a round picture of `size`×`size`,
 /// i.e. what the spinning fan shows. Used for previews.
 pub fn round_preview(polar: &RgbImage, size: u32) -> RgbImage {
@@ -595,6 +620,19 @@ mod tests {
         assert!(white_at_3(90));
         assert!(!white_at_3(180));
         assert!(white_at_3(450), "full turns are ignored");
+    }
+
+    #[test]
+    fn fan_rate_follows_the_timeline() {
+        // 100 ms, 50 ms, 20 ms, 175 ms = 345 ms → 7 fan frames at 0, 50, 100, … 300 ms
+        assert_eq!(fan_rate_indices(&[100, 50, 20, 175], 100), vec![0, 0, 1, 2, 3, 3, 3]);
+        // 12 fps (83 ms) for 1.75 s stays 1.75 s (35 fan frames), not 2.1 s
+        assert_eq!(fan_rate_indices(&[83; 21], 1000).len(), 35);
+        // 25 fps: frames are skipped, the length stays 1 s
+        assert_eq!(fan_rate_indices(&[40; 25], 1000).len(), 20);
+        assert_eq!(fan_rate_indices(&[0], 100), vec![0], "a still picture is one frame");
+        assert_eq!(fan_rate_indices(&[1000], 5).len(), 5, "capped");
+        assert!(fan_rate_indices(&[], 10).is_empty());
     }
 
     #[test]

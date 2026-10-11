@@ -58,6 +58,8 @@ impl Default for SimConfig {
 pub struct SimFile {
     pub name: String,
     pub frames: usize,
+    /// Frames whose 1600 PCM bytes are not silent (a video uploaded with its sound).
+    pub sound_frames: usize,
     pub width: u32,
     pub height: u32,
     #[serde(skip)]
@@ -414,6 +416,7 @@ struct Upload {
     name: String,
     duration: Option<u32>,
     frames: Vec<Vec<u8>>,
+    sound_frames: usize,
     problems: Vec<String>,
 }
 
@@ -645,7 +648,7 @@ fn finish_upload(sh: &Shared, out: &mut Out, up: Upload, ft: u8) -> bool {
     }
     if ok {
         let mut g = sh.state.lock().unwrap();
-        g.files.push(SimFile { name, frames: up.frames.len(), width: dims.0, height: dims.1, jpegs: up.frames });
+        g.files.push(SimFile { name, frames: up.frames.len(), sound_frames: up.sound_frames, width: dims.0, height: dims.1, jpegs: up.frames });
         g.current = g.files.len() as u8;
         g.uploads += 1;
     }
@@ -713,7 +716,10 @@ fn session(sh: &Shared, stream: TcpStream) {
                 }
                 let rec: Vec<u8> = buf.drain(..4 + len).collect();
                 match frame_record(&rec[4..]) {
-                    Ok(j) => up.frames.push(j),
+                    Ok(j) => {
+                        up.sound_frames += rec[4..4 + proto::UPLOAD_PCM].iter().any(|&b| b != 0) as usize;
+                        up.frames.push(j)
+                    }
                     Err(e) => up.problems.push(format!("frame {}: {e}", up.frames.len() + up.problems.len() + 1)),
                 }
                 continue;

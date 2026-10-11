@@ -8,7 +8,7 @@ import { Progress } from '@/components/ui/progress';
 import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
 import { RoundView, Section, ValueSlider } from '@/components/bits';
-import { DEFAULT_PLACEMENT, decodeVideo, invoke, onEvent, pickMedia, toBase64, type MediaInfo, type Picked, type Preview } from '@/lib/api';
+import { DEFAULT_PLACEMENT, decodeAudio, decodeVideo, invoke, onEvent, pickMedia, toBase64, type MediaInfo, type Picked, type Preview } from '@/lib/api';
 import { useT, type Key, type TFunc } from '@/lib/i18n';
 import { useP56 } from '@/state';
 
@@ -63,6 +63,7 @@ export function MediaPanel() {
   const [name, setName] = useState('');
   const [slot, setSlot] = useState(1);
   const [maxFrames, setMaxFrames] = useState(0);
+  const [sound, setSound] = useState(true);
   const cancel = useRef(false);
   const [txt, setTxt] = useState({ text: '', color: '#ffffff', bg: '#000000' });
 
@@ -144,7 +145,10 @@ export function MediaPanel() {
         setProg(Math.round(((i + 1) / n) * 100));
       }, () => cancel.current);
       if (cancel.current) { await invoke('media_drop', { media: id }); toast.message(t('media.stopped')); return; }
-      setMedia({ id, name: picked.name, frames: total, width: 0, height: 0, picked });
+      // the sound of the same stretch of the video, for the fan's speaker
+      const audio = await decodeAudio(picked, vid.start, total / vid.fps);
+      const audioMs = audio ? await invoke<number>('media_audio', { media: id, data: audio }).catch(() => 0) : 0;
+      setMedia({ id, name: picked.name, frames: total, width: 0, height: 0, picked, audioMs });
       addLog(t('media.logVideo', { name: picked.name, count: total, fps: vid.fps }));
       toast.success(t('media.framesMade', { count: total }));
     } catch (e) {
@@ -156,7 +160,7 @@ export function MediaPanel() {
     if (!fan) { toast.error(t('common.noFan')); return; }
     setBusy({ step: 'preparing' }); setProg(0);
     try {
-      const r = await invoke<string>('upload', { args: { id: fan.id, media: media?.id ?? 0, name: name || null, slot, placement, max_frames: maxFrames } });
+      const r = await invoke<string>('upload', { args: { id: fan.id, media: media?.id ?? 0, name: name || null, slot, placement, max_frames: maxFrames, sound } });
       toast.success(t('media.uploaded'), { description: r });
       addLog(t('media.logUpload', { result: r }));
     } catch (e) {
@@ -191,7 +195,7 @@ export function MediaPanel() {
           </form>
           {/* data-frames / data-size let tests check the result without depending on the UI language */}
           <p className="mt-3 text-xs text-muted-foreground" data-testid="media-info" data-frames={media?.frames ?? 0} data-size={media?.width ? `${media.width}x${media.height}` : ''}>
-            {media ? <>{t('media.info', { name: media.name, count: media.frames })}{media.width ? ` · ${media.width}×${media.height}` : ''}</>
+            {media ? <>{t('media.info', { name: media.name, count: media.frames })}{media.width ? ` · ${media.width}×${media.height}` : ''}{media.audioMs ? ` · ${t('media.withSound', { s: (media.audioMs / 1000).toFixed(1) })}` : ''}</>
               : picked?.video ? t('media.infoVideo', { name: picked.name }) : t('media.infoTestCard')}
           </p>
           {picked?.video && (
@@ -220,6 +224,12 @@ export function MediaPanel() {
             <div className="space-y-1.5"><Label className="orbit-label" htmlFor="up-max">{t('common.maxFrames')}</Label>
               <Input id="up-max" type="number" min={0} value={maxFrames} onChange={(e) => setMaxFrames(Number(e.target.value) || 0)} /></div>
           </div>
+          {!!media?.audioMs && (
+            <div className="mt-3 flex items-center justify-between gap-3">
+              <Label htmlFor="sw-sound">{t('media.sendSound')}</Label>
+              <Switch id="sw-sound" data-testid="sw-sound" checked={sound} onCheckedChange={setSound} />
+            </div>
+          )}
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <Button onClick={doUpload} disabled={!!busy || !fan || (picked?.video && !media)} data-testid="upload"><IconUpload />{t('media.upload')}</Button>
             {!fan && <span className="text-xs text-muted-foreground">{t('media.connectFirst')}</span>}

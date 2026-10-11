@@ -105,7 +105,7 @@ RECORD = [len u32le][PCM 1600 B][JPEG][00 × 1–4]
          len = 1600 + (jpeg_len & ~3) + 4             (everything after the length field)
 ```
 - **One record per frame.** Each record carries 1/20 s of 16-bit mono PCM audio at 16 kHz
-  (`32000 / fps` bytes, silence here) and exactly one complete JPEG (`FF D8 … FF D9`), padded
+  (`32000 / fps` bytes: the video's sound, or silence) and exactly one complete JPEG (`FF D8 … FF D9`), padded
   with at least one zero byte to a multiple of 4.
 - `duration_ms` = frames × 50 for an animation (the P56 plays files at 20 fps). A still
   picture gets 4950 (5 s at 20 fps minus one frame, Holoscope's default).

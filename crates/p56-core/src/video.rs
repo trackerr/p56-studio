@@ -66,3 +66,20 @@ impl Drop for VideoSource {
         let _ = self.child.kill();
     }
 }
+
+/// Sample rate of the sound in an uploaded file (16-bit mono; 1600 bytes per 20 fps frame).
+pub const AUDIO_RATE: u32 = 16_000;
+
+/// The sound track of a video as 16-bit little-endian mono PCM at [`AUDIO_RATE`], or `None`
+/// when the file has no sound or `ffmpeg` is missing.
+pub fn audio_pcm(path: &Path) -> Option<Vec<u8>> {
+    let out = Command::new("ffmpeg")
+        .args(["-v", "error", "-i"])
+        .arg(path)
+        .args(["-vn", "-ac", "1", "-ar", &AUDIO_RATE.to_string(), "-f", "s16le", "-"])
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+    (out.status.success() && !out.stdout.is_empty()).then_some(out.stdout)
+}

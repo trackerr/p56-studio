@@ -652,6 +652,12 @@ impl Link {
     /// within [`MAX_UPLOAD_JPEG`], if the fan reports an error or if the connection drops;
     /// otherwise reports whether the fan acknowledged the data and listed the file.
     pub fn upload(&self, id: u32, frames: &[Vec<u8>], name: &str, show_slot: Option<u8>) -> Result<UploadOutcome, Error> {
+        self.upload_with_audio(id, frames, None, name, show_slot)
+    }
+
+    /// [`Link::upload`] with sound: 16-bit mono PCM at 16 kHz from the start of the animation
+    /// (frame `i` plays bytes `i × 1600 ..`); the fan plays it on its speaker.
+    pub fn upload_with_audio(&self, id: u32, frames: &[Vec<u8>], audio: Option<&[u8]>, name: &str, show_slot: Option<u8>) -> Result<UploadOutcome, Error> {
         if frames.is_empty() {
             return Err(Error::Invalid("no frames".into()));
         }
@@ -697,7 +703,7 @@ impl Link {
         if let Some(e) = fan_error() {
             return Err(Error::Fan(e));
         }
-        let (head, records) = proto::upload_blob(frames);
+        let (head, records) = proto::upload_blob_with_audio(frames, audio);
         let mut s = self.stream(id)?;
         let io = |e: std::io::Error| Error::Io(e.to_string());
         s.write_all(&head).map_err(io)?;

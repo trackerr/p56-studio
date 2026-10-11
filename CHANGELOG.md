@@ -12,8 +12,11 @@ The Home Assistant add-on and integration have their own changelog in
   put all JPEGs of an animation in one record. Verified in the machine code of Holoscope.apk
   2.5.2 / 2.5.4 and Holoscope.exe 1.1.8. Still pictures were already right and are unchanged
   byte for byte. Needs a test on a real fan.
-- Animations play at their own speed: frames are repeated or thinned out to the fan's fixed
-  20 frames per second.
+- Animations play at their own speed and in time with their sound: frames are picked on a
+  50 ms timeline (the fan's fixed 20 frames per second).
+- Packet meanings aligned with Holoscope: the Bluetooth report (state, volume), the group layout
+  in the machine info (it is not an IP address), `0x23`, `0x22` no longer aborts an upload, text
+  fields of at most 31 bytes, file names of at most 28 bytes + `.mp4`.
 - A JPEG is never cut short any more (that could drop its end marker); the quality goes down
   instead. Files may use larger JPEGs (61440 B, Holoscope's limit) than cast frames (20476 B).
 - Casting: a frame only counts when the fan acknowledges it, a fan that stops answering is
@@ -22,6 +25,13 @@ The Home Assistant add-on and integration have their own changelog in
   an error instead of a success.
 - A timed cast from `/api/show` (Home Assistant) is stopped by `cast_stop` and replaced by the
   next cast instead of running on.
+
+### Added
+- **Video sound on the fan:** uploaded videos carry their sound (16-bit mono, 16 kHz, 1/20 s per
+  frame) for a speaker on the fan, as Holoscope does; a switch in the Media tab, `--no-sound` in
+  the CLI.
+- Bluetooth state (on, connected, connecting) and the speaker volume as the fan reports them.
+- Model names per fan type (P56, P50, P62, …); turn a picture in 90° steps.
 
 ### Changed
 - New look, "Baan": the fan as a dial (brightness on the inner arc, picture angle on the outer

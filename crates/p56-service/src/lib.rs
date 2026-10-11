@@ -27,11 +27,13 @@ pub type Emit = Arc<dyn Fn(&str, Value) + Send + Sync>;
 struct Media {
     name: String,
     frames: Vec<(Vec<u8>, u32)>,
+    /// Sound from the first frame on: 16-bit mono PCM at 16 kHz (only for videos).
+    audio: Option<Vec<u8>>,
 }
 
 impl Media {
     fn bytes(&self) -> usize {
-        self.frames.iter().map(|(b, _)| b.len()).sum()
+        self.frames.iter().map(|(b, _)| b.len()).sum::<usize>() + self.audio.as_ref().map_or(0, Vec::len)
     }
 }
 
@@ -83,22 +85,11 @@ struct NameState {
 /// Longest animation uploaded: 60 s at the fan's 20 fps.
 const MAX_UPLOAD_FRAMES: usize = 1200;
 
-/// The fan plays uploaded files at a fixed 20 fps (one frame per 50 ms). Repeat every frame for
-/// its own display time, rounded to 50 ms steps and at least once, so animations keep their
-/// speed. Stops at `max` frames.
+/// The fan plays uploaded files at a fixed 20 fps: pick the source frame on screen at every
+/// 50 ms (see [`transcode::fan_rate_indices`]), so animations keep their speed and their sound.
 fn at_fan_rate<T: Clone>(frames: Vec<(T, u32)>, max: usize) -> Vec<T> {
-    let step = p56_core::protocol::FRAME_MS;
-    let mut out = Vec::new();
-    for (f, ms) in frames {
-        let n = ((ms + step / 2) / step).max(1) as usize;
-        for _ in 0..n {
-            if out.len() >= max {
-                return out;
-            }
-            out.push(f.clone());
-        }
-    }
-    out
+    let delays: Vec<u32> = frames.iter().map(|(_, ms)| *ms).collect();
+    transcode::fan_rate_indices(&delays, max).into_iter().map(|i| frames[i].0.clone()).collect()
 }
 
 /// " (not confirmed by the fan)" when the fan did not acknowledge or list an upload.
@@ -536,6 +527,7 @@ impl Service {
             "media_text" => self.media_text(a),
             "media_begin" => Ok(self.media_begin(need(a, "name")?).into()),
             "media_push" => self.media_push(need(a, "media")?, &need::<String>(a, "data")?, arg(a, "delay").unwrap_or(0)).map(Value::from),
+            "media_audio" => self.media_audio(need(a, "media")?, &need::<String>(a, "data")?).map(Value::from),
             "media_drop" => {
                 self.media.lock().unwrap().remove(&need::<u32>(a, "media")?);
                 Ok(Value::Null)
@@ -761,7 +753,7 @@ impl Service {
             let oldest = *m.keys().min().unwrap();
             m.remove(&oldest);
         }
-        m.insert(id, Media { name, frames });
+        m.insert(id, Media { name, frames, audio: None });
         make_room(&mut m, id, 0);
         id
     }
@@ -806,6 +798,21 @@ impl Service {
         Ok(md.frames.len())
     }
 
+    /// Attach the sound of a video to a media item: base64 of 16-bit little-endian mono PCM at
+    /// 16 kHz, starting where the first frame starts. Returns its length in milliseconds.
+    fn media_audio(&self, media: u32, data: &str) -> Result<u64, String> {
+        let mut pcm = b64(data)?;
+        pcm.truncate(pcm.len() & !1);
+        let mut m = self.media.lock().unwrap();
+        if !make_room(&mut m, media, pcm.len()) {
+            return Err(format!("this media is too large (more than {} MB)", MAX_MEDIA_BYTES >> 20));
+        }
+        let md = m.get_mut(&media).ok_or("media no longer exists")?;
+        let ms = pcm.len() as u64 * 1000 / (2 * p56_core::video::AUDIO_RATE as u64);
+        md.audio = Some(pcm);
+        Ok(ms)
+    }
+
     /// Preview of one frame of a media item (0 = test card) — no network.
     fn preview(&self, media: u32, frame: Option<usize>, placement: PlacementDto, id: Option<u32>) -> Result<Value, String> {
         let ft = self.fan_type_for(id)?;
@@ -839,11 +846,14 @@ impl Service {
         let pl: Placement = arg::<PlacementDto>(&a, "placement").unwrap_or_default().into();
         let l = self.link()?;
         let ft = self.fan_type_for(Some(id))?;
+        let with_sound: bool = arg(&a, "sound").unwrap_or(true);
+        let mut audio: Option<Vec<u8>> = None;
         let (src, default_name): (Vec<(Vec<u8>, u32)>, String) = if media == 0 {
             (vec![], "testcard".into())
         } else {
             let m = self.media.lock().unwrap();
             let md = m.get(&media).ok_or("media no longer exists")?;
+            audio = md.audio.clone().filter(|_| with_sound);
             let mut v = md.frames.clone();
             if max_frames > 0 {
                 v.truncate(max_frames);
@@ -871,7 +881,8 @@ impl Service {
         progress("sending", 0, frames.len());
         // a pending auto-delete of an earlier show_text/show_image with this name must not remove this file
         self.new_upload(&l, id, &p56_core::protocol::mp4_name(&name), false, None);
-        let outcome = l.upload(id, &frames, &name, Some(slot)).map_err(err)?;
+        let audio = audio.filter(|_| frames.len() > 1);
+        let outcome = l.upload_with_audio(id, &frames, audio.as_deref(), &name, Some(slot)).map_err(err)?;
         self.remember(&[id], &frames[0], &ft);
         progress("done", frames.len(), frames.len());
         Ok(Value::from(format!("{} ({} frame(s)){}", p56_core::protocol::mp4_name(&name), frames.len(), unconfirmed(outcome))))
@@ -1172,7 +1183,7 @@ mod media_cache_tests {
     use super::*;
 
     fn media(mb: usize) -> Media {
-        Media { name: String::new(), frames: vec![(vec![0u8; mb << 20], 0)] }
+        Media { name: String::new(), frames: vec![(vec![0u8; mb << 20], 0)], audio: None }
     }
 
     #[test]
@@ -1194,8 +1205,8 @@ mod fan_rate_tests {
 
     #[test]
     fn frames_are_repeated_to_20_fps() {
-        // 100 ms → 2 fan frames, 50 → 1, 20 → 1 (never dropped), 175 → 4 (rounded)
-        assert_eq!(at_fan_rate(vec![('a', 100), ('b', 50), ('c', 20), ('d', 175)], 100), vec!['a', 'a', 'b', 'c', 'd', 'd', 'd', 'd']);
+        // on the 50 ms timeline: a 0–100, b 100–150, c 150–170, d 170–345
+        assert_eq!(at_fan_rate(vec![('a', 100), ('b', 50), ('c', 20), ('d', 175)], 100), vec!['a', 'a', 'b', 'c', 'd', 'd', 'd']);
         assert_eq!(at_fan_rate(vec![('a', 0)], 100), vec!['a'], "a still picture stays one frame");
         assert_eq!(at_fan_rate(vec![('a', 1000)], 5).len(), 5, "capped");
     }

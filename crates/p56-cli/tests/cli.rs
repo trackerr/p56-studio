@@ -98,7 +98,7 @@ fn cli_refuses_without_confirmation_and_bad_values() {
 #[test]
 fn cli_reports_fan_errors() {
     let e = env();
-    e.sim.modify(|s| s.files.push(p56_sim::SimFile { name: "a.mp4".into(), frames: 1, width: 688, height: 240, jpegs: vec![] }));
+    e.sim.modify(|s| s.files.push(p56_sim::SimFile { name: "a.mp4".into(), frames: 1, sound_frames: 0, width: 688, height: 240, jpegs: vec![] }));
     let (ok, t) = e.p56(&["upload", "test", "--name", "a"]);
     assert!(!ok && t.contains("already exists"), "{t}");
 }

@@ -241,6 +241,19 @@ fn animation_duration_and_records_match_holoscope() {
 }
 
 #[test]
+fn animation_with_sound() {
+    let r = rig();
+    let j = r.jpeg();
+    // 0.12 s of a loud square wave: frames 1–2 get sound, the last 30 ms of frame 3 is silence
+    let samples = 16_000 * 12 / 100;
+    let pcm: Vec<u8> = (0..samples).flat_map(|i| if i % 40 < 20 { 12_000i16 } else { -12_000 }.to_le_bytes()).collect();
+    let o = r.link.upload_with_audio(r.id, &[j.clone(), j.clone(), j.clone(), j], Some(&pcm), "tune", Some(1)).unwrap();
+    assert!(o.acked && o.listed);
+    r.wait_sim(|s| s.files.first().is_some_and(|f| f.frames == 4 && f.sound_frames == 3));
+    r.clean();
+}
+
+#[test]
 fn cast_without_acknowledgement_fails_fast_and_reconnects() {
     let r = rig();
     let j = r.jpeg();

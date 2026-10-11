@@ -16,7 +16,7 @@ export type Device = {
 export type Bluetooth = { on: boolean; connected: boolean; connecting: boolean; volume: number; devices: string[] };
 export type FanTypeInfo = { id: number; model: string | null; angles: number; leds: number; jpeg: string | null; support: string };
 export type Preview = { round: string; layout: string; jpeg_bytes: number; quality: number; width: number; height: number; frames: number };
-export type MediaInfo = { id: number; name: string; frames: number; width: number; height: number };
+export type MediaInfo = { id: number; name: string; frames: number; width: number; height: number; audioMs?: number };
 /** Where the picture sits on the round display; `rotate` turns it clockwise, in degrees. */
 export type Placement = { x: number; y: number; scale: number; mirror: boolean; rotate: number };
 export const DEFAULT_PLACEMENT: Placement = { x: 0, y: 0, scale: 1, mirror: false, rotate: 0 };
@@ -155,6 +155,38 @@ export function toBase64(data: Uint8Array | Blob): Promise<string> {
     r.onerror = () => rej(r.error);
     r.readAsDataURL(blob);
   });
+}
+
+/** Sample rate of the sound the fan plays with a file (16-bit mono, 1600 bytes per 20 fps frame). */
+const AUDIO_RATE = 16000;
+
+/**
+ * The sound of a picked video, from `start` for `seconds`, as 16-bit little-endian mono PCM at
+ * 16 kHz (base64), for the fan's speaker. `null` when the video has no (audible) sound or the
+ * WebView cannot decode it.
+ */
+export async function decodeAudio(picked: Picked, start: number, seconds: number): Promise<string | null> {
+  try {
+    // decodeAudioData resamples to the context's rate
+    const ctx = new OfflineAudioContext(1, 1, AUDIO_RATE);
+    const buf = await ctx.decodeAudioData(picked.bytes.slice().buffer as ArrayBuffer);
+    const from = Math.max(0, Math.floor(start * AUDIO_RATE));
+    const to = Math.min(buf.length, from + Math.ceil(seconds * AUDIO_RATE));
+    if (to <= from) return null;
+    const channels = Array.from({ length: buf.numberOfChannels }, (_, i) => buf.getChannelData(i));
+    const pcm = new Int16Array(to - from);
+    let loud = false;
+    for (let i = from; i < to; i++) {
+      let v = 0;
+      for (const c of channels) v += c[i];
+      const s = Math.round(Math.max(-1, Math.min(1, v / channels.length)) * 0x7fff);
+      pcm[i - from] = s;
+      if (s !== 0) loud = true;
+    }
+    return loud ? toBase64(new Uint8Array(pcm.buffer)) : null;
+  } catch {
+    return null; // no sound track, or a codec the WebView cannot decode
+  }
 }
 
 /** Decode a video in the WebView: seek frame by frame and hand out JPEG data URLs. */
@@ -306,6 +338,7 @@ async function demo(cmd: string, a: any): Promise<unknown> {
     case 'media_load': demoMedia++; demoFrames.set(demoMedia, 1); return { id: demoMedia, name: a.name, frames: 1, width: 1024, height: 768 };
     case 'media_text': demoMedia++; demoFrames.set(demoMedia, 1); demoTexts.set(demoMedia, { text: a.text, color: a.color, bg: a.background }); return { id: demoMedia, name: a.name || t('demo.textName'), frames: 1, width: 720, height: 720 };
     case 'media_begin': demoMedia++; demoFrames.set(demoMedia, 0); return demoMedia;
+    case 'media_audio': return Math.round((atob(a.data).length / 2 / 16000) * 1000);
     case 'media_push': { const n = (demoFrames.get(a.media) ?? 0) + 1; demoFrames.set(a.media, n); return n; }
     case 'media_drop': return null;
     case 'preview': return { ...demoPreview(a.media), frames: demoFrames.get(a.media) ?? 1 };

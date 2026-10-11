@@ -24,7 +24,7 @@ pub const MAX_UPLOAD_JPEG: usize = 0xF000;
 /// Holoscope sends the cast frame in chunks of this size and waits for an ack after each.
 pub const CAST_CHUNK: usize = 0x3908;
 
-/// Audio in every frame record of an uploaded file: 1/20 s of 16-bit mono PCM at 16 kHz (Holoscope fills it from the video's sound track). We send silence.
+/// Audio in every frame record of an uploaded file: 1/20 s of 16-bit mono PCM at 16 kHz (from the video's sound track, as Holoscope; silence for pictures).
 pub const UPLOAD_PCM: usize = 1600;
 /// The fan plays uploaded files at 20 frames per second.
 pub const FRAME_MS: u32 = 50;
@@ -328,11 +328,18 @@ pub fn router(ssid: &str, password: &str) -> Vec<u8> {
 /// The duration is [`STILL_MS`] for one frame and `frames × 50 ms` for an animation.
 /// Returns `(header, records)`: Holoscope writes the 4-byte duration separately.
 pub fn upload_blob(jpeg_frames: &[Vec<u8>]) -> (Vec<u8>, Vec<u8>) {
+    upload_blob_with_audio(jpeg_frames, None)
+}
+
+/// The same with sound: `audio` is 16-bit little-endian mono PCM at 16 kHz from the start of
+/// the animation; frame `i` carries bytes `i × 1600 .. (i + 1) × 1600` (silence where it ends).
+pub fn upload_blob_with_audio(jpeg_frames: &[Vec<u8>], audio: Option<&[u8]>) -> (Vec<u8>, Vec<u8>) {
     let duration = if jpeg_frames.len() > 1 { FRAME_MS.saturating_mul(jpeg_frames.len() as u32) } else { STILL_MS };
     let size: usize = jpeg_frames.iter().map(|f| 8 + UPLOAD_PCM + f.len()).sum();
     let mut body = Vec::with_capacity(size);
-    for f in jpeg_frames {
-        upload_record(&mut body, f);
+    for (i, f) in jpeg_frames.iter().enumerate() {
+        let pcm = audio.and_then(|a| a.get(i * UPLOAD_PCM..)).map(|a| &a[..a.len().min(UPLOAD_PCM)]).unwrap_or(&[]);
+        upload_record_with_audio(&mut body, f, pcm);
     }
     (duration.to_le_bytes().to_vec(), body)
 }
@@ -340,9 +347,16 @@ pub fn upload_blob(jpeg_frames: &[Vec<u8>]) -> (Vec<u8>, Vec<u8>) {
 /// One frame record: `[len u32le][1600 B PCM][JPEG][1–4 × 00]`. The JPEG is padded with at
 /// least one zero byte up to a multiple of 4; `len` counts everything after itself.
 pub fn upload_record(out: &mut Vec<u8>, jpeg: &[u8]) {
+    upload_record_with_audio(out, jpeg, &[]);
+}
+
+/// One frame record with up to 1600 bytes of sound (the rest is silence).
+pub fn upload_record_with_audio(out: &mut Vec<u8>, jpeg: &[u8], pcm: &[u8]) {
     let padded = (jpeg.len() & !3) + 4;
     out.extend_from_slice(&((UPLOAD_PCM + padded) as u32).to_le_bytes());
-    out.resize(out.len() + UPLOAD_PCM, 0);
+    let pcm = &pcm[..pcm.len().min(UPLOAD_PCM)];
+    out.extend_from_slice(pcm);
+    out.resize(out.len() + UPLOAD_PCM - pcm.len(), 0);
     out.extend_from_slice(jpeg);
     out.resize(out.len() + padded - jpeg.len(), 0);
 }
@@ -954,6 +968,22 @@ mod tests {
             at += 4 + len;
         }
         assert_eq!(at, body.len());
+    }
+
+    #[test]
+    fn upload_records_carry_the_sound_in_time() {
+        let j = vec![0xFF, 0xD8, 0x01, 0xFF, 0xD9];
+        let audio: Vec<u8> = (0..UPLOAD_PCM * 5 / 2).map(|i| (i / UPLOAD_PCM + 1) as u8).collect(); // 2.5 frames
+        let (_, body) = upload_blob_with_audio(&[j.clone(), j.clone(), j.clone(), j.clone()], Some(&audio));
+        let rec = |n: usize| {
+            let size = 4 + UPLOAD_PCM + 8;
+            &body[n * size + 4..n * size + 4 + UPLOAD_PCM]
+        };
+        assert!(rec(0).iter().all(|&b| b == 1), "frame 1: the first 50 ms");
+        assert!(rec(1).iter().all(|&b| b == 2), "frame 2: the next 50 ms");
+        assert!(rec(2)[..UPLOAD_PCM / 2].iter().all(|&b| b == 3) && rec(2)[UPLOAD_PCM / 2..].iter().all(|&b| b == 0), "frame 3: the last half, then silence");
+        assert!(rec(3).iter().all(|&b| b == 0), "frame 4: silence");
+        assert_eq!(upload_blob_with_audio(std::slice::from_ref(&j), None), upload_blob(&[j]), "no sound = silence");
     }
 
     /// A still picture must stay byte-for-byte what already works on real fans
