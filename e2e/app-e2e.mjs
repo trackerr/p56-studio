@@ -351,6 +351,8 @@ async function main() {
     await js(`$tab('fan')`); await sleep(400);
     const before = (await sim()).power;
     await js(`$click('btn-power')`); await waitSim('power toggled through the server', (s) => s.power !== before);
+    // let the app see the new state first (it refreshes every 1.5 s), or it sends the same action again
+    await sleep(2000);
     await js(`$click('btn-power')`); await waitSim('power back', (s) => s.power === before);
     await shot('07-via-server');
     // back to the app's own engine (the server lets go of the fan first)

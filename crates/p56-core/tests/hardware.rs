@@ -145,3 +145,50 @@ fn upload_trace() {
     eprintln!("after: files {:?}", d.files);
     remove_test_files(&link, id);
 }
+
+/// Live cast as Holoscope.exe starts it: `5A 26 26 F5`, wait for the fan's answer, then
+/// stream the test card for 10 s. Prints every packet the fan sends after the 0x26.
+#[test]
+#[ignore]
+fn cast_after_start_command() {
+    let Some((link, id, ft)) = fan() else { return };
+    let start = link.packet_seq(id);
+    let t0 = std::time::Instant::now();
+    link.send_to(id, &[0x5A, 0x26, 0x26, 0xF5]).unwrap();
+    let mut n = 1;
+    while t0.elapsed() < Duration::from_secs(3) {
+        if let Some(p) = link.wait_nth(id, start, n, Duration::from_millis(300), |_| true) {
+            eprintln!("{:>6} ms  {p:?}", t0.elapsed().as_millis());
+            n += 1;
+        }
+    }
+    let test = transcode::encode(&transcode::test_card(), &ft, &Placement::default()).jpeg;
+    eprintln!("look at the fan: the test card for 10 s");
+    let t1 = std::time::Instant::now();
+    let mut frames = 0;
+    while t1.elapsed() < Duration::from_secs(10) {
+        frames += link.cast_to(&[id], &test);
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    eprintln!("{frames} frames acknowledged");
+}
+
+/// The test card cast live for 10 s at ~15 fps (the link starts live mode by itself).
+#[test]
+#[ignore]
+fn cast_live() {
+    let Some((link, id, ft)) = fan() else { return };
+    let test = transcode::encode(&transcode::test_card(), &ft, &Placement::default()).jpeg;
+    eprintln!("look at the fan: the test card for 10 s");
+    let t = std::time::Instant::now();
+    let mut sent = 0;
+    while t.elapsed() < Duration::from_secs(10) {
+        let f = std::time::Instant::now();
+        sent += link.cast_to(&[id], &test);
+        if let Some(rest) = Duration::from_millis(66).checked_sub(f.elapsed()) {
+            std::thread::sleep(rest);
+        }
+    }
+    eprintln!("{sent} frames sent in 10 s");
+    assert!(sent >= 100, "only {sent} frames went out");
+}

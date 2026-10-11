@@ -10,9 +10,7 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::protocol::{
-    self as proto, Bluetooth, ColorMode, FanError, MachineInfo, Packet, Status, CAST_CHUNK, MAX_UPLOAD_JPEG, TCP_PORT, UDP_PORT, UPLOAD_CHUNK,
-};
+use crate::protocol::{self as proto, Bluetooth, ColorMode, FanError, MachineInfo, Packet, Status, MAX_UPLOAD_JPEG, TCP_PORT, UDP_PORT, UPLOAD_CHUNK};
 use crate::Error;
 
 /// Events emitted by the link, for UIs.
@@ -52,8 +50,10 @@ struct Conn {
     inbox: Arc<(Mutex<Inbox>, Condvar)>,
     /// One sender at a time per fan; other fans are never held up by this one.
     tx: Arc<Mutex<()>>,
-    /// Cast frames in a row that this fan did not acknowledge.
+    /// Cast frames in a row that could not be written to this fan.
     cast_misses: u32,
+    /// When the last cast frame went out: a live session runs while this is recent.
+    last_cast: Option<Instant>,
 }
 
 /// What an upload achieved. An error is returned instead when the fan refused it or the
@@ -66,11 +66,19 @@ pub struct UploadOutcome {
     pub listed: bool,
 }
 
-/// Unacknowledged cast frames in a row after which the connection is dropped (the fan
-/// reconnects by itself on the next broadcast).
+/// Cast frames in a row that could not be written, after which the connection is dropped (the
+/// fan reconnects by itself on the next broadcast).
 const CAST_MAX_MISSES: u32 = 5;
-/// How long a cast chunk may wait for the fan's acknowledgement.
-const CAST_ACK: Duration = Duration::from_millis(1500);
+/// How long writing one cast frame may take before it counts as missed.
+const CAST_WRITE: Duration = Duration::from_secs(2);
+/// A pause in the frames this long ends a live session: the next frame starts a new one with
+/// `5A 26 26 F5`.
+const CAST_SESSION: Duration = Duration::from_millis(1000);
+/// No heartbeat or status poll goes out until the last cast frame is this old (Holoscope.exe
+/// sends none during a cast); longer than [`CAST_SESSION`], so the fan has left live mode.
+const CAST_QUIET: Duration = Duration::from_millis(2000);
+/// How long the fan may take to answer the cast start with `5A 29 29 F5`.
+const CAST_START_ACK: Duration = Duration::from_millis(1000);
 
 struct Inner {
     conns: HashMap<u32, Conn>,
@@ -308,6 +316,7 @@ impl Link {
                         inbox: inbox.clone(),
                         tx: Arc::new(Mutex::new(())),
                         cast_misses: 0,
+                        last_cast: None,
                     },
                 );
                 id
@@ -379,6 +388,10 @@ impl Link {
             thread::sleep(Duration::from_secs(3));
             tick += 1;
             for id in self.ids() {
+                // Holoscope.exe sends neither heartbeat nor status poll during a live cast
+                if self.casting(id) {
+                    continue;
+                }
                 // skip a fan that is busy (upload, cast frame); the next tick catches up
                 let Some(tx) = self.tx(id) else { continue };
                 if let Ok(_g) = tx.try_lock() {
@@ -643,6 +656,10 @@ impl Link {
         self.cmd(id, &proto::factory_reset())
     }
     pub fn refresh(&self, id: u32) -> Result<(), Error> {
+        // never during a live cast (Holoscope.exe does not poll then); the fan reports anyway
+        if self.casting(id) {
+            return Ok(());
+        }
         self.cmd(id, &proto::get_machine())?;
         self.cmd(id, &proto::heartbeat())
     }
@@ -779,12 +796,14 @@ impl Link {
     }
 
     /// Push one live frame (a fan-layout JPEG) to the fans in `ids` only (ids that are not
-    /// connected are skipped). Returns the number of fans that acknowledged it.
+    /// connected are skipped). Returns the number of fans it was sent to.
     ///
-    /// Each chunk must be acknowledged within [`CAST_ACK`]; a fan that does not counts as failed
-    /// for this frame, and after [`CAST_MAX_MISSES`] such frames in a row its connection is
-    /// dropped so it reconnects. Fans are served in parallel, each under its own lock, so a slow
-    /// fan never holds up the others or their commands.
+    /// As Holoscope.exe: the first frame of a session starts live mode with `5A 26 26 F5` (the fan
+    /// answers `5A 29 29 F5`; without it the fan keeps playing its playlist), every frame is
+    /// written whole without waiting for an answer, and no heartbeat goes out while frames keep
+    /// coming. The fan needs a frame about every 130 ms or it falls back. A frame that cannot be
+    /// written within [`CAST_WRITE`] is missed; after [`CAST_MAX_MISSES`] in a row the connection
+    /// is dropped so the fan reconnects. Fans are served in parallel, each under its own lock.
     pub fn cast_to(&self, ids: &[u32], jpeg: &[u8]) -> usize {
         let Some(frame) = proto::cast_frame(jpeg) else {
             self.log(format!("cast frame refused: not a complete JPEG of at most {} bytes", proto::MAX_JPEG));
@@ -808,32 +827,47 @@ impl Link {
         })
     }
 
-    /// Send one cast frame to one fan and wait for its acknowledgements.
+    /// How long ago the last cast frame went to fan `id`, if any did.
+    fn since_cast(&self, id: u32) -> Option<Duration> {
+        self.inner.lock().unwrap().conns.get(&id).and_then(|c| c.last_cast).map(|t| t.elapsed())
+    }
+
+    /// Whether fan `id` is (or just was) casting: no heartbeat or status poll then.
+    fn casting(&self, id: u32) -> bool {
+        self.since_cast(id).is_some_and(|d| d < CAST_QUIET)
+    }
+
+    /// Send one cast frame to one fan, starting a live session first when none runs.
     fn cast_one(&self, id: u32, frame: &[u8]) -> bool {
         let (Some(tx), Ok(mut s)) = (self.tx(id), self.stream(id)) else { return false };
         let _g = tx.lock().unwrap();
-        // Always send the whole frame, so the fan's stream never holds half a frame; after the
-        // first missing acknowledgement the rest is sent without waiting.
-        let mut acked = true;
-        for chunk in frame.chunks(CAST_CHUNK) {
-            let (_, mark) = self.mark(id);
-            if s.write_all(chunk).is_err() {
-                acked = false;
-                break;
+        if !self.since_cast(id).is_some_and(|d| d < CAST_SESSION) {
+            let mark = self.packet_seq(id);
+            if s.write_all(&proto::cast_start()).is_err() {
+                return false;
             }
-            // Holoscope waits here until the fan reacts; so do we, but not for long.
-            if acked && !self.wait_bytes(id, mark, CAST_ACK) {
-                acked = false;
+            if self.wait_packet(id, mark, CAST_START_ACK, |p| matches!(p, Packet::TransDone)).is_none() {
+                self.log(format!("fan #{id} did not confirm the cast start (5A 29); casting anyway"));
             }
+            // Holoscope's first frame follows the answer after about 70 ms
+            thread::sleep(Duration::from_millis(70));
         }
+        let _ = s.set_write_timeout(Some(CAST_WRITE));
+        let sent = s.write_all(frame).is_ok();
+        let _ = s.set_write_timeout(None);
         let mut g = self.inner.lock().unwrap();
         let Some(c) = g.conns.get_mut(&id) else { return false };
-        c.cast_misses = if acked { 0 } else { c.cast_misses + 1 };
+        if sent {
+            c.cast_misses = 0;
+            c.last_cast = Some(Instant::now());
+        } else {
+            c.cast_misses += 1;
+        }
         if c.cast_misses >= CAST_MAX_MISSES {
             let _ = c.stream.shutdown(Shutdown::Both);
             drop(g);
-            self.log(format!("fan #{id} did not acknowledge {CAST_MAX_MISSES} cast frames in a row; reconnecting"));
+            self.log(format!("fan #{id}: {CAST_MAX_MISSES} cast frames in a row could not be sent; reconnecting"));
         }
-        acked
+        sent
     }
 }

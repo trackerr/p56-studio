@@ -269,29 +269,32 @@ fn animation_with_sound() {
     r.clean();
 }
 
+/// A real P56 shows cast frames only after `5A 26 26 F5` (it answers `5A 29 29 F5`), and
+/// Holoscope.exe sends no heartbeat or status poll while frames keep coming.
 #[test]
-fn cast_without_acknowledgement_fails_fast_and_reconnects() {
+fn live_cast_starts_live_mode_and_pauses_the_heartbeat() {
     let r = rig();
     let j = r.jpeg();
-    assert_eq!(r.link.cast_to(&[r.id], &j), 1, "acknowledged frame counts");
-    r.sim.modify(|s| s.cast_mute = true);
+    // ~3.5 s at 15 fps spans at least one heartbeat tick (every 3 s)
     let t = std::time::Instant::now();
-    assert_eq!(r.link.cast_to(&[r.id], &j), 0, "an unacknowledged frame is not counted as delivered");
-    assert!(t.elapsed() < Duration::from_secs(3), "gave up within the ack window, took {:?}", t.elapsed());
-    // after a few unacknowledged frames in a row the link drops the connection; the fan reconnects
-    let before = r.sim.state().connections;
-    for _ in 0..6 {
-        r.link.cast_to(&r.link.ids(), &j);
+    let mut sent = 0;
+    while t.elapsed() < Duration::from_millis(3500) {
+        sent += r.link.cast_to(&[r.id], &j);
+        std::thread::sleep(Duration::from_millis(66));
     }
-    r.sim.modify(|s| s.cast_mute = false);
-    r.wait_sim(|s| s.connections > before && s.connected);
-    assert!(r.link.wait_connected(T));
-    let id = r.link.ids()[0];
-    let deadline = std::time::Instant::now() + T;
-    while r.link.cast_to(&[id], &j) != 1 {
-        assert!(std::time::Instant::now() < deadline, "cast never recovered after reconnecting");
-        std::thread::sleep(Duration::from_millis(100));
-    }
+    r.wait_sim(|s| s.cast_ok as usize >= sent);
+    let st = r.sim.state();
+    assert!(st.protocol_errors.is_empty(), "{:?}", st.protocol_errors);
+    assert_eq!(st.cast_bad, 0);
+    // a frame without the start command is not shown
+    std::thread::sleep(Duration::from_millis(1700));
+    r.link.send_to(r.id, &p56_core::protocol::cast_frame(&j).unwrap()).unwrap();
+    r.wait_sim(|s| s.cast_bad == 1);
+    assert!(r.sim.state().protocol_errors.iter().any(|e| e.contains("outside live mode")));
+    r.sim.modify(|s| s.protocol_errors.clear());
+    // after a pause the link starts a new session by itself
+    assert_eq!(r.link.cast_to(&[r.id], &j), 1);
+    r.wait_sim(|s| s.cast_ok as usize == sent + 1);
     r.clean();
 }
 

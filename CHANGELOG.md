@@ -7,6 +7,11 @@ The Home Assistant add-on and integration have their own changelog in
 ## Unreleased
 
 ### Fixed
+- **Live cast works on a real P56.** A cast now starts the fan's live mode with `5A 26 26 F5`
+  (the fan answers `5A 29 29 F5`), as Holoscope.exe does; without it the fan answered every
+  frame but kept playing its playlist. Frames are written whole without waiting for an answer
+  (15 fps on a real P56 instead of ~2), and no heartbeat or status poll goes out while casting.
+  The simulator shows cast frames only in live mode and flags a heartbeat during a cast.
 - **Uploads on a real P56 were reported as failed and could not replace a file.** The fan lists
   its files without `.mp4`; the names are now read as `name.mp4`, so an uploaded file is found
   in the playlist and a file with the same name is replaced (the "already exists" error on a
@@ -18,9 +23,9 @@ The Home Assistant add-on and integration have their own changelog in
 - While a text or ticker is being made, Upload waits for it instead of sending the previous
   picture. A typed text that was not made yet (or was changed since) is made by Upload itself,
   instead of sending the test card.
-- **Camera cast on Android sent nothing**: the hidden video element got no frames in Android's
-  WebView. It is now shown small while casting, and a camera or video that gives no picture for
-  5 s stops the cast with a message instead of silently casting nothing.
+- The camera or video being cast is shown small on the Cast tab instead of in a `display:none`
+  element (in which Android's WebView may decode no frames), and a camera or video that gives
+  no picture for 5 s stops the cast with a message instead of silently casting nothing.
 - The playlist shows names without `.mp4`; a colour mode the fan does not report (a real P56
   sends 0) is shown as "not reported" instead of a guess.
 - **Animations (GIF, video) are uploaded the way Holoscope does it.** A file is a duration

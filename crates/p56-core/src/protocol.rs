@@ -67,8 +67,10 @@ pub mod op {
     /// Fan → PC: transfer aborted by the fan.
     pub const TRANS_BREAK: u8 = 0x22;
     pub const SELECT_DEVICE: u8 = 0x23;
+    /// Start live mode (Holoscope.exe `samescreen`); the fan answers `5A 29 29 F5`.
+    pub const CAST_START: u8 = 0x26;
     pub const CAST_FRAME: u8 = 0x28;
-    /// Fan → PC: transfer stored (progress 100 %).
+    /// Fan → PC: transfer stored (progress 100 %), and live mode ready after `CAST_START`.
     pub const TRANS_DONE: u8 = 0x29;
     pub const ANGLE_ALIGN_START: u8 = 0x2A;
     pub const ANGLE_ALIGN_STOP: u8 = 0x2B;
@@ -364,6 +366,12 @@ pub fn upload_record_with_audio(out: &mut Vec<u8>, jpeg: &[u8], pcm: &[u8]) {
 /// A complete JPEG: starts with SOI (`FF D8`) and ends with EOI (`FF D9`).
 pub fn jpeg_complete(jpeg: &[u8]) -> bool {
     jpeg.len() >= 4 && jpeg.starts_with(&[0xFF, 0xD8]) && jpeg.ends_with(&[0xFF, 0xD9])
+}
+
+/// `5A 26 26 F5`: switch the fan to live mode before the first cast frame (it answers
+/// `5A 29 29 F5`). Without it a P56 acknowledges the frames but keeps playing its playlist.
+pub fn cast_start() -> Vec<u8> {
+    simple(op::CAST_START)
 }
 
 /// Wrap a JPEG into a 20480-byte live cast frame: `5A 28 | jpeg | 00… | 55 F5`.

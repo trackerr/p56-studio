@@ -110,6 +110,9 @@ pub struct SimState {
     pub protocol_errors: Vec<String>,
     #[serde(skip)]
     pub last_cast: Option<(Instant, Vec<u8>)>,
+    /// Live mode: since the cast start (0x26) or the last cast frame, whichever is later.
+    #[serde(skip)]
+    pub live: Option<Instant>,
 }
 
 impl SimState {
@@ -150,6 +153,7 @@ impl SimState {
             commands: Vec::new(),
             protocol_errors: Vec::new(),
             last_cast: None,
+            live: None,
         }
     }
 
@@ -387,6 +391,8 @@ fn connect_loop(sh: Arc<Shared>) {
                     let mut g = sh.state.lock().unwrap();
                     g.connected = true;
                     g.connections += 1;
+                    // live mode belongs to the connection that started it
+                    g.live = None;
                     g.pc = Some(addr.to_string());
                 }
                 sh.changed.notify_all();
@@ -805,6 +811,13 @@ impl Shared {
     }
 }
 
+/// How long live mode lasts without a cast frame (longer than the link's own session pause).
+const LIVE_TIMEOUT: Duration = Duration::from_millis(1500);
+
+fn live(sh: &Shared) -> bool {
+    sh.state.lock().unwrap().live.is_some_and(|t| t.elapsed() < LIVE_TIMEOUT)
+}
+
 fn handle(sh: &Shared, out: &mut Out, pkt: &[u8], ft: u8, just_uploaded: &mut bool) -> Option<Mode> {
     let o = pkt[1];
     let n = pkt.len();
@@ -914,6 +927,9 @@ fn handle(sh: &Shared, out: &mut Out, pkt: &[u8], ft: u8, just_uploaded: &mut bo
             out.send(&status(sh));
         }
         op::HEARTBEAT => {
+            if live(sh) {
+                sh.err("heartbeat during a live cast (Holoscope.exe sends none)".into());
+            }
             set(&|g| g.heartbeats += 1);
             out.send(&status(sh));
         }
@@ -954,6 +970,9 @@ fn handle(sh: &Shared, out: &mut Out, pkt: &[u8], ft: u8, just_uploaded: &mut bo
             }
         }
         op::GET_MACHINE => {
+            if live(sh) {
+                sh.err("status poll (1C) during a live cast (Holoscope.exe sends none)".into());
+            }
             out.send(&sh.info().to_packet());
             out.send(&files(sh));
             out.send(&status(sh));
@@ -1134,7 +1153,21 @@ fn handle(sh: &Shared, out: &mut Out, pkt: &[u8], ft: u8, just_uploaded: &mut bo
             out.ready();
             return Some(Mode::Upload(Upload { name, ..Default::default() }));
         }
+        op::CAST_START => {
+            set(&|g| g.live = Some(Instant::now()));
+            out.send(&[SOF, op::TRANS_DONE, op::TRANS_DONE, EOF]);
+        }
         op::CAST_FRAME => {
+            // A real P56 shows cast frames only in live mode, which 0x26 starts and which ends
+            // when no frame comes for a while; outside it the frames are answered but not shown.
+            if !live(sh) {
+                set(&|g| g.cast_bad += 1);
+                sh.err("cast frame outside live mode: send 5A 26 26 F5 first (a real P56 keeps playing its playlist)".into());
+                if !sh.state.lock().unwrap().cast_mute {
+                    out.ready();
+                }
+                return None;
+            }
             let good = pkt[n - 2] == 0x55 && pkt[n - 1] == EOF;
             let jp = jpegs_in(&pkt[2..n - 2]);
             let res = if !good {
@@ -1152,6 +1185,7 @@ fn handle(sh: &Shared, out: &mut Out, pkt: &[u8], ft: u8, just_uploaded: &mut bo
                     set(&|g| {
                         g.cast_ok += 1;
                         g.last_cast = Some((Instant::now(), j.clone()));
+                        g.live = Some(Instant::now());
                     });
                 }
                 Err(e) => {

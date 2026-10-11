@@ -38,6 +38,7 @@ are sometimes padded to 5 (Holoscope.exe: `3E`, Holoscope.apk: `00`).
 | 1C | request machine info | `5A 1C 1C F5` → `8D` |
 | 1F / 20 | group master on / off | `5A 1F 1F F5` / `5A 20 20 F5` |
 | 23 | select this fan in its group | `5A 23 23 F5`, sent to that fan (`stitchselectdevice`) |
+| 26 | start live cast (Holoscope.exe `samescreen`) | `5A 26 26 F5` → fan answers `5A 29 29 F5`; see §7 |
 | 28 | live cast frame | `5A 28 <jpeg> 00… 55 F5`, always 20480 B |
 | 2A / 2B | group angle alignment start / stop | `5A 2A 2A F5` / `5A 2B 2B F5` |
 | 2C / 2D | colour: true colour / high brightness | `5A 2C 2C F5` / `5A 2D 2D F5` |
@@ -57,7 +58,6 @@ are sometimes padded to 5 (Holoscope.exe: `3E`, Holoscope.apk: `00`).
 | 94 | group: rename a file by name on every fan | `5A 94` + old[32] + new[32] + xor + `F5` (68 B; field order not fully verified) — not implemented |
 | 95 | group saved (Holoscope.exe) | `5A 95 01 01 F5` — not implemented |
 | 96 | place in a group picture | `5A 96 group width height x y xor F5` (9 B, xor over bytes 2–6) — not implemented |
-| 26 | unknown (Holoscope.exe, after a device-type setup) | `5A 26 26 F5` — not implemented |
 
 32-byte fields are zero padded and hold at most 31 bytes of text (Holoscope keeps a terminating
 zero); the xor for `89/8A/8B` covers byte 2 up to and including len−3.
@@ -148,10 +148,27 @@ fits: ≤ 20476 B for a cast frame, ≤ 61440 B for a file. A JPEG is never trun
 The fourth parameter in Holoscope.apk (16000/7992/8000) is an audio sample rate: videos can contain sound.
 
 ## 7. Live cast
-Each frame = §6 → 20480 B: `5A 28 | JPEG | zeros | 55 F5`, in two chunks (14600 + 5880 B);
-after each chunk, wait until the fan responds. P56 Studio waits at most 1.5 s per chunk, always
-sends the whole frame, counts an unanswered frame as not delivered and reconnects after five
-in a row.
+```
+ON(01) · CAST_START(26) → 29 · ~70 ms · FRAME(28) FRAME(28) …   (no heartbeat, no 1C meanwhile)
+```
+- **Start with `5A 26 26 F5`.** The fan answers `5A 29 29 F5` (on a real P56 after ~200 ms).
+  Without it a P56 answers every frame but keeps playing its playlist; after it, it shows the
+  frames. Holoscope.exe (`samescreen(true)`) sends nothing else at the start and does not
+  stream before the `29` arrives.
+- **Each frame** = §6 → 20480 B: `5A 28 | JPEG | zeros | 55 F5`, written whole. Holoscope.exe
+  hands it to the socket in pieces of 14600 + 5880 B and waits only for its own write to finish,
+  never for an answer from the fan; the fan's answers during a cast are ignored.
+- **Keep it coming:** the fan needs a frame about every 130 ms; slower, it shows a frame
+  briefly and falls back. A real P56 shows the test card at 15 fps.
+- **No heartbeat (0D) or status poll (1C)** while casting: Holoscope.exe suppresses both.
+- **Stop:** nothing is sent; the frames simply stop.
+
+P56 Studio starts a session with `26` before the first frame and again after a pause of 1 s,
+waits at most 1 s for the `29`, sends no heartbeat or poll until 2 s after the last frame, and
+drops the connection after five frames in a row that could not be written within 2 s.
+Holoscope.apk (2.5.2 and 2.5.4) has **no** live cast: its projection button takes a photo or
+video that is then uploaded. Verified in the machine code of Holoscope.exe 1.1.8, and live on a
+P56 (2026-10-11).
 
 ## 8. Not implemented
 - **Firmware**: Holoscope.exe starts an update over a separate socket with a `.bin`; the APK
