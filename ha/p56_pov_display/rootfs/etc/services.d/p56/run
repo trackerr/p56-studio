@@ -13,6 +13,8 @@ fi
 # The virtual fan follows the 'simulate' option live: the Supervisor API has the saved
 # options at once, /data/options.json only after a restart.
 args+=(--options-file /data/options.json --options-url http://supervisor/addons/self/info)
+# previews of uploaded files, kept across restarts
+args+=(--thumb-dir /data/thumbs)
 # p56-server answers only this machine and Home Assistant unless --lan is given
 if bashio::config.true 'lan_api'; then
     args+=(--lan)

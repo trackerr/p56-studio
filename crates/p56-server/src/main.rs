@@ -75,6 +75,10 @@ struct Args {
     /// repeat for more. Without any, reading files on the server is refused.
     #[arg(long = "media-dir")]
     media_dirs: Vec<std::path::PathBuf>,
+    /// Keep previews of uploaded files in this folder (the add-on: /data/thumbs), so the app can
+    /// show what a file looks like after a restart too. Without it they are kept in memory only.
+    #[arg(long)]
+    thumb_dir: Option<std::path::PathBuf>,
     /// Only accept fan connections (TCP port) from this address; repeat for more.
     /// Without any, every address may connect (as a real fan on the network needs).
     #[arg(long = "fan-allow")]
@@ -302,6 +306,7 @@ fn start_service(args: &Args, subs: Subscribers) -> Arc<Service> {
             targets,
             port: Some(args.tcp_port),
             media_dirs: args.media_dirs.clone(),
+            thumb_dir: args.thumb_dir.clone(),
             // the virtual fan connects from this machine
             allow_fans: if args.fan_allow.is_empty() {
                 Vec::new()

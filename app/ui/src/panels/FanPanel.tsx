@@ -3,7 +3,8 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Choice, Confirm, DiscText, Notice, Orbit, Readout, Section, Status, ValueSlider } from '@/components/bits';
-import { invoke, type Device } from '@/lib/api';
+import { useEffect, useState } from 'react';
+import { invoke, onEvent, type Device } from '@/lib/api';
 import { useT } from '@/lib/i18n';
 import { useNav } from '@/lib/nav';
 import { cn } from '@/lib/utils';
@@ -13,6 +14,38 @@ const control = (id: number, action: string) => invoke('control', { id, action }
 const setValue = (id: number, what: string, value: number) => invoke('set_value', { id, what, value });
 export const stem = (name: string) => name.replace(/\.mp4$/i, '');
 const pad = (n: number) => String(n).padStart(2, '0');
+
+/**
+ * What the fan shows, as a picture for the dial: the live cast while frames come in, else the
+ * preview of the playing file (kept when this app uploaded it; the fan cannot send files back).
+ */
+function useShowing(fan: Device | null) {
+  const [thumbs, setThumbs] = useState<Record<string, string>>({});
+  const [live, setLive] = useState<{ src: string; at: number } | null>(null);
+  const [, tick] = useState(0);
+  const files = JSON.stringify(fan?.files ?? []);
+  useEffect(() => {
+    if (!fan) return;
+    let alive = true;
+    invoke<Record<string, string> | null>('thumbs', { id: fan.id }).then((t) => alive && setThumbs(t ?? {})).catch(() => alive && setThumbs({}));
+    return () => { alive = false; };
+  }, [fan?.id, files]);
+  useEffect(() => onEvent((e) => {
+    if (e.type !== 'cast') return;
+    if (e.data.stopped) setLive(null);
+    else if (e.data.preview) setLive({ src: e.data.preview, at: Date.now() });
+  }), []);
+  // a cast that stopped without saying so: back to the file after 2 s
+  useEffect(() => {
+    if (!live) return;
+    const t = setTimeout(() => tick((n) => n + 1), 2100);
+    return () => clearTimeout(t);
+  }, [live]);
+  const s = fan?.status;
+  const current = fan?.files.find(([n]) => n === s?.play_index);
+  if (live && Date.now() - live.at < 2000) return { src: live.src, live: true };
+  return { src: s?.power && current ? thumbs[current[1]] : undefined, live: false };
+}
 
 export function NoFan() {
   const { linkState, linkError, discovered, localIp } = useP56();
@@ -96,6 +129,7 @@ function PlaylistStrip({ fan }: { fan: Device }) {
 export function FanPanel() {
   const { fan, run } = useP56();
   const { t } = useT();
+  const showing = useShowing(fan);
   if (!fan) return <NoFan />;
   const s = fan.status;
   const current = fan.files.find(([n]) => n === s?.play_index);
@@ -115,7 +149,7 @@ export function FanPanel() {
           </div>
 
           <Orbit className="max-w-[600px]" spinning={!!s?.power && !!s?.playing} dim={!s?.power}
-            label={current ? stem(current[1]) : undefined}
+            src={showing.src} label={showing.live ? t('fan.liveCast') : current ? stem(current[1]) : undefined}
             angle={{
               value: s?.angle ?? 0, min: -180, max: 180, label: t('fan.angle'), format: (v) => `${v}°`, testId: 'sl-angle', disabled: !s,
               onCommit: (v) => run(t('fan.angle'), (i) => setValue(i, 'angle', v)),
@@ -126,6 +160,11 @@ export function FanPanel() {
                 : <span className="text-muted-foreground [text-shadow:none]">{fan.name}</span>}
             </DiscText>
           </Orbit>
+          {showing.src && (
+            <div className="orbit-label text-center text-primary" data-testid="showing">
+              {showing.live ? t('fan.liveCast') : current ? `${stem(current[1])} · ${pad(current[0])} / ${pad(fan.files.length)}` : ''}
+            </div>
+          )}
           <p className="max-w-sm text-center text-xs text-muted-foreground">{t('fan.ringHint')}</p>
           <div className="w-full max-w-sm">
             <ValueSlider id="sl-brightness" label={t('fan.brightness')} value={s?.brightness ?? 16} min={1} max={16} format={(v) => `${v}/16`} disabled={!s}

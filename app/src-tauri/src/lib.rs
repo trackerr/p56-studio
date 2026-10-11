@@ -25,7 +25,9 @@ pub fn run() {
             let emit: p56_service::Emit = Arc::new(move |t: &str, data: Value| {
                 let _ = handle.emit("p56", serde_json::json!({ "type": t, "data": data }));
             });
-            app.manage(Service::new(emit, Defaults::default()));
+            // previews of uploaded files survive a restart in the app's data folder
+            let thumb_dir = app.path().app_data_dir().ok().map(|d| d.join("thumbs"));
+            app.manage(Service::new(emit, Defaults { thumb_dir, ..Defaults::default() }));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![p56])

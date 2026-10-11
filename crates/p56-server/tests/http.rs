@@ -421,6 +421,42 @@ fn temporary_file_returns_to_the_previous_file_by_name() {
     assert_eq!(names(&st), ["b.mp4", "c.mp4"], "{st}");
 }
 
+/// A preview of every file the server uploaded: by name, moved along on a rename and kept on
+/// disk (--thumb-dir) so it survives a restart. The fan itself cannot send files back.
+#[test]
+fn previews_of_uploaded_files() {
+    let dir = std::env::temp_dir().join(format!("p56-thumbs-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let s = start_with(true, &["--thumb-dir", dir.to_str().unwrap()]);
+    let id = connected_fan(&s);
+    show_ok(&s, json!({ "text": "Hi", "name": "hello" }));
+    s.wait("hello listed", |st| slot_of(st, "hello.mp4").is_some());
+    let t = s.call("thumbs", json!({ "id": id }));
+    let url = t["hello.mp4"].as_str().unwrap_or_default();
+    assert!(url.starts_with("data:image/jpeg;base64,"), "{t}");
+    let files = || walk(&dir);
+    assert_eq!(files().len(), 1, "{:?}", files());
+    let slot = slot_of(&s.get("/api/state"), "hello.mp4").unwrap();
+    s.call("set_text", json!({ "id": id, "what": "rename", "a": "greeting", "slot": slot }));
+    s.wait("renamed", |st| slot_of(st, "greeting.mp4").is_some());
+    let t = s.call("thumbs", json!({ "id": id }));
+    assert!(t["greeting.mp4"].is_string() && t.get("hello.mp4").is_none(), "{t}");
+    assert!(files().iter().any(|f| f.ends_with("greeting.mp4.jpg")), "{:?}", files());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+fn walk(dir: &std::path::Path) -> Vec<String> {
+    let mut out = Vec::new();
+    for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        if e.path().is_dir() {
+            out.extend(walk(&e.path()));
+        } else {
+            out.push(e.path().display().to_string());
+        }
+    }
+    out
+}
+
 // ---- live cast to one fan -----------------------------------------------------------------
 
 #[test]

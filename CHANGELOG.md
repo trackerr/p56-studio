@@ -7,6 +7,9 @@ The Home Assistant add-on and integration have their own changelog in
 ## Unreleased
 
 ### Added
+- **The dial shows what the fan plays**: a preview of the playing file (kept for every file
+  this app uploads, also across restarts; the fan cannot send its files back), and the live
+  picture while casting. Files put on the fan by another app still show their name.
 - Cast: in Home Assistant, any **camera entity** can be cast (Cast → Home Assistant camera); the
   add-on fetches a new snapshot several times a second and keeps the fan in live mode.
 

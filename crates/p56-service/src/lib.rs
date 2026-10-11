@@ -69,6 +69,8 @@ pub struct Defaults {
     pub media_dirs: Vec<std::path::PathBuf>,
     /// Only fans from these addresses may connect; empty = any.
     pub allow_fans: Vec<std::net::IpAddr>,
+    /// Where previews of uploaded files are kept across restarts; `None` = in memory only.
+    pub thumb_dir: Option<std::path::PathBuf>,
 }
 
 /// A temporary file (`show_seconds` > 0) waiting for its auto-delete timer, per (fan, file name).
@@ -130,6 +132,9 @@ pub struct Service {
     /// Per (fan MAC or id, file name). Also held while an auto-delete timer removes its file,
     /// so a new upload of the same name cannot interleave with that delete.
     names: Mutex<HashMap<(String, String), NameState>>,
+    /// Round preview (JPEG) of every file this app uploaded, per (fan MAC or id, file name): the
+    /// fan cannot send its files back, so this is how the app shows what a file looks like.
+    thumbs: Mutex<HashMap<(String, String), Vec<u8>>>,
     next_generation: AtomicU64,
     /// Canonicalized `Defaults::media_dirs`.
     media_dirs: Vec<std::path::PathBuf>,
@@ -418,6 +423,7 @@ impl Service {
             last_activity: Mutex::new(None),
             shown: Mutex::new(HashMap::new()),
             names: Mutex::new(HashMap::new()),
+            thumbs: Mutex::new(HashMap::new()),
             next_generation: AtomicU64::new(0),
             media_dirs,
             emit,
@@ -522,6 +528,60 @@ impl Service {
         self.emit("shown", json!({ "ids": ids }));
     }
 
+    /// The file a preview of (fan key, file name) is kept in, when previews are kept on disk.
+    fn thumb_path(&self, key: &str, name: &str) -> Option<std::path::PathBuf> {
+        let dir: String = key.chars().filter(|c| c.is_ascii_alphanumeric()).collect();
+        let file: String = name.chars().map(|c| if c.is_ascii_alphanumeric() || "-_.".contains(c) { c } else { '_' }).collect();
+        Some(self.defaults.thumb_dir.as_ref()?.join(dir).join(format!("{file}.jpg")))
+    }
+
+    /// Keep a preview of file `name` on fan `id`, made from its first frame (fan layout).
+    fn keep_thumb(&self, l: &Link, id: u32, name: &str, jpeg: &[u8], ft: &FanType) {
+        let Ok(round) = transcode::preview_from_jpeg(jpeg, ft, 240) else { return };
+        let thumb = transcode::jpeg(&round, 80);
+        let key = Self::fan_key(l, id);
+        if let Some(path) = self.thumb_path(&key, name) {
+            let saved = path.parent().map(std::fs::create_dir_all).transpose().and_then(|_| std::fs::write(&path, &thumb));
+            if let Err(e) = saved {
+                log::warn!("preview {}: {e}", path.display());
+            }
+        }
+        self.thumbs.lock().unwrap().insert((key, name.to_string()), thumb);
+    }
+
+    /// Give the preview of `old` on fan `id` to its new name.
+    fn rename_thumb(&self, l: &Link, id: u32, old: &str, new: &str) {
+        let key = Self::fan_key(l, id);
+        let thumb = self.thumbs.lock().unwrap().remove(&(key.clone(), old.to_string()));
+        if let (Some(from), Some(to)) = (self.thumb_path(&key, old), self.thumb_path(&key, new)) {
+            let _ = std::fs::rename(from, to);
+        }
+        if let Some(t) = thumb {
+            self.thumbs.lock().unwrap().insert((key, new.to_string()), t);
+        }
+    }
+
+    /// Previews (data URLs) of the files on fan `id` that this app uploaded, by file name.
+    fn thumbs(&self, id: u32) -> Result<Value, String> {
+        let l = self.link()?;
+        let d = l.device(id).ok_or("no such fan")?;
+        let key = Self::fan_key(&l, id);
+        let mut out = serde_json::Map::new();
+        let mut m = self.thumbs.lock().unwrap();
+        for (_, name) in &d.files {
+            let k = (key.clone(), name.clone());
+            if !m.contains_key(&k) {
+                if let Some(b) = self.thumb_path(&key, name).and_then(|p| std::fs::read(p).ok()) {
+                    m.insert(k.clone(), b);
+                }
+            }
+            if let Some(b) = m.get(&k) {
+                out.insert(name.clone(), Value::from(data_url("image/jpeg", b)));
+            }
+        }
+        Ok(Value::Object(out))
+    }
+
     /// Round preview (PNG) of what the fan with this MAC (or id) was last sent by this server.
     pub fn shown(&self, mac: &str) -> Option<Vec<u8>> {
         self.shown.lock().unwrap().get(mac).cloned()
@@ -542,6 +602,7 @@ impl Service {
                 Ok(Value::Null)
             }
             "fan_types" => Ok(fan_types()),
+            "thumbs" => self.thumbs(need(a, "id")?),
             "control" => self.control(need(a, "id")?, &need::<String>(a, "action")?).map(|_| Value::Null),
             "set_value" => self.set_value(need(a, "id")?, &need::<String>(a, "what")?, need(a, "value")?).map(|_| Value::Null),
             "set_text" => self.set_text(need(a, "id")?, &need::<String>(a, "what")?, need(a, "a")?, arg(a, "b"), arg(a, "slot")).map(|_| Value::Null),
@@ -757,7 +818,15 @@ impl Service {
             _ => {}
         }
         match what {
-            "rename" => l.rename(id, slot.unwrap_or(1), &a),
+            "rename" => {
+                let slot = slot.unwrap_or(1);
+                let old = l.device(id).and_then(|d| d.files.iter().find(|(s, _)| *s == slot).map(|(_, n)| n.clone()));
+                let r = l.rename(id, slot, &a);
+                if let (Ok(()), Some(old)) = (&r, old) {
+                    self.rename_thumb(&l, id, &old, &p56_core::protocol::mp4_name(&a));
+                }
+                r
+            }
             "name" => l.device_name(id, &a),
             "hotspot" => l.set_hotspot(id, &a, &b),
             "router" => l.set_router(id, &a, &b),
@@ -915,6 +984,7 @@ impl Service {
         let audio = audio.filter(|_| frames.len() > 1);
         let outcome = l.upload_with_audio(id, &frames, audio.as_deref(), &name, Some(slot)).map_err(err)?;
         self.remember(&[id], &frames[0], &ft);
+        self.keep_thumb(&l, id, &p56_core::protocol::mp4_name(&name), &frames[0], &ft);
         progress("done", frames.len(), frames.len());
         Ok(Value::from(format!("{} ({} frame(s)){}", p56_core::protocol::mp4_name(&name), frames.len(), unconfirmed(outcome))))
     }
@@ -1237,6 +1307,7 @@ impl Service {
             }
             let _ = l.select(id, slot);
             self.remember(&[id], &jpegs[0], &ft);
+            self.keep_thumb(&l, id, &name, &jpegs[0], &ft);
             if secs > 0.0 {
                 let me = self.clone();
                 let l2 = l.clone();

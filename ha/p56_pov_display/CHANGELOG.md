@@ -5,6 +5,8 @@
 - **Cast your Home Assistant cameras** to the fan: Cast → Home Assistant camera lists every
   camera entity. The add-on now asks for access to Home Assistant's API (`homeassistant_api`)
   for this.
+- The dial on the Fan tab shows a preview of what the fan plays (files uploaded through the
+  add-on, kept in `/data/thumbs`) and the live picture while casting.
 - Fan tab: brightness is a slider under the dial; "Video (live)" is gone from Cast (a video is
   cast as media).
 
