@@ -13,8 +13,9 @@ fi
 # The virtual fan follows the 'simulate' option live: the Supervisor API has the saved
 # options at once, /data/options.json only after a restart.
 args+=(--options-file /data/options.json --options-url http://supervisor/addons/self/info)
-if bashio::config.false 'lan_api'; then
-    args+=(--local-only)
+# p56-server answers only this machine and Home Assistant unless --lan is given
+if bashio::config.true 'lan_api'; then
+    args+=(--lan)
 fi
 # Clients on the network (not Home Assistant itself) must send this token.
 if bashio::config.has_value 'api_token'; then

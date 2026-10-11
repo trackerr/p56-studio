@@ -147,6 +147,12 @@ p56-server --http-port 8765            # add --simulate for a virtual fan
 Then open **http://localhost:8765/**. It powers the Home Assistant add-on; static Linux builds
 (x86_64 and aarch64) are in every release.
 
+It answers only this machine until you add `--lan`; protect that with `--api-token <token>`.
+`--fan-allow <ip>` limits which addresses may connect as a fan.
+
+One server can be the single controller of your fans while Home Assistant and any number of
+browsers use it at the same time: a fan keeps one connection, to the app or server it found.
+
 <details>
 <summary>API in short</summary>
 

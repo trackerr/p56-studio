@@ -242,15 +242,21 @@ pub fn ascii(s: &str) -> String {
     s.chars().map(|c| if c.is_ascii() && !c.is_ascii_control() { c } else { '_' }).collect()
 }
 
-/// Append `.mp4` unless present: the firmware only lists `.mp4` names.
+/// Longest file name stem sent to the fan, in bytes (the name is stored on its memory card).
+pub const MAX_NAME_STEM: usize = 60;
+
+/// A safe file name for the fan, ending in `.mp4` (the firmware only lists `.mp4` names).
+/// Only letters, digits, space, `-`, `_`, `.`, `(` and `)` are kept, anything else becomes `_`
+/// (so no `/`, `\` or `:` can reach the memory card); no leading dots or spaces; the stem is at
+/// most [`MAX_NAME_STEM`] bytes.
 pub fn mp4_name(name: &str) -> String {
-    let n = ascii(name.trim());
-    let n = if n.is_empty() { "upload".to_string() } else { n };
-    if n.to_ascii_lowercase().ends_with(".mp4") {
-        n
-    } else {
-        format!("{n}.mp4")
-    }
+    let name = name.trim();
+    let stem = if name.to_ascii_lowercase().ends_with(".mp4") { &name[..name.len() - 4] } else { name };
+    let safe: String =
+        stem.chars().map(|c| if c.is_ascii_alphanumeric() || matches!(c, ' ' | '-' | '_' | '.' | '(' | ')') { c } else { '_' }).take(MAX_NAME_STEM).collect();
+    let safe = safe.trim_start_matches(['.', ' ']).trim_end();
+    let safe = if safe.trim_matches(['.', '_']).is_empty() { "upload" } else { safe };
+    format!("{safe}.mp4")
 }
 
 /// `5A op len <bytes> xor F5`, xor over `len` and the bytes.
@@ -758,6 +764,19 @@ mod tests {
         let n = device_name("Fan 1");
         assert_eq!(n.len(), 36);
         assert_eq!(n[34], xorsum(&n[2..34]));
+    }
+
+    #[test]
+    fn file_names_are_safe() {
+        assert_eq!(mp4_name("clip"), "clip.mp4");
+        assert_eq!(mp4_name("Clip.MP4"), "Clip.mp4");
+        assert_eq!(mp4_name("../../etc/passwd"), "_.._etc_passwd.mp4");
+        assert_eq!(mp4_name("a/b\\c:d*e?f\"g<h>i|j"), "a_b_c_d_e_f_g_h_i_j.mp4");
+        assert_eq!(mp4_name("Café Ø"), "Caf_ _.mp4");
+        assert_eq!(mp4_name(".hidden"), "hidden.mp4");
+        assert_eq!(mp4_name(".."), "upload.mp4");
+        assert_eq!(mp4_name("   "), "upload.mp4");
+        assert_eq!(mp4_name(&"x".repeat(300)).len(), MAX_NAME_STEM + 4);
     }
 
     #[test]

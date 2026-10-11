@@ -27,6 +27,10 @@ impl Drop for Rig {
 }
 
 fn start_link(targets: Vec<SocketAddr>, fan_udp: u16) -> (Link, Receiver<Event>) {
+    start_link_allow(targets, fan_udp, Vec::new())
+}
+
+fn start_link_allow(targets: Vec<SocketAddr>, fan_udp: u16, allow: Vec<std::net::IpAddr>) -> (Link, Receiver<Event>) {
     Link::start(Config {
         local_ip: None,
         tcp_port: 0,
@@ -35,6 +39,7 @@ fn start_link(targets: Vec<SocketAddr>, fan_udp: u16) -> (Link, Receiver<Event>)
         broadcast_interval: Duration::from_millis(200),
         heartbeat: true,
         targets,
+        allow,
     })
     .expect("link start")
 }
@@ -259,6 +264,21 @@ fn cast_without_acknowledgement_fails_fast_and_reconnects() {
         std::thread::sleep(Duration::from_millis(100));
     }
     r.clean();
+}
+
+#[test]
+fn fan_port_only_accepts_allowed_addresses() {
+    let sim = Sim::start(SimConfig { udp_port: 0, ..Default::default() }).expect("sim");
+    let other = std::net::IpAddr::from([192, 0, 2, 7]); // documentation address, never the sim
+    let (link, _rx) = start_link_allow(vec![SocketAddr::from((Ipv4Addr::LOCALHOST, sim.udp_port))], sim.udp_port, vec![other]);
+    sim.set_pc_port(link.tcp_port);
+    assert!(!link.wait_connected(Duration::from_secs(2)), "a fan from an address that is not allowed got in");
+    link.shutdown();
+    let (link, _rx) = start_link_allow(vec![SocketAddr::from((Ipv4Addr::LOCALHOST, sim.udp_port))], sim.udp_port, vec![other, Ipv4Addr::LOCALHOST.into()]);
+    sim.set_pc_port(link.tcp_port);
+    assert!(link.wait_connected(T), "an allowed fan was refused");
+    link.shutdown();
+    sim.stop();
 }
 
 #[test]

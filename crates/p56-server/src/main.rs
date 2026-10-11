@@ -4,12 +4,15 @@
 //! - `GET /api/state`, `POST /api/show` for the Home Assistant integration
 //! - the add-on 1.x endpoints `/health`, `/status`, `/text`, `/upload`, `/delete`, `/on`, `/off`
 //!
-//! Access: `--local-only` answers only this machine and the Home Assistant Supervisor network;
-//! otherwise `--api-token` makes every other client send the token (except for `/` and
-//! `/api/ping`). Files on the server are only read from the `--media-dir` folders.
+//! Access: by default only this machine and the Home Assistant Supervisor network are answered;
+//! `--lan` opens the API to the network, and `--api-token` then makes every other client send
+//! the token (except for `/` and `/api/ping`). Files on the server are only read from the
+//! `--media-dir` folders. Bodies over 64 MB get 413; more than 64 requests or 32 event streams
+//! at once get 503. `--fan-allow` limits which addresses may connect as a fan.
 
 use std::io::{Read, Write};
 use std::net::{Ipv4Addr, TcpStream};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -55,9 +58,13 @@ struct Args {
     /// Announce this server to Home Assistant (Supervisor discovery) when running as an add-on.
     #[arg(long)]
     discovery: bool,
-    /// Only answer this machine and the Home Assistant Supervisor network (172.30.32.0/23),
-    /// not the rest of the LAN.
+    /// Answer the whole network, not only this machine and the Home Assistant Supervisor
+    /// network (172.30.32.0/23). Protect it with --api-token.
     #[arg(long)]
+    lan: bool,
+    /// Only this machine and the Home Assistant Supervisor network: the default, kept so
+    /// older command lines keep working.
+    #[arg(long, hide = true)]
     local_only: bool,
     /// Require this token from clients on the network (not from this machine or the Home
     /// Assistant Supervisor network): `Authorization: Bearer <token>` or `?token=<token>`.
@@ -68,6 +75,10 @@ struct Args {
     /// repeat for more. Without any, reading files on the server is refused.
     #[arg(long = "media-dir")]
     media_dirs: Vec<std::path::PathBuf>,
+    /// Only accept fan connections (TCP port) from this address; repeat for more.
+    /// Without any, every address may connect (as a real fan on the network needs).
+    #[arg(long = "fan-allow")]
+    fan_allow: Vec<std::net::IpAddr>,
 }
 
 impl Args {
@@ -136,6 +147,37 @@ fn allowed(addr: Option<&std::net::SocketAddr>) -> bool {
 
 type Subscribers = Arc<Mutex<Vec<Sender<String>>>>;
 
+/// Largest request body (a picture or a few animation frames, base64).
+const MAX_BODY: usize = 64 * 1024 * 1024;
+/// Requests handled at once; more get 503.
+const MAX_ACTIVE: usize = 64;
+/// Live event streams open at once; more get 503.
+const MAX_STREAMS: usize = 32;
+
+/// Counts a running request or event stream for as long as it lives.
+struct Slot(&'static AtomicUsize);
+impl Slot {
+    fn take(counter: &'static AtomicUsize, max: usize) -> Option<Slot> {
+        if counter.fetch_add(1, Ordering::SeqCst) >= max {
+            counter.fetch_sub(1, Ordering::SeqCst);
+            return None;
+        }
+        Some(Slot(counter))
+    }
+}
+impl Drop for Slot {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+static ACTIVE: AtomicUsize = AtomicUsize::new(0);
+static STREAMS: AtomicUsize = AtomicUsize::new(0);
+
+fn busy(req: Request) {
+    let _ = req
+        .respond(json_response(&json!({ "error": "Too many requests at once, try again" }), 503).with_header(Header::from_bytes("Retry-After", "1").unwrap()));
+}
+
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).format_timestamp_secs().init();
     let args = Args::parse();
@@ -146,10 +188,10 @@ fn main() {
         std::process::exit(1)
     });
     log::info!("HTTP API and web UI on :{}", args.http_port);
-    match (args.local_only, args.token()) {
-        (true, _) => log::info!("API limited to this machine and Home Assistant"),
-        (false, Some(_)) => log::info!("API open to the network, with an API token"),
-        (false, None) => log::warn!("API open to the whole network WITHOUT a token: anyone on it can control the fans; set an API token"),
+    match (args.lan, args.token()) {
+        (false, _) => log::info!("API limited to this machine and Home Assistant (--lan opens it to the network)"),
+        (true, Some(_)) => log::info!("API open to the network, with an API token"),
+        (true, None) => log::warn!("API open to the whole network WITHOUT a token: anyone on it can control the fans; set an API token"),
     }
     if args.discovery {
         let port = args.http_port;
@@ -158,7 +200,7 @@ fn main() {
     let token = args.token().map(str::to_string);
     for req in server.incoming_requests() {
         let trusted = allowed(req.remote_addr());
-        if args.local_only && !trusted {
+        if !args.lan && !trusted {
             let _ = req.respond(json_response(&json!({ "error": "Forbidden" }), 403));
             continue;
         }
@@ -170,9 +212,21 @@ fn main() {
                 continue;
             }
         }
+        if req.body_length().is_some_and(|n| n > MAX_BODY) {
+            let _ = req.respond(json_response(&json!({ "error": format!("Payload too large (max {} MB)", MAX_BODY >> 20) }), 413));
+            continue;
+        }
+        let stream = req.url().split('?').next().is_some_and(|p| p.trim_end_matches('/') == "/api/events");
+        let Some(slot) = Slot::take(if stream { &STREAMS } else { &ACTIVE }, if stream { MAX_STREAMS } else { MAX_ACTIVE }) else {
+            busy(req);
+            continue;
+        };
         let svc = svc.clone();
         let subs = subs.clone();
-        thread::spawn(move || handle(req, &svc, &subs));
+        thread::spawn(move || {
+            let _slot = slot;
+            handle(req, &svc, &subs)
+        });
     }
 }
 
@@ -190,7 +244,21 @@ fn start_service(args: &Args, subs: Subscribers) -> Arc<Service> {
     if args.simulate || args.options_file.is_some() {
         targets.push(format!("127.0.0.1:{}", args.sim_udp_port));
     }
-    let svc = Service::new(emit, Defaults { ip: args.ip.clone(), targets, port: Some(args.tcp_port), media_dirs: args.media_dirs.clone() });
+    let svc = Service::new(
+        emit,
+        Defaults {
+            ip: args.ip.clone(),
+            targets,
+            port: Some(args.tcp_port),
+            media_dirs: args.media_dirs.clone(),
+            // the virtual fan connects from this machine
+            allow_fans: if args.fan_allow.is_empty() {
+                Vec::new()
+            } else {
+                args.fan_allow.iter().copied().chain([std::net::IpAddr::from(Ipv4Addr::LOCALHOST)]).collect()
+            },
+        },
+    );
     match svc.start_link(None, None, None) {
         Ok(ip) => log::info!("fan link started on TCP {} (advertising {ip})", args.tcp_port),
         Err(e) => log::error!("fan link not started: {e}"),
@@ -290,7 +358,7 @@ fn json_response(v: &Value, status: u16) -> Response<std::io::Cursor<Vec<u8>>> {
 
 fn body_json(req: &mut Request) -> Value {
     let mut s = String::new();
-    let _ = req.as_reader().take(64 * 1024 * 1024).read_to_string(&mut s);
+    let _ = req.as_reader().take(MAX_BODY as u64).read_to_string(&mut s);
     serde_json::from_str(&s).unwrap_or(Value::Null)
 }
 

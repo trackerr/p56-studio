@@ -493,13 +493,33 @@ fn answer(r: Result<ureq::Response, ureq::Error>) -> (u16, Value) {
 }
 
 #[test]
+fn the_network_is_refused_unless_lan_is_given() {
+    let Some(ip) = lan_ip() else {
+        eprintln!("skipped: this machine has no non-loopback IPv4 address");
+        return;
+    };
+    let s = start(true);
+    let (code, _) = answer(ureq::get(&format!("http://{ip}:{}/api/state", s.http)).timeout(Duration::from_secs(10)).call());
+    assert_eq!(code, 403, "without --lan the network gets no answer");
+    assert!(s.get("/api/state")["version"].is_string(), "this machine does");
+}
+
+#[test]
+fn too_large_bodies_get_413() {
+    let s = start(false);
+    let big = "x".repeat(64 * 1024 * 1024 + 1);
+    let (code, _) = answer(ureq::post(&format!("{}/api/show", s.base)).set("Content-Type", "application/json").send_string(&big));
+    assert_eq!(code, 413);
+}
+
+#[test]
 fn api_token_is_required_from_the_network_only() {
     let Some(ip) = lan_ip() else {
         eprintln!("skipped: this machine has no non-loopback IPv4 address");
         return;
     };
     let token = "s3cret/+token";
-    let s = start_with(true, &["--api-token", token]);
+    let s = start_with(true, &["--lan", "--api-token", token]);
     let lan = format!("http://{ip}:{}", s.http);
     let get = |p: &str, auth: Option<&str>| {
         let mut r = ureq::get(&format!("{lan}{p}")).timeout(Duration::from_secs(10));

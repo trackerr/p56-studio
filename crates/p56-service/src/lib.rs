@@ -43,6 +43,8 @@ pub struct Defaults {
     pub port: Option<u16>,
     /// Folders `show_text` / `show_image` may read a `path` from. Empty = `path` is refused.
     pub media_dirs: Vec<std::path::PathBuf>,
+    /// Only fans from these addresses may connect; empty = any.
+    pub allow_fans: Vec<std::net::IpAddr>,
 }
 
 /// A temporary file (`show_seconds` > 0) waiting for its auto-delete timer, per (fan, file name).
@@ -545,6 +547,7 @@ impl Service {
                 })
                 .collect(),
             tcp_port: port.or(self.defaults.port).unwrap_or(p56_core::protocol::TCP_PORT),
+            allow: self.defaults.allow_fans.clone(),
             ..Default::default()
         };
         let (l, rx) = Link::start(cfg).map_err(err)?;

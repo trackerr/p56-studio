@@ -90,7 +90,12 @@ pub struct Config {
     pub heartbeat: bool,
     /// Extra unicast discovery targets (a fan whose IP is known, or a simulator).
     pub targets: Vec<SocketAddr>,
+    /// Only fans from these addresses may connect to the TCP port; empty = any address.
+    pub allow: Vec<IpAddr>,
 }
+
+/// Most fans connected at once; further connections are refused.
+pub const MAX_FANS: usize = 64;
 
 impl Default for Config {
     fn default() -> Self {
@@ -102,6 +107,7 @@ impl Default for Config {
             broadcast_interval: Duration::from_secs(3),
             heartbeat: true,
             targets: Vec::new(),
+            allow: Vec::new(),
         }
     }
 }
@@ -180,7 +186,8 @@ impl Link {
         link.log(format!("TCP server on :{tcp_port} (advertising {ip})"));
         {
             let l = link.clone();
-            thread::spawn(move || l.accept_loop(listener));
+            let allow = cfg.allow.clone();
+            thread::spawn(move || l.accept_loop(listener, allow));
         }
         {
             let l = link.clone();
@@ -263,7 +270,7 @@ impl Link {
         }
     }
 
-    fn accept_loop(&self, listener: TcpListener) {
+    fn accept_loop(&self, listener: TcpListener, allow: Vec<IpAddr>) {
         for stream in listener.incoming() {
             if self.stop.load(Ordering::SeqCst) {
                 break;
@@ -271,6 +278,20 @@ impl Link {
             let Ok(stream) = stream else { continue };
             let _ = stream.set_nodelay(true);
             let peer = stream.peer_addr().map(|a| a.ip()).ok();
+            let peer_v4 = peer.map(|p| match p {
+                IpAddr::V6(v6) => v6.to_ipv4_mapped().map(IpAddr::V4).unwrap_or(p),
+                v4 => v4,
+            });
+            if !allow.is_empty() && !peer_v4.is_some_and(|p| allow.contains(&p)) {
+                self.log(format!("refused a connection from {peer:?}: not in the allowed fan addresses"));
+                let _ = stream.shutdown(Shutdown::Both);
+                continue;
+            }
+            if self.inner.lock().unwrap().conns.len() >= MAX_FANS {
+                self.log(format!("refused a connection from {peer:?}: already {MAX_FANS} fans connected"));
+                let _ = stream.shutdown(Shutdown::Both);
+                continue;
+            }
             let Ok(reader) = stream.try_clone() else { continue };
             let inbox = Arc::new((Mutex::new(Inbox::default()), Condvar::new()));
             let id = {
