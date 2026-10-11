@@ -132,26 +132,26 @@ export function FanPanel() {
           </Orbit>
           <p className="max-w-sm text-center text-xs text-muted-foreground">{t('fan.ringHint')}</p>
 
-          <div className="flex items-start gap-8">
-            <div className="flex flex-col items-center gap-2.5">
+          <div className="grid w-full max-w-sm grid-cols-3 items-start gap-2 sm:gap-6">
+            <div className="flex min-w-0 flex-col items-center gap-2.5">
               <Button size="round" data-testid="btn-power" variant={s?.power ? 'default' : 'secondary'} aria-label={s?.power ? t('fan.turnOff') : t('fan.turnOn')}
                 onClick={() => run(t('fan.power'), (i) => control(i, s?.power ? 'off' : 'on'))}>
                 <IconPower className="h-6 w-6" />
               </Button>
-              <span className="orbit-label">{s?.power ? t('fan.turnOff') : t('fan.turnOn')}</span>
+              <span className="orbit-label w-full truncate text-center text-[8px] tracking-[0.08em] sm:text-[9px] sm:tracking-[0.22em]">{s?.power ? t('fan.turnOff') : t('fan.turnOn')}</span>
             </div>
-            <div className="flex flex-col items-center gap-2.5">
+            <div className="flex min-w-0 flex-col items-center gap-2.5">
               <Button size="round" variant="secondary" data-testid="btn-play" aria-label={s?.playing ? t('fan.pause') : t('fan.play')}
                 onClick={() => run(t('fan.play'), (i) => control(i, s?.playing ? 'pause' : 'play'))}>
                 {s?.playing ? <IconPause className="h-6 w-6" /> : <IconPlay className="h-6 w-6" />}
               </Button>
-              <span className="orbit-label">{s?.playing ? t('fan.pause') : t('fan.play')}</span>
+              <span className="orbit-label w-full truncate text-center text-[8px] tracking-[0.08em] sm:text-[9px] sm:tracking-[0.22em]">{s?.playing ? t('fan.pause') : t('fan.play')}</span>
             </div>
-            <div className="flex flex-col items-center gap-2.5">
+            <div className="flex min-w-0 flex-col items-center gap-2.5">
               <Button size="round" variant="secondary" aria-label={t('common.refresh')} onClick={() => run(t('common.refresh'), (i) => control(i, 'refresh'))}>
                 <IconRefresh className="h-6 w-6" />
               </Button>
-              <span className="orbit-label">{t('common.refresh')}</span>
+              <span className="orbit-label w-full truncate text-center text-[8px] tracking-[0.08em] sm:text-[9px] sm:tracking-[0.22em]">{t('common.refresh')}</span>
             </div>
           </div>
         </div>
