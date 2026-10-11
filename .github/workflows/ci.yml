@@ -15,8 +15,14 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-      # The Tauri app needs WebKitGTK on Linux; it is built in the release workflow on Windows.
+      - name: Formatting
+        run: cargo fmt --all --check
+      # The Tauri app needs WebKitGTK on Linux; it is built in the release workflow.
+      - name: Clippy (warnings are errors)
+        run: cargo clippy --workspace --exclude p56-studio --all-targets -- -D warnings
       - run: cargo test --workspace --exclude p56-studio
       - run: cargo build -p p56-server -p p56-sim
       - uses: actions/upload-artifact@v4
@@ -36,13 +42,14 @@ jobs:
           version: 10
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - run: pnpm --dir app/ui install --frozen-lockfile
       - name: Type check (tsc -b)
         run: pnpm --dir app/ui exec tsc -b
       - run: pnpm --dir app/ui run bundle
+      # The apps and p56-server embed this file, so a stale copy would ship an old UI.
       - name: Committed app/src/index.html is up to date
-        run: git diff --stat --exit-code -- app/src/index.html || echo "::warning::app/src/index.html differs from a fresh build"
+        run: git diff --stat --exit-code -- app/src/index.html
 
   home-assistant:
     name: Home Assistant integration

@@ -1,0 +1,57 @@
+# Changelog
+
+P56 Studio (Windows, Linux, Android), `p56` (CLI), `p56-sim` and `p56-server`.
+The Home Assistant add-on and integration have their own changelog in
+[`ha/p56_pov_display/CHANGELOG.md`](ha/p56_pov_display/CHANGELOG.md).
+
+## Unreleased
+
+### Fixed
+- **Animations (GIF, video) are uploaded the way Holoscope does it.** A file is a duration
+  followed by one record per frame (`[length][1600 B audio][JPEG][padding]`); this project used to
+  put all JPEGs of an animation in one record. Verified in the machine code of Holoscope.apk
+  2.5.2 / 2.5.4 and Holoscope.exe 1.1.8. Still pictures were already right and are unchanged
+  byte for byte. Needs a test on a real fan.
+- Animations play at their own speed: frames are repeated or thinned out to the fan's fixed
+  20 frames per second.
+- A JPEG is never cut short any more (that could drop its end marker); the quality goes down
+  instead. Files may use larger JPEGs (61440 B, Holoscope's limit) than cast frames (20476 B).
+- Casting: a frame only counts when the fan acknowledges it, a fan that stops answering is
+  reconnected, and a slow fan no longer holds up the others (one lock per fan).
+- Uploads report whether the fan acknowledged and listed the file; a dropped connection is
+  an error instead of a success.
+- A timed cast from `/api/show` (Home Assistant) is stopped by `cast_stop` and replaced by the
+  next cast instead of running on.
+
+### Changed
+- New look, "Baan": the fan as a dial (brightness on the inner arc, picture angle on the outer
+  ring), own icons and fonts, rail / bottom bar navigation, new app icon. See
+  [docs/DESIGN.md](docs/DESIGN.md).
+- Release builds also produce the Linux app (.deb, AppImage) and, when the signing key is set
+  up as a repository secret, the Android APK; checksums cover every file.
+- CI checks formatting, clippy (warnings are errors) and that the bundled UI is up to date.
+
+## 0.2.5 — 2026-10-11
+- Fixes from a code review: stale auto-delete timers, cast only to the selected fans, an
+  optional API token for clients on the network, `path` limited to media folders, unknown fan
+  types refused, size-limited downloads, colours per server, UI type check in CI, camera
+  released on every exit path.
+
+## 0.2.4 — 2026-10-11
+- Text cards with styles (alert, warning, info, success, price, clock), Material Design
+  icons, colour by value and animations (GIF, frames) for `show_text` / `show_image`.
+
+## 0.2.3 — 2026-10-11
+- Code and documentation in English; the app is bilingual (Dutch / English).
+
+## 0.2.2 — 2026-10-11
+- The add-on's virtual fan follows the saved option at once (read from the Supervisor API).
+- `p56-sim --count N`: extra simulated fans.
+
+## 0.2.1 — 2026-10-11
+- Virtual fan on/off from the add-on option; Home Assistant follows add-on restarts.
+
+## 0.2.0 — 2026-10-11
+- First public version: protocol worked out from Holoscope, P56 Studio for Windows and
+  Android, `p56` CLI, `p56-sim` simulator with a gauntlet of tests, `p56-server` and the Home
+  Assistant add-on and integration.

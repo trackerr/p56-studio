@@ -48,7 +48,7 @@ jobs:
           version: 10
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - run: pnpm --dir app/ui install --frozen-lockfile
       - run: npm ci
         working-directory: app
@@ -66,14 +66,101 @@ jobs:
           name: windows
           path: out/*
 
+  linux-app:
+    name: Linux (P56 Studio .deb + AppImage)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev libxdo-dev patchelf
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: pnpm --dir app/ui install --frozen-lockfile
+      - run: npm ci
+        working-directory: app
+      - run: npx tauri build --bundles deb,appimage
+        working-directory: app
+      - run: |
+          mkdir out
+          cp target/release/bundle/deb/*.deb out/
+          cp target/release/bundle/appimage/*.AppImage out/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-app
+          path: out/*
+
+  android:
+    name: Android (P56 Studio APK)
+    runs-on: ubuntu-latest
+    env:
+      # The signing key lives only in the repository secrets, never in git. Without it the APK is
+      # still built (as a check) but not published.
+      HAS_KEY: ${{ secrets.ANDROID_KEYSTORE_B64 != '' }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: android
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: pnpm --dir app/ui install --frozen-lockfile
+      - run: npm ci
+        working-directory: app
+      - name: Signing key from the repository secrets
+        if: env.HAS_KEY == 'true'
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          printf 'storeFile=%s\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+            "$RUNNER_TEMP/release.jks" "$STORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > app/src-tauri/gen/android/keystore.properties
+      - run: NDK_HOME="$ANDROID_NDK_LATEST_HOME" npx tauri android build --apk --target aarch64 --target armv7 --target x86_64
+        working-directory: app
+      - run: |
+          mkdir out
+          v=$(node -p "require('./app/src-tauri/tauri.conf.json').version")
+          apk=$(find app/src-tauri/gen/android/app/build/outputs/apk/universal/release -name '*.apk' | head -n1)
+          cp "$apk" "out/P56-Studio-$v-android.apk"
+          ls -l out
+          rm -f "$RUNNER_TEMP/release.jks" app/src-tauri/gen/android/keystore.properties
+      - if: env.HAS_KEY == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: out/*
+
   release:
-    needs: [linux, windows]
+    # A manual run only builds and checks everything; a version tag publishes.
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [linux, windows, linux-app, android]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
         with:
           path: dl
           merge-multiple: true
+      # after every asset is in place, so the checksums cover all of them (the APK included)
       - run: |
           cd dl
           sha256sum * > SHA256SUMS
