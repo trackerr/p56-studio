@@ -1,6 +1,9 @@
 # Changelog
 
-## 2.1.1 (not released yet)
+## 2.1.1
+
+p56-server 0.3.1.
+
 
 - **Cast your Home Assistant cameras** to the fan: Cast → Home Assistant camera lists every
   camera entity. The add-on now asks for access to Home Assistant's API (`homeassistant_api`)

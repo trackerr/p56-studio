@@ -1,0 +1,151 @@
+# P56 POV Display in Home Assistant: user guide
+
+For everyday use. Installation is in the [README](../README.md#-installation); every option and
+the HTTP API are in the [add-on documentation](../p56_pov_display/DOCS.md).
+
+- [1. How it fits together](#1-how-it-fits-together)
+- [2. First time](#2-first-time)
+- [3. The P56 POV panel](#3-the-p56-pov-panel)
+- [4. On your dashboard](#4-on-your-dashboard)
+- [5. Automations in a few clicks](#5-automations-in-a-few-clicks)
+- [6. Your cameras on the fan](#6-your-cameras-on-the-fan)
+- [7. Your phone and computer through Home Assistant](#7-your-phone-and-computer-through-home-assistant)
+- [8. When something does not work](#8-when-something-does-not-work)
+
+---
+
+## 1. How it fits together
+
+- The **add-on** is the part that talks to the fan. The fan connects to it over your Wi-Fi.
+- The **integration** turns every fan into a device with entities (a light, a text field,
+  a file picker …) and adds the actions `p56_pov.show_text` and `p56_pov.show_image`.
+- The **panel** "P56 POV" in the sidebar is the full P56 Studio app: upload photos and videos,
+  type text, cast live, change the fan's Wi-Fi.
+
+A fan accepts **one connection**. With the add-on running, Home Assistant keeps that connection,
+and your phone and computer can join in through Home Assistant ([section 7](#7-your-phone-and-computer-through-home-assistant)).
+
+## 2. First time
+
+1. Install the add-on and the integration as in the [README](../README.md#-installation), and
+   start the add-on.
+2. **Put the fan on your Wi-Fi** (once): a new fan makes its own Wi-Fi. Connect a phone to it,
+   open P56 Studio (or the vendor app) and set your router under **Network → Connect to your
+   router**. Then close that app.
+3. Within a minute the fan connects to Home Assistant. **Settings → Devices & services** shows
+   "P56 POV Display discovered": press **Add**.
+
+> No fan yet? Turn on **simulate** in the add-on configuration: a virtual fan appears and you
+> can try everything.
+
+## 3. The P56 POV panel
+
+Open **P56 POV** in the sidebar (turn on *Show in sidebar* in the add-on if it is not there).
+It works like the P56 Studio app; its [user guide](https://github.com/trackerr/p56-studio/blob/main/docs/GUIDE.md)
+explains every tab. In short:
+
+- **Fan**: the dial shows what the fan plays. Drag the outer ring to turn the picture; the slider
+  below sets the brightness.
+- **Media**: choose a photo, GIF or video, or type a text (still, ticker or around the rim), and
+  press **Upload & show**.
+- **Playlist**: show, rename or delete files.
+- **Cast**: show something live without storing it, such as one of your cameras.
+- **Network**: the fan's name, Wi-Fi and Bluetooth.
+
+## 4. On your dashboard
+
+The integration gives every fan entities you can put on any dashboard:
+
+| Card | Entity (for a fan called *P56*) |
+| --- | --- |
+| On/off and brightness | `light.p56` (a light card) |
+| Type a text, the fan shows it | `text.p56_text` (an entities card) |
+| Choose what plays | `select.p56_file` |
+| What the fan shows | `image.p56_shown` (a picture entity card) |
+| Play / pause | `switch.p56_playing` |
+
+## 5. Automations in a few clicks
+
+In **Settings → Automations & scenes → Create automation**, choose a trigger, then add the action
+**P56 POV Display: Show text** or **Show picture**. A few ideas:
+
+**The washing machine is done** (a notification for 15 seconds, then the playlist continues)
+
+```yaml
+action: notify.send_message
+target:
+  entity_id: notify.p56_message
+data:
+  message: Washing done
+```
+
+**The energy price, for a minute, in a colour from green (cheap) to red (expensive)**
+
+```yaml
+action: p56_pov.show_text
+data:
+  text: "{{ states('sensor.energy_price') }}"
+  style: price
+  value: "{{ states('sensor.energy_price') }}"
+  value_min: 0.10
+  value_max: 0.40
+  show_seconds: 60
+```
+
+**Someone at the door: a snapshot of the doorbell camera for 20 seconds**
+
+```yaml
+action: p56_pov.show_image
+data:
+  camera: camera.front_door
+  show_seconds: 20
+```
+
+With `show_seconds` the fan goes back to what it played before. Using the same `name` again
+replaces the earlier picture instead of adding a new one. More examples:
+[examples/automations.yaml](../examples/automations.yaml).
+
+## 6. Your cameras on the fan
+
+**Live, from the panel:** open **P56 POV → Cast**, choose **Home Assistant camera**, pick the
+camera from the list and press **Start casting**. Home Assistant sends a new picture several
+times a second until you press stop; the fan then returns to its playlist.
+
+**A snapshot, from an automation:** use `p56_pov.show_image` with `camera:` (see above). Add
+`mode: cast` to show it live for `show_seconds` without storing anything on the fan.
+
+## 7. Your phone and computer through Home Assistant
+
+Because Home Assistant keeps the fan's one connection, a P56 Studio app on your phone or computer
+cannot find the fan by itself while the add-on runs. Let the app go **through** Home Assistant
+instead; then everything works at the same time.
+
+**Once, in Home Assistant**
+
+1. **Settings → Add-ons → P56 POV Display → Configuration**.
+2. Turn on **lan_api**.
+3. Fill in **api_token** with a password you make up (keep it: you need it on each device).
+4. Save and **restart** the add-on.
+
+**On each phone or computer (P56 Studio)**
+
+1. Open the **App** tab and choose **Through a P56 server**.
+2. Enter your Home Assistant address with port **8765**, for example `192.168.1.20:8765`
+   (the same address you use for Home Assistant, but with `:8765`).
+3. Press **Test**, then **Use this server**.
+4. Enter the **api_token** when the app asks for it.
+
+The app now shows and controls the same fan as Home Assistant. The address stays filled in when
+you switch back to **This app controls the fan** (for example on a trip, connecting to the fan's
+own Wi-Fi) and later return to the server.
+
+## 8. When something does not work
+
+| What you see | What to do |
+| --- | --- |
+| No fan appears | Is the fan on the same network as Home Assistant? Close Holoscope and P56 Studio on other devices (or set them to go through Home Assistant, [section 7](#7-your-phone-and-computer-through-home-assistant)). If your network blocks broadcasts, fill in the fan's IP under **fan_ip** in the add-on. |
+| The phone app finds the fan, Home Assistant does not | The app has the fan's connection. Close it (swipe it away), or set it to go through Home Assistant. |
+| The app says "No P56 server answers at this address" | Check the address and `:8765`, and that **lan_api** is on and the add-on was restarted. |
+| The app asks for an API token | Enter the **api_token** from the add-on configuration. |
+| "Home Assistant camera" is missing on the Cast tab | Update the add-on to 2.1.1 or later (it needs access to Home Assistant's cameras). |
+| Something else | Open the add-on's **Log** tab; the last lines usually say what is going on. |

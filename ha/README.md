@@ -37,6 +37,9 @@ hologram fan, straight from Home Assistant. Local, no vendor app, no cloud.**
 
 ## 🚀 Installation
 
+> 📖 After installing: the **[user guide](docs/GUIDE.md)** explains the panel, dashboards,
+> automations, your cameras, and using your phone through Home Assistant.
+
 You need **two parts**: the **add-on** (talks to the fan) and the **integration** (gives you the
 entities and actions). Both are in this repository.
 

@@ -80,6 +80,8 @@ The look is called *Baan* (Dutch for orbit): everything is round, like the fan i
 
 ## Get started
 
+Step by step for everyday use: **[user guide](docs/GUIDE.md)**.
+
 ### Windows
 
 1. Download **`P56.Studio_…_x64-setup.exe`** from the [latest release](https://github.com/trackerr/p56-studio/releases/latest) and install it.
