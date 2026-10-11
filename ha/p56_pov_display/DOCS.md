@@ -74,6 +74,45 @@ data:
   show_seconds: 20
 ```
 
+#### Styles, icons and colours that follow a value
+
+```yaml
+action: p56_pov.show_text
+data:
+  text: "{{ states('sensor.energy_price') }} €/kWh"
+  style: price                         # alert, warning, info, success, price, clock
+  value: "{{ states('sensor.energy_price') }}"
+  value_min: 0.20                      # green at or below
+  value_max: 0.35                      # red at or above (yellow halfway)
+```
+
+```yaml
+action: p56_pov.show_text
+data:
+  text: Washing machine done
+  style: success
+  icon: mdi:washing-machine            # any Material Design Icon, as in Home Assistant
+  show_seconds: 300
+```
+
+| Style | Look |
+| --- | --- |
+| `alert` | red ring, warning icon, dark red background |
+| `warning` | orange ring, outlined warning icon, yellow text |
+| `info` | blue ring, info icon |
+| `success` | green ring, check icon |
+| `price` | lightning icon; ring and text take the colour of `value` |
+| `clock` | ring with clock ticks; without `text` it shows the current time |
+
+Everything a style sets can be overridden: `color`, `background`, `icon`, `icon_color`,
+`ring` (on/off). An icon alone (no text) is drawn large.
+
+#### Animations: GIF and video
+
+`show_image` keeps every frame of an animated GIF, and turns a video (MP4, WebM, MOV, AVI)
+into frames with the ffmpeg that comes with Home Assistant (`fps`, default 10; `max_frames`,
+default 100). The fan plays it in a loop; with `mode: cast` it plays live for `show_seconds`.
+
 `p56_pov.play_file` and `p56_pov.delete_file` take a device and a `slot` or `name`.
 `show_text` and `show_image` return the result (slot, file name) as a response.
 
@@ -82,7 +121,7 @@ data:
 | Method + path | Body / answer |
 | --- | --- |
 | `GET /api/state` | `{connected, fan_ip, playlist:[{slot,name}], devices:[…], last_activity, version}` |
-| `POST /api/show` | `{text \| data (base64) \| path, color, background, font_size, show_seconds, mode, name, mac \| id, placement:{x,y,scale,mirror}}` |
+| `POST /api/show` | `{text \| icon \| data (base64; GIF keeps all frames) \| path \| frames:[base64,…], style, icon, icon_color, color_scale:{value,min,max,colors?,invert?}, ring, color, background, font_size, show_seconds, mode, name, max_frames, frame_ms, mac \| id, placement:{x,y,scale,mirror}}` |
 | `POST /api/call/<cmd>` | every command of the web app, e.g. `control {id, action:"on"\|"off"\|"play"\|"pause"\|…}`, `set_value {id, what:"brightness"\|"angle"\|"volume"\|"select"\|"delete", value}` → `{ok, result \| error}` |
 | `GET /api/events` | live events (server-sent events) |
 | `GET /api/shown/<mac>` | PNG of what was last sent to that fan |

@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.0.4
+
+- `/api/show`: ready-made styles (alert, warning, info, success, price, clock) with a ring along the rim,
+  Material Design Icons (`icon`), text colour from a value (`color_scale`), animated GIFs with all
+  their frames, and `frames` for any series of pictures.
+- p56-server 0.2.4.
+
 ## 2.0.3
 
 - The panel (P56 Studio web app) is available in English and Dutch, with a switch in the header.

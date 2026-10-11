@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
+import os
+import shutil
+import tempfile
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -137,3 +141,68 @@ async def image_bytes(hass: HomeAssistant, data: Mapping[str, Any]) -> bytes:
 
 def b64(data: bytes) -> str:
     return base64.b64encode(data).decode()
+
+
+def is_video(data: bytes) -> bool:
+    """MP4/MOV, WebM/MKV or AVI, by their file signature."""
+    head = data[:16]
+    return head[4:8] == b"ftyp" or head[:4] == b"\x1a\x45\xdf\xa3" or (head[:4] == b"RIFF" and head[8:12] == b"AVI ")
+
+
+def _ffmpeg_binary(hass: HomeAssistant) -> str | None:
+    try:
+        from homeassistant.components.ffmpeg import get_ffmpeg_manager  # noqa: PLC0415
+
+        return get_ffmpeg_manager(hass).binary
+    except Exception:  # noqa: BLE001 - ffmpeg integration not set up: try the PATH
+        return shutil.which("ffmpeg")
+
+
+def split_jpegs(stream: bytes) -> list[bytes]:
+    """Split a concatenated MJPEG stream (ffmpeg image2pipe) into separate JPEGs."""
+    frames, pos = [], 0
+    while (start := stream.find(b"\xff\xd8", pos)) != -1:
+        end = stream.find(b"\xff\xd9", start + 2)
+        if end == -1:
+            break
+        frames.append(stream[start : end + 2])
+        pos = end + 2
+    return frames
+
+
+async def video_frames(hass: HomeAssistant, data: bytes, fps: float, max_frames: int) -> list[bytes]:
+    """Frames of a video as JPEGs (720 px), with the ffmpeg that comes with Home Assistant."""
+    binary = _ffmpeg_binary(hass)
+    if not binary:
+        raise HomeAssistantError(translation_domain=DOMAIN, translation_key="video_needs_ffmpeg")
+
+    def _write() -> str:
+        with tempfile.NamedTemporaryFile(prefix="p56_", suffix=".video", delete=False) as f:
+            f.write(data)
+            return f.name
+
+    path = await hass.async_add_executor_job(_write)
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            binary, "-hide_banner", "-loglevel", "error", "-i", path,
+            "-vf", f"fps={fps},scale=720:720:force_original_aspect_ratio=decrease",
+            "-frames:v", str(max_frames), "-f", "image2pipe", "-c:v", "mjpeg", "-q:v", "4", "pipe:1",
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            out, err = await asyncio.wait_for(proc.communicate(), timeout=120)
+        except TimeoutError:
+            proc.kill()
+            raise HomeAssistantError(
+                translation_domain=DOMAIN, translation_key="video_failed", translation_placeholders={"error": "timeout"}
+            ) from None
+    finally:
+        await hass.async_add_executor_job(os.remove, path)
+    frames = split_jpegs(out)
+    if not frames:
+        raise HomeAssistantError(
+            translation_domain=DOMAIN,
+            translation_key="video_failed",
+            translation_placeholders={"error": err.decode(errors="replace").strip()[:200] or "no frames"},
+        )
+    return frames

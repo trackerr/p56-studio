@@ -6,11 +6,61 @@ show_text:
           multiple: true
           integration: p56_pov
     text:
-      required: true
       example: "0,23 €/kWh"
       selector:
         text:
           multiline: true
+    style:
+      selector:
+        select:
+          options:
+            - alert
+            - warning
+            - info
+            - success
+            - price
+            - clock
+          translation_key: style
+    icon:
+      example: mdi:washing-machine
+      selector:
+        icon:
+    value:
+      example: "{{ states('sensor.energy_price') }}"
+      selector:
+        number:
+          min: -1000000
+          max: 1000000
+          step: any
+          mode: box
+    value_min:
+      example: 0.2
+      selector:
+        number:
+          min: -1000000
+          max: 1000000
+          step: any
+          mode: box
+    value_max:
+      example: 0.35
+      selector:
+        number:
+          min: -1000000
+          max: 1000000
+          step: any
+          mode: box
+    invert_colors:
+      advanced: true
+      selector:
+        boolean:
+    ring:
+      advanced: true
+      selector:
+        boolean:
+    icon_color:
+      advanced: true
+      selector:
+        color_rgb:
     color:
       example: "#ffcc00"
       selector:
@@ -115,6 +165,20 @@ show_image:
       advanced: true
       selector:
         boolean:
+    max_frames:
+      advanced: true
+      selector:
+        number:
+          min: 1
+          max: 600
+          mode: box
+    fps:
+      advanced: true
+      selector:
+        number:
+          min: 1
+          max: 30
+          mode: box
 
 play_file:
   fields:

@@ -14,6 +14,7 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.service_info.hassio import HassioServiceInfo
 
@@ -280,3 +281,90 @@ async def test_follows_virtual_fan_and_addon_restarts(hass: HomeAssistant, tmp_p
     finally:
         proc.kill()
         proc.wait()
+
+def gif_bytes(colors: list[tuple[int, int, int]]) -> bytes:
+    from PIL import Image  # noqa: PLC0415
+
+    frames = [Image.new("RGB", (64, 64), c) for c in colors]
+    buf = io.BytesIO()
+    frames[0].save(buf, "GIF", save_all=True, append_images=frames[1:], duration=80, loop=0)
+    return buf.getvalue()
+
+
+async def test_styles_icons_values_and_animations(hass: HomeAssistant, p56_server, tmp_path: Path) -> None:
+    entry = await setup(hass, p56_server)
+    # style + icon + colour from a value
+    resp = await hass.services.async_call(
+        DOMAIN, "show_text",
+        {"text": "0,31 €/kWh", "style": "price", "value": 0.31, "value_min": 0.2, "value_max": 0.35, "name": "price"},
+        blocking=True, return_response=True,
+    )
+    assert resp["results"][0]["success"] is True
+    # icon alone, and the clock style without text (shows the time)
+    for data in ({"icon": "mdi:washing-machine", "name": "icon"}, {"style": "clock", "name": "clock"}):
+        resp = await hass.services.async_call(DOMAIN, "show_text", data, blocking=True, return_response=True)
+        assert resp["results"][0]["success"] is True, data
+    # an animated GIF keeps its frames
+    gif = tmp_path / "anim.gif"
+    gif.write_bytes(gif_bytes([(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0)]))
+    hass.config.allowlist_external_dirs = {str(tmp_path)}
+    resp = await hass.services.async_call(
+        DOMAIN, "show_image", {"path": str(gif), "name": "anim"}, blocking=True, return_response=True
+    )
+    assert resp["results"][0]["results"][0]["frames"] == 4
+    # a value needs its range
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(DOMAIN, "show_text", {"text": "x", "value": 3}, blocking=True)
+    # an unknown icon is reported by the server
+    with pytest.raises(HomeAssistantError):
+        await hass.services.async_call(DOMAIN, "show_text", {"text": "x", "icon": "mdi:not-an-icon"}, blocking=True)
+    select = entity_id(hass, "select", "file")
+    await wait_for(hass, "files", lambda: {"price.mp4", "icon.mp4", "clock.mp4", "anim.mp4"} <= set(hass.states.get(select).attributes.get("options", [])))
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+def test_video_helpers() -> None:
+    from custom_components.p56_pov.show import is_video, split_jpegs  # noqa: PLC0415
+
+    assert is_video(b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 8)
+    assert is_video(b"\x1a\x45\xdf\xa3" + b"\x00" * 12)
+    assert not is_video(b"GIF89a" + b"\x00" * 10)
+    stream = b"\xff\xd8aaa\xff\xd9" + b"\xff\xd8bb\xff\xd9" + b"\xff\xd8c"
+    assert split_jpegs(stream) == [b"\xff\xd8aaa\xff\xd9", b"\xff\xd8bb\xff\xd9"]
+
+async def test_video_becomes_an_animation(hass: HomeAssistant, p56_server, tmp_path: Path, monkeypatch) -> None:
+    """A video goes through ffmpeg (faked here) and reaches the fan as frames."""
+    from PIL import Image  # noqa: PLC0415
+
+    from custom_components.p56_pov import show as show_mod  # noqa: PLC0415
+
+    def jpeg(c):
+        buf = io.BytesIO()
+        Image.new("RGB", (96, 96), c).save(buf, "JPEG")
+        return buf.getvalue()
+
+    calls = {}
+
+    class FakeProc:
+        async def communicate(self):
+            return jpeg((255, 0, 0)) + jpeg((0, 0, 255)) + jpeg((0, 255, 0)), b""
+
+        def kill(self):
+            pass
+
+    async def fake_exec(*args, **kwargs):
+        calls["args"] = args
+        return FakeProc()
+
+    monkeypatch.setattr(show_mod, "_ffmpeg_binary", lambda hass: "ffmpeg")
+    monkeypatch.setattr(show_mod.asyncio, "create_subprocess_exec", fake_exec)
+    entry = await setup(hass, p56_server)
+    video = tmp_path / "clip.mp4"
+    video.write_bytes(b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 64)
+    hass.config.allowlist_external_dirs = {str(tmp_path)}
+    resp = await hass.services.async_call(
+        DOMAIN, "show_image", {"path": str(video), "name": "clip", "fps": 5, "max_frames": 3}, blocking=True, return_response=True
+    )
+    assert resp["results"][0]["results"][0]["frames"] == 3
+    assert "fps=5.0" in " ".join(calls["args"]) and "3" in calls["args"]
+    assert await hass.config_entries.async_unload(entry.entry_id)

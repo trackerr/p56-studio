@@ -25,6 +25,7 @@ DEFAULT_COLOR: Final = "#ffffff"
 DEFAULT_BACKGROUND: Final = "#000000"
 
 MODES: Final = ["upload", "cast"]
+STYLES: Final = ["alert", "warning", "info", "success", "price", "clock"]
 
 # Name the text entity and notify use on the fan, so they replace their previous message.
 TEXT_FILE_NAME: Final = "ha_tekst"

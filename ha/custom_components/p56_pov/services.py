@@ -11,11 +11,12 @@ from homeassistant.const import ATTR_DEVICE_ID
 from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv, device_registry as dr
+from homeassistant.util import dt as dt_util
 
-from .const import CONF_BACKGROUND, CONF_COLOR, CONF_MODE, DEFAULT_BACKGROUND, DEFAULT_COLOR, DEFAULT_MODE, DOMAIN, MODES
+from .const import CONF_BACKGROUND, CONF_COLOR, CONF_MODE, DEFAULT_BACKGROUND, DEFAULT_COLOR, DEFAULT_MODE, DOMAIN, MODES, STYLES
 from .coordinator import P56ConfigEntry, P56Coordinator
 from .entity import run_command
-from .show import b64, color_value, image_bytes
+from .show import b64, color_value, image_bytes, is_video, video_frames
 
 SHOW_COMMON = {
     vol.Optional(ATTR_DEVICE_ID): vol.All(cv.ensure_list, [cv.string]),
@@ -24,14 +25,27 @@ SHOW_COMMON = {
     vol.Optional("name"): vol.All(cv.string, vol.Length(min=1, max=40)),
 }
 
-SHOW_TEXT_SCHEMA = vol.Schema(
-    {
-        **SHOW_COMMON,
-        vol.Required("text"): vol.All(cv.string, vol.Length(min=1, max=300)),
-        vol.Optional("color"): vol.Any(cv.string, vol.All(vol.ExactSequence([cv.byte, cv.byte, cv.byte]))),
-        vol.Optional("background"): vol.Any(cv.string, vol.All(vol.ExactSequence([cv.byte, cv.byte, cv.byte]))),
-        vol.Optional("font_size"): vol.All(vol.Coerce(float), vol.Range(min=0, max=400)),
-    }
+COLOR = vol.Any(cv.string, vol.All(vol.ExactSequence([cv.byte, cv.byte, cv.byte])))
+
+SHOW_TEXT_SCHEMA = vol.All(
+    vol.Schema(
+        {
+            **SHOW_COMMON,
+            vol.Optional("text"): vol.All(cv.string, vol.Length(max=300)),
+            vol.Optional("color"): COLOR,
+            vol.Optional("background"): COLOR,
+            vol.Optional("font_size"): vol.All(vol.Coerce(float), vol.Range(min=0, max=400)),
+            vol.Optional("icon"): cv.string,
+            vol.Optional("icon_color"): COLOR,
+            vol.Optional("style"): vol.In(STYLES),
+            vol.Optional("ring"): cv.boolean,
+            vol.Optional("value"): vol.Coerce(float),
+            vol.Optional("value_min"): vol.Coerce(float),
+            vol.Optional("value_max"): vol.Coerce(float),
+            vol.Optional("invert_colors"): cv.boolean,
+        }
+    ),
+    cv.has_at_least_one_key("text", "icon", "style"),
 )
 
 SHOW_IMAGE_SCHEMA = vol.Schema(
@@ -45,6 +59,8 @@ SHOW_IMAGE_SCHEMA = vol.Schema(
         vol.Optional("x_offset"): vol.All(vol.Coerce(float), vol.Range(min=-1, max=1)),
         vol.Optional("y_offset"): vol.All(vol.Coerce(float), vol.Range(min=-1, max=1)),
         vol.Optional("mirror"): cv.boolean,
+        vol.Optional("max_frames"): vol.All(vol.Coerce(int), vol.Range(min=1, max=600)),
+        vol.Optional("fps"): vol.All(vol.Coerce(float), vol.Range(min=1, max=30)),
     }
 )
 
@@ -103,21 +119,47 @@ async def _show(call: ServiceCall, payload: dict[str, Any]) -> ServiceResponse:
 async def _show_text(call: ServiceCall) -> ServiceResponse:
     entries = _loaded(call.hass)
     opts = entries[0].options if entries else {}
-    payload: dict[str, Any] = {
-        "text": call.data["text"],
-        "color": color_value(call.data.get("color", opts.get(CONF_COLOR, DEFAULT_COLOR))),
-        "background": color_value(call.data.get("background", opts.get(CONF_BACKGROUND, DEFAULT_BACKGROUND))),
-    }
-    for key in ("font_size", "show_seconds", "mode", "name"):
-        if key in call.data:
-            payload[key] = call.data[key]
+    data = call.data
+    style = data.get("style")
+    text = data.get("text", "")
+    if style == "clock" and not text.strip():
+        text = dt_util.now().strftime("%H:%M")
+    payload: dict[str, Any] = {"text": text}
+    # A style brings its own colours; the entry's default colours only apply without one.
+    for key, default in (("color", DEFAULT_COLOR), ("background", DEFAULT_BACKGROUND)):
+        conf = CONF_COLOR if key == "color" else CONF_BACKGROUND
+        if key in data:
+            payload[key] = color_value(data[key])
+        elif not style:
+            payload[key] = color_value(opts.get(conf, default))
+    if "value" in data:
+        if "value_min" not in data or "value_max" not in data:
+            raise ServiceValidationError(translation_domain=DOMAIN, translation_key="value_needs_range")
+        payload["color_scale"] = {
+            "value": data["value"],
+            "min": data["value_min"],
+            "max": data["value_max"],
+            "invert": data.get("invert_colors", False),
+        }
+    if "icon_color" in data:
+        payload["icon_color"] = color_value(data["icon_color"])
+    for key in ("icon", "style", "ring", "font_size", "show_seconds", "mode", "name"):
+        if key in data:
+            payload[key] = data[key]
     return await _show(call, payload)
 
 
 async def _show_image(call: ServiceCall) -> ServiceResponse:
     data = await image_bytes(call.hass, call.data)
-    payload: dict[str, Any] = {"data": b64(data)}
-    for key in ("show_seconds", "mode", "name"):
+    payload: dict[str, Any] = {}
+    if is_video(data):
+        fps = call.data.get("fps", 10.0)
+        frames = await video_frames(call.hass, data, fps, call.data.get("max_frames", 100))
+        payload["frames"] = [b64(f) for f in frames]
+        payload["frame_ms"] = round(1000 / fps)
+    else:
+        payload["data"] = b64(data)
+    for key in ("show_seconds", "mode", "name", "max_frames"):
         if key in call.data:
             payload[key] = call.data[key]
     if any(k in call.data for k in ("scale", "x_offset", "y_offset", "mirror")):

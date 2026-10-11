@@ -25,7 +25,8 @@ hologram fan, straight from Home Assistant. Local, no vendor app, no cloud.**
 | 💡 **Control** | On/off and brightness as a light, play/pause, playlist, repeat, picture angle, colour mode |
 | 📝 **Text** | A text field on your dashboard, or the `p56_pov.show_text` action, sized automatically to fit the round display |
 | 🔔 **Notifications** | `notify.send_message` shows a message for 15 seconds, then the playlist resumes |
-| 🖼️ **Pictures** | `p56_pov.show_image` from a file, a URL, the media library or a camera snapshot |
+| 🎨 **Styles & icons** | Ready-made looks (alert, warning, info, success, price, clock) with a ring along the rim, any Home Assistant icon, and a text colour that follows a value (green → red) |
+| 🖼️ **Pictures & animations** | `p56_pov.show_image` from a file, a URL, the media library or a camera snapshot; animated GIFs and videos play as animations |
 | 👀 **Preview** | An image entity that shows what the fan is displaying right now |
 | 🖥️ **Web app** | The full P56 Studio app as a sidebar panel: upload photos, GIFs and video, cast live, change Wi-Fi |
 | 🔌 **Self-contained** | Everything runs inside Home Assistant; the fans connect to it on your own network |
@@ -112,12 +113,34 @@ data:
   name: energy              # the same name replaces the previous one
 ```
 
-### Show a picture
+### Styles, icons and colours that follow a value
+
+<p align="center"><img src="docs/styles.png" width="820" alt="The alert, price, success and clock styles on the fan"></p>
+
+```yaml
+action: p56_pov.show_text
+data:
+  text: "{{ states('sensor.energy_price') }} €/kWh"
+  style: price                       # alert · warning · info · success · price · clock
+  value: "{{ states('sensor.energy_price') }}"
+  value_min: 0.20                    # green
+  value_max: 0.35                    # red (yellow in between)
+```
+
+```yaml
+action: p56_pov.show_text
+data:
+  text: Washing machine done
+  style: success
+  icon: mdi:washing-machine          # any icon from Home Assistant's icon picker
+```
+
+### Show a picture or an animation
 
 ```yaml
 action: p56_pov.show_image
 data:
-  camera: camera.front_door   # or: path: /media/logo.png  ·  url: https://…  ·  media: (picker)
+  camera: camera.front_door   # or: path: /media/logo.gif  ·  url: https://…/clip.mp4  ·  media: (picker)
   show_seconds: 20
 ```
 
@@ -133,8 +156,8 @@ data:
 
 | Action | Fields |
 | --- | --- |
-| `p56_pov.show_text` | `text`, `color`, `background`, `font_size`, `show_seconds`, `mode`, `name`, `device_id` |
-| `p56_pov.show_image` | one of `path` / `url` / `camera` / `media`, plus `show_seconds`, `mode`, `name`, `scale`, `x_offset`, `y_offset`, `mirror`, `device_id` |
+| `p56_pov.show_text` | `text`, `style`, `icon`, `value` + `value_min` + `value_max`, `color`, `background`, `icon_color`, `ring`, `font_size`, `show_seconds`, `mode`, `name`, `device_id` |
+| `p56_pov.show_image` | one of `path` / `url` / `camera` / `media` (pictures, GIFs, videos), plus `show_seconds`, `mode`, `name`, `fps`, `max_frames`, `scale`, `x_offset`, `y_offset`, `mirror`, `device_id` |
 | `p56_pov.play_file` | `device_id` and `slot` or `name` |
 | `p56_pov.delete_file` | `device_id` and `slot` or `name` |
 

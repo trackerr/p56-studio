@@ -236,3 +236,63 @@ fn virtual_fan_follows_the_supervisor_options() {
     s.wait("option saved off -> gone", |v| v["connected"] == false);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+fn shown_png(s: &Srv) -> image::RgbImage {
+    let mac = s.get("/api/state")["devices"][0]["mac"].as_str().unwrap().to_string();
+    let mut png = Vec::new();
+    ureq::get(&format!("{}/api/shown/{mac}", s.base)).call().unwrap().into_reader().read_to_end(&mut png).unwrap();
+    image::load_from_memory(&png).unwrap().to_rgb8()
+}
+
+fn gif(frames: &[[u8; 3]]) -> Vec<u8> {
+    use image::codecs::gif::{GifEncoder, Repeat};
+    let mut out = Vec::new();
+    {
+        let mut enc = GifEncoder::new(&mut out);
+        enc.set_repeat(Repeat::Infinite).unwrap();
+        for c in frames {
+            let img = image::RgbaImage::from_pixel(64, 64, image::Rgba([c[0], c[1], c[2], 255]));
+            enc.encode_frame(image::Frame::from_parts(img, 0, 0, image::Delay::from_numer_denom_ms(80, 1))).unwrap();
+        }
+    }
+    out
+}
+
+#[test]
+fn styles_icons_colour_scale_and_animations() {
+    let s = start(true);
+    s.wait("connected", |v| v["connected"] == true);
+    // ready-made style: red ring along the rim + alert icon
+    let (code, v) = s.post("/api/show", json!({ "text": "Door open", "style": "alert", "name": "styled" }));
+    assert_eq!(code, 200, "{v}");
+    let img = shown_png(&s);
+    let reddish = img.pixels().filter(|p| p[0] > 180 && p[1] < 110 && p[2] < 110).count();
+    assert!(reddish > 2_000, "alert ring is red: {reddish} red pixels");
+    // colour from a value: high price -> red text, low -> green text
+    let (code, v) = s.post("/api/show", json!({ "text": "0.39", "color_scale": { "value": 0.39, "min": 0.20, "max": 0.35 }, "name": "price" }));
+    assert_eq!(code, 200, "{v}");
+    let img = shown_png(&s);
+    let red = img.pixels().filter(|p| p[0] > 180 && p[1] < 110).count();
+    let green = img.pixels().filter(|p| p[1] > 160 && p[0] < 110).count();
+    assert!(red > 1_000 && green < 100, "red text for a high value: red {red}, green {green}");
+    // icon only
+    let (code, v) = s.post("/api/show", json!({ "icon": "mdi:washing-machine", "name": "icon" }));
+    assert_eq!(code, 200, "{v}");
+    // animated GIF keeps all its frames
+    let (code, v) = s.post("/api/show", json!({ "data": base64_encode(&gif(&[[255, 0, 0], [0, 255, 0], [0, 0, 255]])), "name": "anim" }));
+    assert_eq!(code, 200, "{v}");
+    assert_eq!(v["results"][0]["frames"], 3, "{v}");
+    // a list of frames
+    let frames = vec![base64_encode(&image_png()), base64_encode(&image_png())];
+    let (code, v) = s.post("/api/show", json!({ "frames": frames, "name": "frames" }));
+    assert_eq!(code, 200, "{v}");
+    assert_eq!(v["results"][0]["frames"], 2, "{v}");
+    // mistakes are explained
+    let (code, v) = s.post("/api/show", json!({ "text": "x", "icon": "mdi:not-an-icon" }));
+    assert_eq!(code, 500);
+    assert!(v["error"].as_str().unwrap_or("").contains("unknown icon"), "{v}");
+    let (code, v) = s.post("/api/show", json!({ "text": "x", "style": "fancy" }));
+    assert_eq!(code, 500);
+    assert!(v["error"].as_str().unwrap_or("").contains("unknown style"), "{v}");
+    s.wait("files on the fan", |st| st["playlist"].as_array().is_some_and(|p| ["styled.mp4", "price.mp4", "icon.mp4", "anim.mp4", "frames.mp4"].iter().all(|n| p.iter().any(|e| e["name"] == *n))));
+}

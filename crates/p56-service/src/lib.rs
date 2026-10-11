@@ -113,6 +113,92 @@ pub struct ShowRequest {
     #[serde(default)] pub mode: Option<String>,
     #[serde(default, alias = "filename")] pub name: Option<String>,
     #[serde(default)] pub placement: Option<PlacementDto>,
+    /// Icon above the text (or alone): a Material Design Icon such as "mdi:flash".
+    #[serde(default)] pub icon: Option<String>,
+    #[serde(default)] pub icon_color: Option<Value>,
+    /// Ready-made look: alert, warning, info, success, price or clock.
+    #[serde(default)] pub style: Option<String>,
+    /// Text colour from a value: green at min, yellow halfway, red at max.
+    #[serde(default)] pub color_scale: Option<ColorScaleDto>,
+    /// Accent ring along the rim: true (text colour), false, or a colour.
+    #[serde(default)] pub ring: Option<Value>,
+    /// Several pictures (base64) shown as an animation.
+    #[serde(default)] pub frames: Option<Vec<String>>,
+    /// Time per frame when casting an animation (ms, default 100).
+    #[serde(default)] pub frame_ms: Option<u64>,
+    /// At most this many frames of a GIF or rames (default 200).
+    #[serde(default)] pub max_frames: Option<usize>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct ColorScaleDto {
+    pub value: f64,
+    pub min: f64,
+    pub max: f64,
+    /// Colours from min to max (default green, yellow, red).
+    #[serde(default)] pub colors: Option<Vec<Value>>,
+    /// Red at min and green at max instead.
+    #[serde(default)] pub invert: bool,
+}
+
+/// Defaults of a ready-made style; explicit request fields win.
+struct Style { fg: [u8; 3], bg: [u8; 3], icon: Option<&'static str>, ring: Option<[u8; 3]>, ticks: bool, ring_follows_text: bool }
+
+fn style(name: &str) -> Result<Style, String> {
+    let s = |fg, bg, icon, ring| Style { fg, bg, icon, ring, ticks: false, ring_follows_text: false };
+    Ok(match name.trim().to_ascii_lowercase().as_str() {
+        "alert" => s([255, 255, 255], [40, 0, 0], Some("alert"), Some([255, 59, 48])),
+        "warning" => s([255, 214, 10], [30, 18, 0], Some("alert-outline"), Some([255, 149, 0])),
+        "info" => s([255, 255, 255], [0, 12, 30], Some("information-outline"), Some([10, 132, 255])),
+        "success" => s([255, 255, 255], [0, 24, 8], Some("check-circle-outline"), Some([48, 209, 88])),
+        "price" => Style { ring_follows_text: true, ..s([255, 214, 10], [0, 0, 0], Some("flash"), None) },
+        "clock" => Style { ticks: true, ..s([255, 255, 255], [0, 0, 0], None, Some([0, 200, 255])) },
+        other => return Err(format!("unknown style {other}: use alert, warning, info, success, price or clock")),
+    })
+}
+
+/// The card for a text request (text and/or icon), with style, colour scale and ring applied.
+fn card_for(r: &ShowRequest) -> Result<text::Card, String> {
+    let st = r.style.as_deref().filter(|s| !s.trim().is_empty()).map(style).transpose()?;
+    let scaled = r.color_scale.as_ref().map(|cs| {
+        let mut stops: Vec<[u8; 3]> = cs.colors.as_ref()
+            .map(|v| v.iter().map(|c| color(&Some(c.clone()), [255, 255, 255])).collect())
+            .filter(|v: &Vec<[u8; 3]>| !v.is_empty())
+            .unwrap_or_else(|| text::SCALE_GREEN_RED.to_vec());
+        if cs.invert { stops.reverse(); }
+        text::color_scale(cs.value, cs.min, cs.max, &stops)
+    });
+    let fg = scaled.unwrap_or_else(|| color(&r.color, st.as_ref().map(|s| s.fg).unwrap_or([255, 255, 255])));
+    let bg = color(&r.background, st.as_ref().map(|s| s.bg).unwrap_or([0, 0, 0]));
+    let icon_name = match r.icon.as_deref().map(str::trim) {
+        Some("") | Some("none") => None,
+        Some(n) => Some(n.to_string()),
+        None => st.as_ref().and_then(|s| s.icon).map(String::from),
+    };
+    let icon = match icon_name {
+        Some(n) => Some(text::icon_char(&n).ok_or_else(|| format!("unknown icon {n}: use a Material Design Icon such as mdi:flash"))?),
+        None => None,
+    };
+    let ring = match &r.ring {
+        Some(Value::Bool(false)) => None,
+        Some(Value::Bool(true)) => Some(fg),
+        Some(v @ Value::String(_)) | Some(v @ Value::Array(_)) => Some(color(&Some(v.clone()), fg)),
+        _ => match &st {
+            Some(s) if s.ring_follows_text => Some(fg),
+            Some(s) => s.ring.map(|c| if scaled.is_some() { fg } else { c }),
+            None => None,
+        },
+    };
+    Ok(text::Card {
+        text: r.text.clone().unwrap_or_default(),
+        fg,
+        bg,
+        max_size: r.font_size.unwrap_or(0.0),
+        icon,
+        icon_color: color(&r.icon_color, if scaled.is_some() { fg } else { st.as_ref().and_then(|s| s.ring).unwrap_or(fg) }),
+        ring,
+        ticks: st.as_ref().is_some_and(|s| s.ticks),
+    })
 }
 
 fn data_url(mime: &str, bytes: &[u8]) -> String {
@@ -570,14 +656,24 @@ impl Service {
             (None, None) => l.ids(),
         };
         if ids.is_empty() { return Err("no fan connected".into()); }
-        let img = if let Some(t) = r.text.as_deref().filter(|t| !t.trim().is_empty()) {
-            text::render(t, color(&r.color, [255, 255, 255]), color(&r.background, [0, 0, 0]), r.font_size.unwrap_or(0.0))
-        } else if let Some(d) = &r.data {
-            decode_source(&b64(d)?)?
-        } else if let Some(p) = &r.path {
-            decode_source(&std::fs::read(p).map_err(|e| format!("{p}: {e}"))?)?
+        let max_frames = r.max_frames.unwrap_or(200).clamp(1, 600);
+        let has_text = r.text.as_deref().is_some_and(|t| !t.trim().is_empty());
+        let has_icon = r.icon.as_deref().is_some_and(|i| !i.trim().is_empty() && i.trim() != "none");
+        // (pictures, ms per frame when casting)
+        let (images, frame_ms): (Vec<image::RgbImage>, u64) = if has_text || has_icon || (r.style.is_some() && r.data.is_none() && r.path.is_none() && r.frames.is_none()) {
+            (vec![text::render_card(&card_for(&r)?)], 100)
+        } else if let Some(fr) = r.frames.as_ref().filter(|f| !f.is_empty()) {
+            let imgs = fr.iter().take(max_frames).map(|f| decode_source(&b64(f)?)).collect::<Result<Vec<_>, String>>()?;
+            (imgs, r.frame_ms.unwrap_or(100))
         } else {
-            return Err("provide 'text', 'data' or 'path'".into());
+            let bytes = match (&r.data, &r.path) {
+                (Some(d), _) => b64(d)?,
+                (None, Some(p)) => std::fs::read(p).map_err(|e| format!("{p}: {e}"))?,
+                _ => return Err("provide 'text', 'icon', 'data', 'path' or 'frames'".into()),
+            };
+            let fr = transcode::decode_frames(&bytes, max_frames).map_err(|e| format!("cannot read image: {e}"))?;
+            let ms = r.frame_ms.unwrap_or_else(|| fr.first().map(|(_, d)| *d as u64).filter(|d| *d > 0).unwrap_or(100));
+            (fr.into_iter().map(|(img, _)| transcode::fit(img, MAX_SIDE)).collect(), ms)
         };
         let pl: Placement = r.placement.unwrap_or_default().into();
         let secs = r.show_seconds.unwrap_or(0.0).max(0.0);
@@ -585,22 +681,26 @@ impl Service {
         let mut results = Vec::new();
         if cast {
             let ft = self.fan_type_for(ids.first().copied())?;
-            let jpeg = transcode::encode(&img, &ft, &pl).jpeg;
-            self.remember(&ids, &jpeg, &ft);
+            let jpegs: Vec<Vec<u8>> = images.iter().map(|img| transcode::encode(img, &ft, &pl).jpeg).collect();
+            self.remember(&ids, &jpegs[0], &ft);
             let dur = if secs > 0.0 { secs } else { 10.0 };
+            let period = Duration::from_millis(if jpegs.len() > 1 { frame_ms.clamp(20, 2000) } else { 200 });
             let me = self.clone();
+            let n = jpegs.len();
             thread::spawn(move || {
                 let end = Instant::now() + Duration::from_secs_f64(dur);
+                let mut i = 0;
                 while Instant::now() < end && !me.cast_running.load(Ordering::SeqCst) {
-                    if let Ok(l) = me.link() { l.cast(&jpeg); }
-                    thread::sleep(Duration::from_millis(200));
+                    if let Ok(l) = me.link() { l.cast(&jpegs[i % jpegs.len()]); }
+                    i += 1;
+                    thread::sleep(period);
                 }
             });
-            return Ok(json!({ "success": true, "mode": "cast", "seconds": dur, "fans": ids.len() }));
+            return Ok(json!({ "success": true, "mode": "cast", "seconds": dur, "fans": ids.len(), "frames": n }));
         }
         for id in ids {
             let ft = match self.fan_type_for(Some(id)) { Ok(f) => f, Err(e) => { results.push(json!({ "id": id, "success": false, "error": e })); continue } };
-            let jpeg = transcode::encode(&img, &ft, &pl).jpeg;
+            let jpegs: Vec<Vec<u8>> = images.iter().map(|img| transcode::encode(img, &ft, &pl).jpeg).collect();
             let name = p56_core::protocol::mp4_name(&r.name.clone().unwrap_or_else(|| format!("ha_{}", std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0))));
             // same name again (e.g. a text entity that keeps updating): replace instead of adding
@@ -614,7 +714,7 @@ impl Service {
             }
             let prev = l.device(id).and_then(|d| d.status).map(|s| s.play_index).unwrap_or(0);
             let seq = self.upload_seq.fetch_add(1, Ordering::SeqCst) + 1;
-            if let Err(e) = l.upload(id, std::slice::from_ref(&jpeg), &name, None, seq) {
+            if let Err(e) = l.upload(id, &jpegs, &name, None, seq) {
                 results.push(json!({ "id": id, "success": false, "error": e.to_string() }));
                 continue;
             }
@@ -631,7 +731,7 @@ impl Service {
                 continue;
             }
             let _ = l.select(id, slot);
-            self.remember(&[id], &jpeg, &ft);
+            self.remember(&[id], &jpegs[0], &ft);
             if secs > 0.0 {
                 let l2 = l.clone();
                 let name2 = name.clone();
@@ -645,7 +745,7 @@ impl Service {
                     }
                 });
             }
-            results.push(json!({ "id": id, "success": true, "slot": slot, "name": name }));
+            results.push(json!({ "id": id, "success": true, "slot": slot, "name": name, "frames": jpegs.len() }));
         }
         let ok = results.iter().any(|r| r["success"] == true);
         Ok(json!({ "success": ok, "mode": "upload", "results": results }))

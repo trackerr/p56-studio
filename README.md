@@ -54,8 +54,8 @@ layout, before you send it.
 Rename the fan, change its hotspot, put it on your Wi-Fi (router mode), manage Bluetooth.
 
 **🏠 Home Assistant**<br>
-An add-on and integration: text, notifications, camera snapshots and prices on the fan from
-your automations. [Learn more →](https://github.com/trackerr/home-assistant-p56)
+An add-on and integration: text with icons and ready-made styles, notifications, camera
+snapshots, GIFs and videos on the fan from your automations. [Learn more →](https://github.com/trackerr/home-assistant-p56)
 
 </td>
 </tr>

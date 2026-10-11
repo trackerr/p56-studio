@@ -4,7 +4,10 @@
       "user": {
         "title": "P56 POV server",
         "description": "Address of the P56 POV Display add-on (p56-server). With the add-on on this Home Assistant: 127.0.0.1 and port 8765.",
-        "data": { "host": "Host", "port": "Port" },
+        "data": {
+          "host": "Host",
+          "port": "Port"
+        },
         "data_description": {
           "host": "Host name or IP address where p56-server runs.",
           "port": "HTTP port of p56-server (8765 by default)."
@@ -16,7 +19,10 @@
       },
       "reconfigure": {
         "title": "P56 POV server",
-        "data": { "host": "Host", "port": "Port" }
+        "data": {
+          "host": "Host",
+          "port": "Port"
+        }
       }
     },
     "error": {
@@ -54,111 +60,326 @@
         "upload": "Store on the fan",
         "cast": "Live (not stored)"
       }
+    },
+    "style": {
+      "options": {
+        "alert": "Alert (red)",
+        "warning": "Warning (orange)",
+        "info": "Info (blue)",
+        "success": "Done (green)",
+        "price": "Price (colour by value)",
+        "clock": "Clock"
+      }
     }
   },
   "entity": {
-    "light": { "display": { "name": "Display" } },
+    "light": {
+      "display": {
+        "name": "Display"
+      }
+    },
     "switch": {
-      "playing": { "name": "Playing" },
-      "breath": { "name": "Breathing light" },
-      "autostart": { "name": "Start on power" },
-      "master": { "name": "Master" }
+      "playing": {
+        "name": "Playing"
+      },
+      "breath": {
+        "name": "Breathing light"
+      },
+      "autostart": {
+        "name": "Start on power"
+      },
+      "master": {
+        "name": "Master"
+      }
     },
     "select": {
-      "file": { "name": "File" },
+      "file": {
+        "name": "File"
+      },
       "color_mode": {
         "name": "Colour mode",
-        "state": { "true_color": "True colour", "high_brightness": "High brightness" }
+        "state": {
+          "true_color": "True colour",
+          "high_brightness": "High brightness"
+        }
       },
       "repeat": {
         "name": "Repeat",
-        "state": { "all": "All files", "one": "One file" }
+        "state": {
+          "all": "All files",
+          "one": "One file"
+        }
       }
     },
     "number": {
-      "angle": { "name": "Picture angle" },
-      "volume": { "name": "Volume" }
+      "angle": {
+        "name": "Picture angle"
+      },
+      "volume": {
+        "name": "Volume"
+      }
     },
     "sensor": {
-      "current_file": { "name": "Playing file" },
-      "file_count": { "name": "Files" },
-      "ip": { "name": "IP address" },
-      "last_error": { "name": "Last error" },
-      "fans_connected": { "name": "Connected fans" },
-      "last_activity": { "name": "Last activity" }
+      "current_file": {
+        "name": "Playing file"
+      },
+      "file_count": {
+        "name": "Files"
+      },
+      "ip": {
+        "name": "IP address"
+      },
+      "last_error": {
+        "name": "Last error"
+      },
+      "fans_connected": {
+        "name": "Connected fans"
+      },
+      "last_activity": {
+        "name": "Last activity"
+      }
     },
     "button": {
-      "refresh": { "name": "Refresh" },
-      "delete_current": { "name": "Delete playing file" }
+      "refresh": {
+        "name": "Refresh"
+      },
+      "delete_current": {
+        "name": "Delete playing file"
+      }
     },
-    "text": { "text": { "name": "Text" } },
-    "notify": { "message": { "name": "Message" } },
-    "image": { "shown": { "name": "Shown" } }
+    "text": {
+      "text": {
+        "name": "Text"
+      }
+    },
+    "notify": {
+      "message": {
+        "name": "Message"
+      }
+    },
+    "image": {
+      "shown": {
+        "name": "Shown"
+      }
+    }
   },
   "exceptions": {
-    "server_unreachable": { "message": "P56 server not reachable: {error}" },
-    "command_failed": { "message": "P56 command failed: {error}" },
-    "fan_offline": { "message": "The fan is not connected." },
-    "not_loaded": { "message": "No P56 POV server is set up." },
-    "unknown_device": { "message": "Device {device} is not a P56 POV device." },
-    "file_not_on_fan": { "message": "No file named {name} on the fan." },
-    "path_not_allowed": { "message": "{path} is not in allowlist_external_dirs." },
-    "file_not_found": { "message": "File {path} not found." },
-    "file_too_large": { "message": "{path} is too large." },
-    "download_failed": { "message": "Download of {url} failed: {error}" },
-    "media_unresolvable": { "message": "Media {media} cannot be resolved." },
-    "one_source": { "message": "Give exactly one of path, url, camera or media." },
-    "no_source": { "message": "No picture given." }
+    "server_unreachable": {
+      "message": "P56 server not reachable: {error}"
+    },
+    "command_failed": {
+      "message": "P56 command failed: {error}"
+    },
+    "fan_offline": {
+      "message": "The fan is not connected."
+    },
+    "not_loaded": {
+      "message": "No P56 POV server is set up."
+    },
+    "unknown_device": {
+      "message": "Device {device} is not a P56 POV device."
+    },
+    "file_not_on_fan": {
+      "message": "No file named {name} on the fan."
+    },
+    "path_not_allowed": {
+      "message": "{path} is not in allowlist_external_dirs."
+    },
+    "file_not_found": {
+      "message": "File {path} not found."
+    },
+    "file_too_large": {
+      "message": "{path} is too large."
+    },
+    "download_failed": {
+      "message": "Download of {url} failed: {error}"
+    },
+    "media_unresolvable": {
+      "message": "Media {media} cannot be resolved."
+    },
+    "one_source": {
+      "message": "Give exactly one of path, url, camera or media."
+    },
+    "no_source": {
+      "message": "No picture given."
+    },
+    "value_needs_range": {
+      "message": "Give value_min and value_max together with value."
+    },
+    "video_needs_ffmpeg": {
+      "message": "Videos need ffmpeg, which was not found."
+    },
+    "video_failed": {
+      "message": "Video could not be converted: {error}"
+    }
   },
   "services": {
     "show_text": {
       "name": "Show text",
-      "description": "Shows text on the fan, sized to fit the round display.",
+      "description": "Shows text on the fan, sized to fit the round display, optionally with an icon, a ready-made style and a colour that follows a value.",
       "fields": {
-        "device_id": { "name": "Fans", "description": "Fans to show it on (empty: all)." },
-        "text": { "name": "Text", "description": "The text; a new line starts a new line." },
-        "color": { "name": "Colour", "description": "Text colour." },
-        "background": { "name": "Background", "description": "Background colour." },
-        "font_size": { "name": "Maximum font size", "description": "Cap in pixels (0: as large as fits)." },
-        "show_seconds": { "name": "Duration", "description": "Remove again after this many seconds; the previous file plays again (0: keep)." },
-        "mode": { "name": "Mode", "description": "Store on the fan, or show live without storing." },
-        "name": { "name": "File name", "description": "Name on the fan; the same name replaces the earlier file." }
+        "device_id": {
+          "name": "Fans",
+          "description": "Fans to show it on (empty: all)."
+        },
+        "text": {
+          "name": "Text",
+          "description": "The text; a new line starts a new line. Optional with an icon or style (the clock style shows the current time)."
+        },
+        "color": {
+          "name": "Colour",
+          "description": "Text colour."
+        },
+        "background": {
+          "name": "Background",
+          "description": "Background colour."
+        },
+        "font_size": {
+          "name": "Maximum font size",
+          "description": "Cap in pixels (0: as large as fits)."
+        },
+        "show_seconds": {
+          "name": "Duration",
+          "description": "Remove again after this many seconds; the previous file plays again (0: keep)."
+        },
+        "mode": {
+          "name": "Mode",
+          "description": "Store on the fan, or show live without storing."
+        },
+        "name": {
+          "name": "File name",
+          "description": "Name on the fan; the same name replaces the earlier file."
+        },
+        "style": {
+          "name": "Style",
+          "description": "Ready-made look with colours, icon and a ring along the rim."
+        },
+        "icon": {
+          "name": "Icon",
+          "description": "Icon above the text (or alone), e.g. mdi:washing-machine."
+        },
+        "value": {
+          "name": "Value",
+          "description": "Colours the text from green (at the minimum) via yellow to red (at the maximum)."
+        },
+        "value_min": {
+          "name": "Minimum",
+          "description": "Value that is green."
+        },
+        "value_max": {
+          "name": "Maximum",
+          "description": "Value that is red."
+        },
+        "invert_colors": {
+          "name": "Reverse colours",
+          "description": "Red at the minimum and green at the maximum."
+        },
+        "ring": {
+          "name": "Ring",
+          "description": "Coloured ring along the rim (styles have one already)."
+        },
+        "icon_color": {
+          "name": "Icon colour",
+          "description": "Colour of the icon (default: from the style or the text)."
+        }
       }
     },
     "show_image": {
       "name": "Show picture",
-      "description": "Shows a picture (or the first frame of a GIF) on the fan.",
+      "description": "Shows a picture, an animated GIF or a video on the fan.",
       "fields": {
-        "device_id": { "name": "Fans", "description": "Fans to show it on (empty: all)." },
-        "path": { "name": "File", "description": "Path of a picture on Home Assistant (must be allowed)." },
-        "url": { "name": "URL", "description": "Picture to download." },
-        "camera": { "name": "Camera", "description": "Show a snapshot of this camera." },
-        "media": { "name": "Media", "description": "Picture from the media library." },
-        "show_seconds": { "name": "Duration", "description": "Remove again after this many seconds (0: keep)." },
-        "mode": { "name": "Mode", "description": "Store on the fan, or show live without storing." },
-        "name": { "name": "File name", "description": "Name on the fan; the same name replaces the earlier file." },
-        "scale": { "name": "Scale", "description": "1 = fill the display." },
-        "x_offset": { "name": "Horizontal shift", "description": "-1 … 1." },
-        "y_offset": { "name": "Vertical shift", "description": "-1 … 1." },
-        "mirror": { "name": "Mirror", "description": "Mirror the picture." }
+        "device_id": {
+          "name": "Fans",
+          "description": "Fans to show it on (empty: all)."
+        },
+        "path": {
+          "name": "File",
+          "description": "Path of a picture on Home Assistant (must be allowed)."
+        },
+        "url": {
+          "name": "URL",
+          "description": "Picture to download."
+        },
+        "camera": {
+          "name": "Camera",
+          "description": "Show a snapshot of this camera."
+        },
+        "media": {
+          "name": "Media",
+          "description": "Picture from the media library."
+        },
+        "show_seconds": {
+          "name": "Duration",
+          "description": "Remove again after this many seconds (0: keep)."
+        },
+        "mode": {
+          "name": "Mode",
+          "description": "Store on the fan, or show live without storing."
+        },
+        "name": {
+          "name": "File name",
+          "description": "Name on the fan; the same name replaces the earlier file."
+        },
+        "scale": {
+          "name": "Scale",
+          "description": "1 = fill the display."
+        },
+        "x_offset": {
+          "name": "Horizontal shift",
+          "description": "-1 … 1."
+        },
+        "y_offset": {
+          "name": "Vertical shift",
+          "description": "-1 … 1."
+        },
+        "mirror": {
+          "name": "Mirror",
+          "description": "Mirror the picture."
+        },
+        "max_frames": {
+          "name": "Maximum frames",
+          "description": "At most this many frames of a GIF or video (default 100 for video, 200 for GIF)."
+        },
+        "fps": {
+          "name": "Frames per second",
+          "description": "For videos: frames taken per second (default 10)."
+        }
       }
     },
     "play_file": {
       "name": "Play file",
       "description": "Plays a file on the fan, by slot or name.",
       "fields": {
-        "device_id": { "name": "Fan", "description": "The fan." },
-        "slot": { "name": "Slot", "description": "Position in the playlist (1 = first)." },
-        "name": { "name": "Name", "description": "File name on the fan." }
+        "device_id": {
+          "name": "Fan",
+          "description": "The fan."
+        },
+        "slot": {
+          "name": "Slot",
+          "description": "Position in the playlist (1 = first)."
+        },
+        "name": {
+          "name": "Name",
+          "description": "File name on the fan."
+        }
       }
     },
     "delete_file": {
       "name": "Delete file",
       "description": "Deletes a file from the fan, by slot or name.",
       "fields": {
-        "device_id": { "name": "Fan", "description": "The fan." },
-        "slot": { "name": "Slot", "description": "Position in the playlist (1 = first)." },
-        "name": { "name": "Name", "description": "File name on the fan." }
+        "device_id": {
+          "name": "Fan",
+          "description": "The fan."
+        },
+        "slot": {
+          "name": "Slot",
+          "description": "Position in the playlist (1 = first)."
+        },
+        "name": {
+          "name": "Name",
+          "description": "File name on the fan."
+        }
       }
     }
   }
