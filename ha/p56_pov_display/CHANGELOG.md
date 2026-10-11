@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.1.0
+
+p56-server 0.3.0, tested on a real P56.
+
+- **Live cast works on a real P56** (`mode: cast`, and casting from the panel): the server now
+  switches the fan to live mode first, as Holoscope does. Before, the fan answered every frame
+  but kept playing its playlist. Casting also turns a fan on that is off.
+- **Uploads on a real P56**: the fan lists its files without `.mp4`, which made an upload look
+  failed and kept a file with the same name from being replaced (the "already exists" error
+  when a text entity updates). Fixed.
+- Animations (GIF, video) are uploaded in Holoscope's layout (one record per frame) and play at
+  the right speed; photos from a phone are turned upright (EXIF orientation).
+- `lan_api` now maps to p56-server's `--lan` (the server answers only Home Assistant itself and
+  the panel unless it is on); `api_token` works as before.
+
 ## 2.0.5
 
 Security and reliability fixes.

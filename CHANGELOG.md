@@ -4,7 +4,7 @@ P56 Studio (Windows, Linux, Android), `p56` (CLI), `p56-sim` and `p56-server`.
 The Home Assistant add-on and integration have their own changelog in
 [`ha/p56_pov_display/CHANGELOG.md`](ha/p56_pov_display/CHANGELOG.md).
 
-## Unreleased
+## 0.3.0 — 2026-10-11
 
 ### Fixed
 - **Live cast works on a real P56.** A cast now starts the fan's live mode with `5A 26 26 F5`
@@ -12,6 +12,8 @@ The Home Assistant add-on and integration have their own changelog in
   frame but kept playing its playlist. Frames are written whole without waiting for an answer
   (15 fps on a real P56 instead of ~2), and no heartbeat or status poll goes out while casting.
   The simulator shows cast frames only in live mode and flags a heartbeat during a cast.
+  Tested on a real P56: the test card, a webcam from the Windows app at 15 fps, and the camera
+  of an Android phone.
 - **Uploads on a real P56 were reported as failed and could not replace a file.** The fan lists
   its files without `.mp4`; the names are now read as `name.mp4`, so an uploaded file is found
   in the playlist and a file with the same name is replaced (the "already exists" error on a
