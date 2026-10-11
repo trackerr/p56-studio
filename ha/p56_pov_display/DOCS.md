@@ -25,12 +25,34 @@ fan on your Wi-Fi once with the vendor app or with P56 Studio (Network tab).
 | --- | --- |
 | `fan_ip` | Extra fan IPs to send the discovery packet to directly (other subnet, broadcast blocked). Usually empty. |
 | `advertise_ip` | IP the fans should connect back to. Empty: every network card announces itself. |
-| `lan_api` | `true`: port 8765 answers the whole LAN (apps/scripts elsewhere). `false`: only Home Assistant itself and the ingress panel. |
+| `lan_api` | `false` (default): only Home Assistant itself and the ingress panel can use port 8765. `true`: the whole LAN (apps/scripts elsewhere); set `api_token` as well. |
+| `api_token` | Optional. When set, clients on the network must send this token (see below). Home Assistant itself and the panel never need it. |
 | `simulate` | Start a virtual P56 fan, to try everything without hardware. Takes effect right after saving; no restart needed. |
 | `log_level` | `trace`, `debug`, `info`, `warn`, `error`. |
 
-The port 8765 API has no login. Turn `lan_api` off if other devices on your
-network should not be able to use it.
+### Security
+
+The API on port 8765 can do everything the panel can, including formatting the fan's
+memory card, a factory reset and changing its Wi-Fi settings. Therefore:
+
+- With `lan_api: false` (the default) only Home Assistant itself (the integration,
+  `rest_command`, the panel) reaches it; other devices get `403 Forbidden`.
+- With `lan_api: true`, set an `api_token`. Requests from other devices then need the
+  token, or they get `401 Unauthorized`. Send it as a header, or (for browsers and
+  `EventSource`, which cannot set headers) as a query parameter:
+
+  ```text
+  Authorization: Bearer <your token>
+  http://<home-assistant>:8765/api/state?token=<your token>
+  ```
+
+  The page `/` and `/api/ping` answer without a token. Requests from Home Assistant
+  itself and from the add-on network (172.30.32.0/23, the panel) never need it.
+- Without a token, `lan_api: true` lets anyone on your network control the fans; the
+  add-on log warns about this.
+- `path` in `/api/show` (and `image` in the 1.x `/upload`) can only read pictures from
+  `/media` and `/share` (after resolving `..` and symbolic links); anything else is
+  refused with `403`. Send other pictures as `data` (base64) or `frames`.
 
 ## Integration
 
@@ -121,13 +143,18 @@ default 100). The fan plays it in a loop; with `mode: cast` it plays live for `s
 | Method + path | Body / answer |
 | --- | --- |
 | `GET /api/state` | `{connected, fan_ip, playlist:[{slot,name}], devices:[…], last_activity, version}` |
-| `POST /api/show` | `{text \| icon \| data (base64; GIF keeps all frames) \| path \| frames:[base64,…], style, icon, icon_color, color_scale:{value,min,max,colors?,invert?}, ring, color, background, font_size, show_seconds, mode, name, max_frames, frame_ms, mac \| id, placement:{x,y,scale,mirror}}` |
+| `POST /api/show` | `{text \| icon \| data (base64; GIF keeps all frames) \| path (only under /media or /share) \| frames:[base64,…], style, icon, icon_color, color_scale:{value,min,max,colors?,invert?}, ring, color, background, font_size, show_seconds, mode, name, max_frames, frame_ms, mac \| id, placement:{x,y,scale,mirror}}` |
 | `POST /api/call/<cmd>` | every command of the web app, e.g. `control {id, action:"on"\|"off"\|"play"\|"pause"\|…}`, `set_value {id, what:"brightness"\|"angle"\|"volume"\|"select"\|"delete", value}` → `{ok, result \| error}` |
 | `GET /api/events` | live events (server-sent events) |
 | `GET /api/shown/<mac>` | PNG of what was last sent to that fan |
 | `GET /health`, `GET /status`, `POST /text`, `POST /upload`, `POST /delete`, `POST /on`, `POST /off` | the 1.x API, unchanged |
 
-Example `rest_command` (works from Home Assistant itself, also with `lan_api: false`):
+`mode: cast` with `mac` or `id` streams to that fan only; without them, to every fan.
+With `show_seconds`, the file is removed again after that time and the fan returns to the
+file that played before; showing the same `name` again cancels the earlier removal.
+
+Example `rest_command` (works from Home Assistant itself, also with `lan_api: false`,
+and needs no token):
 
 ```yaml
 rest_command:
@@ -136,6 +163,13 @@ rest_command:
     method: POST
     content_type: application/json
     payload: '{"text": "{{ text }}", "show_seconds": {{ seconds | default(0) }}}'
+```
+
+From another machine (with `lan_api: true` and an `api_token`):
+
+```sh
+curl -H "Authorization: Bearer $P56_TOKEN" -H "Content-Type: application/json" \
+  -d '{"text": "Hello"}' http://homeassistant.local:8765/api/show
 ```
 
 ## Upgrading from 1.x (the local add-on)

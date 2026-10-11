@@ -32,48 +32,97 @@ export function CastPanel() {
     if (e.data.preview) setPv(e.data.preview);
   }), []);
 
-  useEffect(() => () => { live.current = false; invoke('cast_stop').catch(() => {}); }, []);
+  // Frontend-driven sources own a camera stream or a blob URL; both live in refs so every exit path
+  // (stop, unmount, frame error, failed start) releases them. `session` invalidates pending async work.
+  const streamRef = useRef<MediaStream | null>(null);
+  const urlRef = useRef<string | null>(null);
+  const videoEl = useRef<HTMLVideoElement | null>(null);
+  const session = useRef(0);
+
+  /** Stop the camera tracks, revoke the video URL and detach both from the <video>. */
+  function releaseMedia() {
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+    const v = videoEl.current;
+    if (v) {
+      v.pause();
+      v.srcObject = null;
+      if (urlRef.current) v.removeAttribute('src');
+    }
+    if (urlRef.current) { URL.revokeObjectURL(urlRef.current); urlRef.current = null; }
+  }
+
+  /** End the current cast, whatever its source: frame loop, media, backend. Safe to call twice. */
+  function cleanup() {
+    live.current = false;
+    session.current++;
+    releaseMedia();
+    invoke('cast_stop').catch(() => {});
+  }
+  const cleanupRef = useRef(cleanup);
+  cleanupRef.current = cleanup;
+  useEffect(() => () => cleanupRef.current(), []);
+
+  function fail(title: string, e: unknown) {
+    cleanup();
+    setRunning(false);
+    toast.error(title, { description: String(e) });
+  }
 
   async function start() {
     if (!devices.length) { toast.error(t('common.noFan')); return; }
-    try {
-      if (src === 'test' || src === 'screen' || src === 'media') {
-        if (src === 'media' && !media) { toast.error(t('cast.pickMediaFirst')); return; }
+    if (src === 'test' || src === 'screen' || src === 'media') {
+      if (src === 'media' && !media) { toast.error(t('cast.pickMediaFirst')); return; }
+      try {
         await invoke('cast_start', { args: { source: src === 'media' ? `media:${media!.id}` : src, fps, placement } });
         setRunning(true);
         addLog(t('cast.logStarted', { src }));
-        return;
-      }
-      // frontend-driven sources
-      const v = vidRef.current!;
+      } catch (e) { fail(t('cast.failed'), e); }
+      return;
+    }
+    // frontend-driven sources
+    if (src === 'video' && !picked?.video) { toast.error(t('cast.pickVideoFirst')); return; }
+    releaseMedia();
+    const id = ++session.current;
+    const v = vidRef.current!;
+    videoEl.current = v;
+    try {
       if (src === 'camera') {
         if (!navigator.mediaDevices?.getUserMedia) throw new Error(t('cast.noCamera'));
-        v.srcObject = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 } }, audio: false });
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 } }, audio: false });
+        // Stopped, restarted or unmounted while the permission prompt was open: drop this stream.
+        if (id !== session.current) { stream.getTracks().forEach((track) => track.stop()); return; }
+        streamRef.current = stream;
+        v.srcObject = stream;
       } else {
-        const p = picked;
-        if (!p?.video) { toast.error(t('cast.pickVideoFirst')); return; }
+        const p = picked!;
+        const url = URL.createObjectURL(new Blob([p.bytes as BlobPart], { type: p.mime }));
+        urlRef.current = url;
         v.srcObject = null;
-        v.src = URL.createObjectURL(new Blob([p.bytes as BlobPart], { type: p.mime }));
+        v.src = url;
         v.loop = true;
       }
       await v.play();
+      if (id !== session.current) return;
       live.current = true;
       setRunning(true);
       addLog(t('cast.logStarted', { src }));
-      loop(v);
+      loop(v, id);
     } catch (e) {
-      toast.error(t('cast.failed'), { description: String(e) });
-      stop();
+      if (id === session.current) fail(t('cast.failed'), e);
     }
   }
 
-  async function loop(v: HTMLVideoElement) {
-    while (live.current) {
+  async function loop(v: HTMLVideoElement, id: number) {
+    while (live.current && id === session.current) {
       const t0 = performance.now();
       const b64 = grab(v, canvas.current);
       if (b64) {
         try { await invoke('cast_frame', { data: b64, placement: placementRef.current }); }
-        catch (e) { toast.error(t('cast.frameFailed'), { description: String(e) }); break; }
+        catch (e) {
+          if (id === session.current) fail(t('cast.frameFailed'), e);
+          return;
+        }
       }
       const wait = 1000 / fps - (performance.now() - t0);
       if (wait > 0) await new Promise((r) => setTimeout(r, wait));
@@ -81,14 +130,7 @@ export function CastPanel() {
   }
 
   function stop() {
-    live.current = false;
-    invoke('cast_stop').catch(() => {});
-    const v = vidRef.current;
-    if (v) {
-      (v.srcObject as MediaStream | null)?.getTracks().forEach((track) => track.stop());
-      v.pause(); v.srcObject = null;
-      if (v.src.startsWith('blob:')) { URL.revokeObjectURL(v.src); v.removeAttribute('src'); }
-    }
+    cleanup();
     setRunning(false);
     addLog(t('cast.logStopped'));
   }

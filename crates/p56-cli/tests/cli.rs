@@ -84,6 +84,64 @@ fn cli_reports_fan_errors() {
     assert!(!ok && t.contains("already exists"), "{t}");
 }
 
+fn preview_type(t: &str) -> (bool, String) {
+    let dir = std::env::temp_dir().join(format!("p56cli-type{t}-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_p56")).args(["--type", t, "preview", "test", dir.join("pv").to_str().unwrap()]).output().unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+    (out.status.success(), format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr)))
+}
+
+#[test]
+fn cli_rejects_unknown_fan_type() {
+    let (ok, t) = preview_type("255");
+    assert!(!ok && t.contains("unknown fan type 255"), "{t}");
+}
+
+#[test]
+fn cli_rejects_unsupported_fan_type() {
+    let (ok, t) = preview_type("32");
+    assert!(!ok && t.contains("fan type 32") && t.contains("not supported"), "{t}");
+}
+
+#[test]
+fn cli_accepts_supported_fan_type() {
+    let (ok, t) = preview_type("8");
+    assert!(ok && t.contains("688x240"), "{t}");
+}
+
+#[test]
+fn cli_rejects_unsupported_type_reported_by_the_fan() {
+    let port = free_tcp();
+    let sim = Sim::start(SimConfig { udp_port: 0, pc_port: port, fan_type: 32, name: "ODD-FAN".into(), ..Default::default() }).unwrap();
+    let e = Env { udp: sim.udp_port, sim, port };
+    let (ok, t) = e.p56(&["upload", "test", "--name", "x"]);
+    assert!(!ok && t.contains("fan type 32") && t.contains("not supported"), "{t}");
+    assert_eq!(e.sim.state().uploads, 0);
+    // commands that send no picture still work on such a fan
+    e.ok(&["off"]);
+    e.wait(|s| !s.power);
+}
+
+#[test]
+fn cli_cast_reaches_only_the_selected_fan() {
+    let port = free_tcp();
+    let start = |name: &str, last: u8| Sim::start(SimConfig {
+        udp_port: 0, pc_port: port, name: name.into(), mac: [0x02, 0xE0, 0xE0, 0x56, 0x00, last], ..Default::default()
+    }).unwrap();
+    let (a, b) = (start("FAN-A", 1), start("FAN-B", 2));
+    let out = Command::new(env!("CARGO_BIN_EXE_p56"))
+        .args(["--port", &port.to_string(), "--wait", "10"])
+        .args(["--target", &format!("127.0.0.1:{}", a.udp_port), "--target", &format!("127.0.0.1:{}", b.udp_port)])
+        .args(["--fan", "2", "cast", "test", "--seconds", "1.5", "--fps", "10"])
+        .env("RUST_LOG", "warn").output().unwrap();
+    let t = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+    assert!(out.status.success(), "{t}");
+    std::thread::sleep(Duration::from_millis(300));
+    let (na, nb) = (a.state().cast_ok, b.state().cast_ok);
+    assert!((na > 0) != (nb > 0), "exactly one fan must receive the cast: FAN-A {na}, FAN-B {nb}\n{t}");
+}
+
 #[test]
 fn preview_and_types_work_offline() {
     let dir = std::env::temp_dir().join(format!("p56cli{}", std::process::id()));

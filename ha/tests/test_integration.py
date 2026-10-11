@@ -368,3 +368,160 @@ async def test_video_becomes_an_animation(hass: HomeAssistant, p56_server, tmp_p
     assert resp["results"][0]["results"][0]["frames"] == 3
     assert "fps=5.0" in " ".join(calls["args"]) and "3" in calls["args"]
     assert await hass.config_entries.async_unload(entry.entry_id)
+
+async def _streaming_server(body: bytes, first: int = 11):
+    """A local HTTP server that sends the first bytes, pauses, then sends the rest (chunked)."""
+    from aiohttp import web  # noqa: PLC0415
+
+    from .conftest import free_port  # noqa: PLC0415
+
+    async def handler(request: web.Request) -> web.StreamResponse:
+        resp = web.StreamResponse(headers={"Content-Type": "image/png"})
+        await resp.prepare(request)
+        await resp.write(body[:first])  # write() flushes
+        await asyncio.sleep(0.2)
+        try:
+            await resp.write(body[first:])
+            await resp.write_eof()
+        except ConnectionResetError:  # the client gave up (too large)
+            pass
+        return resp
+
+    app = web.Application()
+    app.router.add_get("/img.png", handler)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = free_port()
+    await web.TCPSite(runner, "127.0.0.1", port).start()
+    return runner, f"http://127.0.0.1:{port}/img.png"
+
+
+async def test_url_download_reads_whole_streamed_body(hass: HomeAssistant, p56_server) -> None:
+    """A body that arrives in pieces is read to the end, not just its first chunk."""
+    from custom_components.p56_pov.show import fetch_url  # noqa: PLC0415
+
+    body = png()
+    runner, url = await _streaming_server(body)
+    try:
+        assert await fetch_url(hass, url) == body
+        entry = await setup(hass, p56_server)
+        resp = await hass.services.async_call(
+            DOMAIN, "show_image", {"url": url, "name": "streamed"}, blocking=True, return_response=True
+        )
+        assert resp["results"][0]["success"] is True
+        assert await hass.config_entries.async_unload(entry.entry_id)
+    finally:
+        await runner.cleanup()
+
+
+async def test_url_download_too_large(hass: HomeAssistant, monkeypatch) -> None:
+    """The size limit holds over the whole streamed body; exactly the limit is still fine."""
+    from custom_components.p56_pov import show as show_mod  # noqa: PLC0415
+
+    monkeypatch.setattr(show_mod, "MAX_IMAGE_BYTES", 100)
+    runner, url = await _streaming_server(b"\x89PNG\r\n\x1a\n" + b"x" * 300)
+    try:
+        with pytest.raises(ServiceValidationError) as err:
+            await show_mod.fetch_url(hass, url)
+        assert err.value.translation_key == "file_too_large"
+    finally:
+        await runner.cleanup()
+    runner, url = await _streaming_server(b"y" * 100)
+    try:
+        assert len(await show_mod.fetch_url(hass, url)) == 100
+    finally:
+        await runner.cleanup()
+
+
+async def test_show_text_uses_default_colors_of_each_server(
+    hass: HomeAssistant, p56_server, tmp_path: Path, monkeypatch
+) -> None:
+    """Missing colours come from the options of the server each target belongs to."""
+    import socket  # noqa: PLC0415
+
+    from .conftest import free_port, start_server, start_sim  # noqa: PLC0415
+
+    opts = tmp_path / "options.json"
+    opts.write_text('{"simulate": false}')
+    http, tcp, udp = free_port(), free_port(), free_port(socket.SOCK_DGRAM)
+    proc = start_server(http, tcp, udp, opts)
+    sim = start_sim("SIM-B", free_port(socket.SOCK_DGRAM), tcp)
+    try:
+        loop = asyncio.get_running_loop()
+        end = loop.time() + 20
+        while True:
+            try:
+                _, writer = await asyncio.wait_for(asyncio.open_connection("127.0.0.1", http), 1)
+                writer.close()
+                break
+            except OSError:
+                assert loop.time() < end, "server B did not start"
+                await asyncio.sleep(0.2)
+
+        host, port = p56_server
+        entry_a = MockConfigEntry(
+            domain=DOMAIN, version=2, data={CONF_HOST: host, CONF_PORT: port}, unique_id=f"{host}:{port}",
+            options={"color": "#ff0000"},
+        )
+        entry_b = MockConfigEntry(
+            domain=DOMAIN, version=2, data={CONF_HOST: "127.0.0.1", CONF_PORT: http}, unique_id=f"127.0.0.1:{http}",
+            options={"color": "#0000ff"},
+        )
+        for entry in (entry_a, entry_b):
+            entry.add_to_hass(hass)
+            assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        reg = dr.async_get(hass)
+
+        def fan_device(entry: MockConfigEntry) -> dr.DeviceEntry | None:
+            return next((d for d in dr.async_entries_for_config_entry(reg, entry.entry_id) if d.via_device_id), None)
+
+        await wait_for(hass, "fan of server A", lambda: fan_device(entry_a) is not None, 20)
+        await wait_for(hass, "fan of server B", lambda: fan_device(entry_b) is not None, 20)
+        fan_a, fan_b = fan_device(entry_a), fan_device(entry_b)
+        assert fan_a.id != fan_b.id
+
+        sent: dict[str, list[dict]] = {}
+        for key, entry in (("a", entry_a), ("b", entry_b)):
+            api = entry.runtime_data.api
+            original = api.show
+
+            async def capture(payload, _original=original, _key=key):
+                sent.setdefault(_key, []).append(dict(payload))
+                return await _original(payload)
+
+            monkeypatch.setattr(api, "show", capture)
+
+        async def show_text(data: dict) -> dict:
+            sent.clear()
+            resp = await hass.services.async_call(DOMAIN, "show_text", data, blocking=True, return_response=True)
+            assert all(r["success"] is True for r in resp["results"]), resp
+            return resp
+
+        # only server B's fan: B's own default colour, not the first entry's
+        await show_text({"device_id": fan_b.id, "text": "B"})
+        assert "a" not in sent
+        assert sent["b"][0]["color"] == "#0000ff"
+        assert "background" in sent["b"][0]
+
+        # both fans: each gets its own server's default
+        await show_text({"device_id": [fan_a.id, fan_b.id], "text": "both"})
+        assert [p["color"] for p in sent["a"]] == ["#ff0000"]
+        assert [p["color"] for p in sent["b"]] == ["#0000ff"]
+
+        # explicit colours always win
+        await show_text({"device_id": [fan_a.id, fan_b.id], "text": "green", "color": "#00ff00"})
+        assert sent["a"][0]["color"] == sent["b"][0]["color"] == "#00ff00"
+
+        # a style brings its own colours: no option defaults at all
+        await show_text({"device_id": [fan_a.id, fan_b.id], "style": "clock"})
+        for payload in (sent["a"][0], sent["b"][0]):
+            assert "color" not in payload and "background" not in payload
+
+        for entry in (entry_a, entry_b):
+            assert await hass.config_entries.async_unload(entry.entry_id)
+    finally:
+        for p in (sim, proc):
+            p.kill()
+            p.wait()

@@ -18,11 +18,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       # The Tauri app needs WebKitGTK on Linux; it is built in the release workflow on Windows.
       - run: cargo test --workspace --exclude p56-studio
-      - run: cargo build -p p56-server
+      - run: cargo build -p p56-server -p p56-sim
       - uses: actions/upload-artifact@v4
         with:
           name: p56-server-debug
-          path: target/debug/p56-server
+          path: |
+            target/debug/p56-server
+            target/debug/p56-sim
 
   ui:
     name: Web UI build
@@ -36,6 +38,8 @@ jobs:
         with:
           node-version: 20
       - run: pnpm --dir app/ui install --frozen-lockfile
+      - name: Type check (tsc -b)
+        run: pnpm --dir app/ui exec tsc -b
       - run: pnpm --dir app/ui run bundle
       - name: Committed app/src/index.html is up to date
         run: git diff --stat --exit-code -- app/src/index.html || echo "::warning::app/src/index.html differs from a fresh build"
@@ -50,7 +54,7 @@ jobs:
         with:
           name: p56-server-debug
           path: bin
-      - run: chmod +x bin/p56-server
+      - run: chmod +x bin/p56-server bin/p56-sim
       - uses: actions/setup-python@v5
         with:
           python-version: "3.14"

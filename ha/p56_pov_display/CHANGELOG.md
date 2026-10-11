@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.0.5
+
+Security and reliability fixes.
+
+- **API token**: new option `api_token`. When set, clients on the network must send it
+  (`Authorization: Bearer <token>` or `?token=<token>`); Home Assistant itself and the panel
+  do not need it. Without it they get `401 Unauthorized`.
+- **`lan_api` is now off by default** for new installations: only Home Assistant itself and
+  the panel reach port 8765. Existing installations keep their saved options (also
+  `lan_api: true`); if you use the API from other machines, set an `api_token` as well.
+- `path` in `/api/show` (and `image` in the 1.x `/upload`) only reads pictures from `/media`
+  and `/share`; any other file is refused (`403`). Use `data` or `frames` for anything else.
+- `show_seconds`: the removal timer of an earlier picture no longer deletes a newer file with
+  the same name, or another file that took its slot after it was deleted by hand. Afterwards
+  the fan returns to the file that played before, found by name (slot numbers shift).
+- `mode: cast` with a `mac` or `id` now streams to that fan only, no longer to every fan.
+- p56-server 0.2.5 (the `p56` command line tool also casts only to the fans chosen with
+  `--fan`/`--all`, and refuses unknown or unsupported fan types instead of using another layout).
+
 ## 2.0.4
 
 - `/api/show`: ready-made styles (alert, warning, info, success, price, clock) with a ring along the rim,

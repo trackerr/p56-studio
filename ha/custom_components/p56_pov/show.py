@@ -79,16 +79,19 @@ async def fetch_url(hass: HomeAssistant, url: str) -> bytes:
                     translation_key="download_failed",
                     translation_placeholders={"url": url, "error": f"HTTP {resp.status}"},
                 )
-            data = await resp.content.read(MAX_IMAGE_BYTES + 1)
+            # Read until EOF: a single read() may return only the first chunk of a streamed body.
+            data = bytearray()
+            async for chunk in resp.content.iter_chunked(65536):
+                if len(data) + len(chunk) > MAX_IMAGE_BYTES:
+                    raise _invalid("file_too_large", path=url)
+                data += chunk
     except (aiohttp.ClientError, TimeoutError) as err:
         raise HomeAssistantError(
             translation_domain=DOMAIN,
             translation_key="download_failed",
             translation_placeholders={"url": url, "error": str(err)},
         ) from err
-    if len(data) > MAX_IMAGE_BYTES:
-        raise _invalid("file_too_large", path=url)
-    return data
+    return bytes(data)
 
 
 async def camera_image(hass: HomeAssistant, entity_id: str) -> bytes:

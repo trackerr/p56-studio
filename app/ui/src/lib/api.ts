@@ -21,15 +21,58 @@ export type P56Event = { type: string; data: any };
 const T: any = (window as any).__TAURI__;
 export const isTauri = !!T?.core?.invoke;
 
+// ---- API token for p56-server (LAN clients may have to send one) ----
+// Taken from `?token=` in the page URL (then removed from the address bar) or from localStorage.
+const TOKEN_KEY = 'p56.token';
+let apiToken = '';
+// Set when the server answers 401; the token prompt subscribes to it.
+let authNeeded = false;
+const authListeners = new Set<(needed: boolean) => void>();
+try { apiToken = localStorage.getItem(TOKEN_KEY) || ''; } catch { /* private mode */ }
+if (!isTauri) {
+  try {
+    const u = new URL(window.location.href);
+    const q = u.searchParams.get('token');
+    if (q) {
+      apiToken = q;
+      try { localStorage.setItem(TOKEN_KEY, q); } catch { /* private mode */ }
+      u.searchParams.delete('token');
+      history.replaceState(history.state, '', u.toString());
+    }
+  } catch { /* ignore */ }
+}
+
+/** Store a new API token (from the token prompt). */
+export function setApiToken(token: string) {
+  apiToken = token.trim();
+  try { if (apiToken) localStorage.setItem(TOKEN_KEY, apiToken); else localStorage.removeItem(TOKEN_KEY); } catch { /* private mode */ }
+  authNeeded = false;
+  authListeners.forEach((l) => l(false));
+}
+export function onAuthNeeded(cb: (needed: boolean) => void): () => void {
+  authListeners.add(cb);
+  if (authNeeded) cb(true);
+  return () => { authListeners.delete(cb); };
+}
+function requireAuth() {
+  authNeeded = true;
+  authListeners.forEach((l) => l(true));
+}
+
+function authHeaders(h: Record<string, string> = {}): Record<string, string> {
+  return apiToken ? { ...h, Authorization: `Bearer ${apiToken}` } : h;
+}
+
 // Served by p56-server (Home Assistant add-on)? Relative URLs keep working behind ingress.
 const serverProbe: Promise<boolean> = isTauri ? Promise.resolve(false)
-  : fetch('api/ping', { cache: 'no-store' }).then((r) => r.ok && r.json()).then((j) => !!j?.ok).catch(() => false);
+  : fetch('api/ping', { cache: 'no-store', headers: authHeaders() }).then((r) => r.ok && r.json()).then((j) => !!j?.ok).catch(() => false);
 export const transport = serverProbe.then((s) => (isTauri ? 'tauri' : s ? 'server' : 'demo') as 'tauri' | 'server' | 'demo');
 
 export async function invoke<R = unknown>(cmd: string, args?: Record<string, unknown>): Promise<R> {
   if (isTauri) return T.core.invoke('p56', { cmd, args: args ?? {} });
   if (await serverProbe) {
-    const r = await fetch(`api/call/${cmd}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(args ?? {}) });
+    const r = await fetch(`api/call/${cmd}`, { method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(args ?? {}) });
+    if (r.status === 401) { requireAuth(); throw t('api.unauthorized'); }
     const j = await r.json();
     if (!j.ok) throw j.error;
     return j.result as R;
@@ -47,7 +90,7 @@ if (isTauri) T.event.listen('p56', (e: { payload: P56Event }) => emit(e.payload)
 serverProbe.then((s) => {
   if (!s) return;
   const connect = () => {
-    const es = new EventSource('api/events');
+    const es = new EventSource(apiToken ? `api/events?token=${encodeURIComponent(apiToken)}` : 'api/events');
     es.onmessage = (m) => { try { emit(JSON.parse(m.data)); } catch { /* ignore */ } };
     es.onerror = () => { es.close(); setTimeout(connect, 3000); };
   };

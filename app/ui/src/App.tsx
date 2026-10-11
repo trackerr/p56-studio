@@ -2,6 +2,7 @@ import { Fan, ListVideo, ImagePlus, Cast, Wifi, SlidersHorizontal } from 'lucide
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Toaster } from '@/components/ui/sonner';
+import { TokenPrompt } from '@/components/TokenPrompt';
 import { P56Provider, useP56 } from '@/state';
 import { FanPanel } from '@/panels/FanPanel';
 import { PlaylistPanel } from '@/panels/PlaylistPanel';
@@ -77,6 +78,7 @@ function Shell() {
         </Tabs>
       </div>
       <Toaster position="bottom-center" theme="dark" richColors closeButton />
+      <TokenPrompt />
     </P56Provider>
   );
 }

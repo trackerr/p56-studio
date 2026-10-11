@@ -60,6 +60,21 @@ def free_port(kind: int = socket.SOCK_STREAM) -> int:
     return _free(kind)
 
 
+def start_sim(name: str, udp: int, pc_tcp: int) -> subprocess.Popen:
+    """An extra simulated fan (p56-sim, MAC 02:e0:e0:56:00:01) that connects straight to a server.
+
+    Unlike a second server's virtual fan it has its own MAC, so it becomes its own device.
+    """
+    exe = _binary().with_name("p56-sim.exe" if os.name == "nt" else "p56-sim")
+    if not exe.exists():
+        pytest.skip("p56-sim binary not found (cargo build -p p56-sim)")
+    return subprocess.Popen(
+        [str(exe), "--name", name, "--udp-port", str(udp), "--pc-port", str(pc_tcp),
+         "--pc", f"127.0.0.1:{pc_tcp}", "--http", "0"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env={**os.environ, "RUST_LOG": "warn"},
+    )
+
+
 @pytest.fixture(scope="session")
 def p56_server() -> Generator[tuple[str, int]]:
     pytest_socket.enable_socket()

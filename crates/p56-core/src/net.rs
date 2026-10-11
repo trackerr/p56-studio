@@ -537,10 +537,19 @@ impl Link {
     /// Push one live frame (a fan-layout JPEG) to every connected fan.
     /// Returns the number of fans that accepted it.
     pub fn cast(&self, jpeg: &[u8]) -> usize {
+        self.cast_to(&self.ids(), jpeg)
+    }
+
+    /// Push one live frame (a fan-layout JPEG) to the fans in `ids` only (ids that are not
+    /// connected are skipped). Returns the number of fans that accepted it.
+    pub fn cast_to(&self, ids: &[u32], jpeg: &[u8]) -> usize {
         let frame = proto::cast_frame(jpeg);
         let _g = self.tx_lock.lock().unwrap();
         let mut ok = 0;
-        for id in self.ids() {
+        let mut done: Vec<u32> = Vec::with_capacity(ids.len());
+        for &id in ids {
+            if done.contains(&id) { continue; }
+            done.push(id);
             let Ok(mut s) = self.stream(id) else { continue };
             let mut good = true;
             for chunk in frame.chunks(CAST_CHUNK) {

@@ -205,7 +205,7 @@ flowchart LR
 | [`crates/p56-cli`](crates/p56-cli) | `p56` command line |
 | [`crates/p56-sim`](crates/p56-sim) | Simulated fans with a web view |
 | [`crates/p56-server`](crates/p56-server) | Headless server for Home Assistant and other hosts |
-| [`ha/`](ha) | Home Assistant add-on and integration ([published separately](https://github.com/trackerr/home-assistant-p56)) |
+| [`ha/`](ha) | Home Assistant add-on and integration — the source of [home-assistant-p56](https://github.com/trackerr/home-assistant-p56), which is published from this folder with `git subtree split --prefix ha` (make changes here, not there) |
 | [`e2e/`](e2e), [`scripts/`](scripts) | End-to-end tests, gauntlet loop, Android build |
 </details>
 

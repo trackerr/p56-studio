@@ -103,12 +103,19 @@ def _targets(hass: HomeAssistant, call: ServiceCall) -> list[tuple[P56Coordinato
     return out
 
 
-async def _show(call: ServiceCall, payload: dict[str, Any]) -> ServiceResponse:
+async def _show(call: ServiceCall, payload: dict[str, Any], default_colors: bool = False) -> ServiceResponse:
+    """Send the payload to every target; options defaults come from each target's own entry.
+
+    default_colors: fill a missing color/background from the target entry's options.
+    """
     results: list[dict[str, Any]] = []
     for coordinator, mac in _targets(call.hass, call):
         body = dict(payload)
         opts = coordinator.config_entry.options
         body.setdefault("mode", opts.get(CONF_MODE, DEFAULT_MODE))
+        if default_colors:
+            body.setdefault("color", color_value(opts.get(CONF_COLOR, DEFAULT_COLOR)))
+            body.setdefault("background", color_value(opts.get(CONF_BACKGROUND, DEFAULT_BACKGROUND)))
         if mac:
             body["mac"] = mac
         answer = await run_command(coordinator, coordinator.api.show(body))
@@ -117,21 +124,17 @@ async def _show(call: ServiceCall, payload: dict[str, Any]) -> ServiceResponse:
 
 
 async def _show_text(call: ServiceCall) -> ServiceResponse:
-    entries = _loaded(call.hass)
-    opts = entries[0].options if entries else {}
     data = call.data
     style = data.get("style")
     text = data.get("text", "")
     if style == "clock" and not text.strip():
         text = dt_util.now().strftime("%H:%M")
     payload: dict[str, Any] = {"text": text}
-    # A style brings its own colours; the entry's default colours only apply without one.
-    for key, default in (("color", DEFAULT_COLOR), ("background", DEFAULT_BACKGROUND)):
-        conf = CONF_COLOR if key == "color" else CONF_BACKGROUND
+    # Explicit colours always win. Missing ones are filled per target from that target's
+    # own entry options (in _show), except with a style, which brings its own colours.
+    for key in ("color", "background"):
         if key in data:
             payload[key] = color_value(data[key])
-        elif not style:
-            payload[key] = color_value(opts.get(conf, default))
     if "value" in data:
         if "value_min" not in data or "value_max" not in data:
             raise ServiceValidationError(translation_domain=DOMAIN, translation_key="value_needs_range")
@@ -146,7 +149,7 @@ async def _show_text(call: ServiceCall) -> ServiceResponse:
     for key in ("icon", "style", "ring", "font_size", "show_seconds", "mode", "name"):
         if key in data:
             payload[key] = data[key]
-    return await _show(call, payload)
+    return await _show(call, payload, default_colors=not style)
 
 
 async def _show_image(call: ServiceCall) -> ServiceResponse:

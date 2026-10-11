@@ -3,6 +3,10 @@
 //! - `POST /api/call/<cmd>` every UI command, `GET /api/events` live events (SSE)
 //! - `GET /api/state`, `POST /api/show` for the Home Assistant integration
 //! - the add-on 1.x endpoints `/health`, `/status`, `/text`, `/upload`, `/delete`, `/on`, `/off`
+//!
+//! Access: `--local-only` answers only this machine and the Home Assistant Supervisor network;
+//! otherwise `--api-token` makes every other client send the token (except for `/` and
+//! `/api/ping`). Files on the server are only read from the `--media-dir` folders.
 
 use std::io::{Read, Write};
 use std::net::{Ipv4Addr, TcpStream};
@@ -55,6 +59,58 @@ struct Args {
     /// not the rest of the LAN.
     #[arg(long)]
     local_only: bool,
+    /// Require this token from clients on the network (not from this machine or the Home
+    /// Assistant Supervisor network): `Authorization: Bearer <token>` or `?token=<token>`.
+    /// The web UI page itself and /api/ping stay open.
+    #[arg(long, env = "P56_API_TOKEN", hide_env_values = true)]
+    api_token: Option<String>,
+    /// Folder that `path` in /api/show (and `image` in the 1.x /upload) may read from;
+    /// repeat for more. Without any, reading files on the server is refused.
+    #[arg(long = "media-dir")]
+    media_dirs: Vec<std::path::PathBuf>,
+}
+
+impl Args {
+    fn token(&self) -> Option<&str> { self.api_token.as_deref().map(str::trim).filter(|t| !t.is_empty()) }
+}
+
+/// Requests that need no token: the web UI page, the ping and CORS preflights.
+fn public(method: &Method, url: &str) -> bool {
+    let path = url.split('?').next().unwrap_or("/").trim_end_matches('/');
+    *method == Method::Options || (*method == Method::Get && matches!(path, "" | "/index.html" | "/api/ping"))
+}
+
+/// Constant-time comparison (only the length can be learned from the timing).
+fn same_secret(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() { return false; }
+    a.iter().zip(b).fold(0u8, |d, (x, y)| d | (x ^ y)) == 0
+}
+
+/// Decode `%XX` escapes (a token in a URL is usually sent through encodeURIComponent).
+fn percent_decode(s: &str) -> Vec<u8> {
+    let b = s.as_bytes();
+    let hex = |c: u8| (c as char).to_digit(16).map(|d| d as u8);
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%' && i + 2 < b.len() {
+            if let (Some(h), Some(l)) = (hex(b[i + 1]), hex(b[i + 2])) { out.push(h << 4 | l); i += 3; continue; }
+        }
+        out.push(b[i]);
+        i += 1;
+    }
+    out
+}
+
+/// The request carries the API token in an `Authorization: Bearer` header or a `token` query parameter.
+fn has_token(req: &Request, token: &str) -> bool {
+    let header = req.headers().iter().filter(|h| h.field.equiv("Authorization")).any(|h| {
+        h.value.as_str().trim().split_once(' ')
+            .is_some_and(|(scheme, t)| scheme.eq_ignore_ascii_case("bearer") && same_secret(t.trim().as_bytes(), token.as_bytes()))
+    });
+    header || req.url().split_once('?').is_some_and(|(_, q)| q.split('&').any(|kv| {
+        kv.strip_prefix("token=").is_some_and(|v| same_secret(&percent_decode(v), token.as_bytes()))
+    }))
 }
 
 fn allowed(addr: Option<&std::net::SocketAddr>) -> bool {
@@ -77,11 +133,26 @@ fn main() {
         std::process::exit(1)
     });
     log::info!("HTTP API and web UI on :{}", args.http_port);
-    if args.discovery { thread::spawn(move || announce(args.http_port)); }
+    match (args.local_only, args.token()) {
+        (true, _) => log::info!("API limited to this machine and Home Assistant"),
+        (false, Some(_)) => log::info!("API open to the network, with an API token"),
+        (false, None) => log::warn!("API open to the whole network WITHOUT a token: anyone on it can control the fans; set an API token"),
+    }
+    if args.discovery { let port = args.http_port; thread::spawn(move || announce(port)); }
+    let token = args.token().map(str::to_string);
     for req in server.incoming_requests() {
-        if args.local_only && !allowed(req.remote_addr()) {
+        let trusted = allowed(req.remote_addr());
+        if args.local_only && !trusted {
             let _ = req.respond(json_response(&json!({ "error": "Forbidden" }), 403));
             continue;
+        }
+        if let Some(t) = &token {
+            if !trusted && !public(req.method(), req.url()) && !has_token(&req, t) {
+                log::debug!("401 for {} {} from {:?}", req.method(), req.url().split('?').next().unwrap_or(""), req.remote_addr());
+                let _ = req.respond(json_response(&json!({ "error": "Unauthorized" }), 401)
+                    .with_header(Header::from_bytes("WWW-Authenticate", "Bearer").unwrap()));
+                continue;
+            }
         }
         let svc = svc.clone();
         let subs = subs.clone();
@@ -97,7 +168,7 @@ fn start_service(args: &Args, subs: Subscribers) -> Arc<Service> {
     });
     let mut targets = args.fans.clone();
     if args.simulate || args.options_file.is_some() { targets.push(format!("127.0.0.1:{}", args.sim_udp_port)); }
-    let svc = Service::new(emit, Defaults { ip: args.ip.clone(), targets, port: Some(args.tcp_port) });
+    let svc = Service::new(emit, Defaults { ip: args.ip.clone(), targets, port: Some(args.tcp_port), media_dirs: args.media_dirs.clone() });
     match svc.start_link(None, None, None) {
         Ok(ip) => log::info!("fan link started on TCP {} (advertising {ip})", args.tcp_port),
         Err(e) => log::error!("fan link not started: {e}"),
@@ -274,6 +345,10 @@ fn first_fan(svc: &Service) -> Option<u32> { all_fans(svc).first().copied() }
 
 fn show(svc: &Arc<Service>, b: Value) -> Response<std::io::Cursor<Vec<u8>>> {
     let req: ShowRequest = match serde_json::from_value(b) { Ok(r) => r, Err(e) => return json_response(&json!({ "success": false, "error": e.to_string() }), 400) };
+    // a file on the server may only be read from the media folders
+    if let Some(p) = req.path.as_deref().filter(|p| !p.trim().is_empty()) {
+        if let Err(e) = svc.media_path(p) { return json_response(&json!({ "success": false, "error": e }), 403); }
+    }
     if first_fan(svc).is_none() { return json_response(&json!({ "success": false, "error": "No fan connected" }), 503); }
     match svc.show(req) {
         Ok(v) => json_response(&v, 200),

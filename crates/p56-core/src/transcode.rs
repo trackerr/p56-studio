@@ -62,6 +62,7 @@ impl FanType {
     }
 
     /// Like [`FanType::known`] but falls back to type 1 for unknown ids.
+    /// Use [`FanType::usable`] when the id comes from a user or a fan.
     pub fn by_id(id: u8) -> FanType {
         FanType::known(id).unwrap_or(FanType { id: 1, angles: 960, radius: 192, arms: 4, gain: 1.5 })
     }
@@ -114,6 +115,14 @@ impl FanType {
             }),
             _ => None,
         }
+    }
+
+    /// The geometry to transcode for `id`, validated first: unknown and unsupported ids are
+    /// an error (never a silent fallback to another layout). [`Support::Legacy`] types are
+    /// accepted; see [`FanType::support`] for the caveat.
+    pub fn usable(id: u8) -> Result<FanType, String> {
+        if let Some(m) = FanType::check(id) { return Err(m); }
+        FanType::known(id).ok_or_else(|| format!("unknown fan type {id}"))
     }
 
     /// Size of the JPEG the firmware expects: (width, height).
@@ -459,6 +468,16 @@ mod tests {
         assert_eq!(f.layout.dimensions(), (688, 240));
         assert!(f.jpeg.len() <= MAX_JPEG);
         assert_eq!(&f.jpeg[..2], &[0xFF, 0xD8]);
+    }
+
+    #[test]
+    fn usable_rejects_unknown_and_unsupported_types() {
+        assert_eq!(FanType::usable(8).unwrap(), FanType::P56);
+        assert_eq!(FanType::usable(7).unwrap().id, 7, "legacy types are allowed");
+        assert!(FanType::usable(255).unwrap_err().contains("unknown fan type 255"));
+        assert!(FanType::usable(0).unwrap_err().contains("unknown fan type 0"));
+        assert!(FanType::usable(32).unwrap_err().contains("not supported"));
+        for &id in FanType::all() { assert_eq!(FanType::usable(id).unwrap().id, id); }
     }
 
     #[test]

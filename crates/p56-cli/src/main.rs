@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use clap::{Parser, Subcommand, ValueEnum};
-use p56_core::{transcode, ColorMode, Config, Event, FanType, Link, Placement};
+use p56_core::{transcode, ColorMode, Config, Event, FanType, Link, Placement, Support};
 
 #[derive(Parser)]
 #[command(name = "p56", version, about = "Control Holoscope / P56 hologram fans from your PC")]
@@ -153,8 +153,7 @@ fn main() {
             return;
         }
         Cmd::Preview { file, prefix } => {
-            let ft = FanType::by_id(cli.fan_type.unwrap_or(8));
-            if let Some(e) = FanType::check(ft.id) { die(e); }
+            let ft = usable_type(cli.fan_type.unwrap_or(8), "--type").unwrap_or_else(|e| die(e));
             let img = load(file).unwrap_or_else(|e| die(e));
             let f = transcode::encode(&img, &ft, &Placement::default());
             f.layout.save(format!("{prefix}_layout.png")).unwrap_or_else(|e| die(e));
@@ -186,26 +185,62 @@ fn main() {
         vec![*ids.get(cli.fan.saturating_sub(1)).unwrap_or_else(|| die(format!("fan {} does not exist; there are {}", cli.fan, ids.len())))]
     };
     let mut failed = false;
-    for id in targets {
-        let ft = fan_type(&link, id, cli.fan_type);
-        if let Err(e) = run(&link, id, ft, &cli.cmd) { eprintln!("fan #{id}: error: {e}"); failed = true; }
+    if let Cmd::Cast { source, fps, seconds, x, y, scale, mirror } = &cli.cmd {
+        // One live stream to exactly the selected fans, encoded once per fan type.
+        let mut groups: Vec<(FanType, Vec<u32>)> = Vec::new();
+        for id in targets {
+            match fan_type(&link, id, cli.fan_type) {
+                Ok(ft) => match groups.iter_mut().find(|(f, _)| f.id == ft.id) {
+                    Some((_, ids)) => ids.push(id),
+                    None => groups.push((ft, vec![id])),
+                },
+                Err(e) => { eprintln!("fan #{id}: error: {e}"); failed = true; }
+            }
+        }
+        if !groups.is_empty() {
+            let pl = Placement { x_offset: *x, y_offset: *y, scale: *scale, mirror: *mirror };
+            if let Err(e) = cast_loop(&link, &groups, &pl, source, *fps, *seconds) { eprintln!("error: {e}"); failed = true; }
+        }
+    } else {
+        let needs_type = matches!(cli.cmd, Cmd::Upload { .. });
+        for id in targets {
+            let ft = if needs_type {
+                match fan_type(&link, id, cli.fan_type) {
+                    Ok(ft) => ft,
+                    Err(e) => { eprintln!("fan #{id}: error: {e}"); failed = true; continue }
+                }
+            } else {
+                FanType::P56
+            };
+            if let Err(e) = run(&link, id, ft, &cli.cmd) { eprintln!("fan #{id}: error: {e}"); failed = true; }
+        }
     }
     std::thread::sleep(Duration::from_millis(300));
     link.shutdown();
     if failed { std::process::exit(1); }
 }
 
+/// Validate a fan type id before using its geometry: unknown and unsupported types are an
+/// error (never a silent fallback to another layout); legacy types work with a warning.
+fn usable_type(id: u8, source: &str) -> Result<FanType, String> {
+    let ft = FanType::usable(id).map_err(|e| format!("{e} ({source})"))?;
+    if FanType::support(id) == Support::Legacy {
+        log::warn!("fan type {id} uses the older raw polar format; newer firmware may ignore it");
+    }
+    Ok(ft)
+}
+
 /// Fan type to transcode for: `--type`, else what the fan reports, else 8.
-fn fan_type(link: &Link, id: u32, forced: Option<u8>) -> FanType {
-    if let Some(t) = forced { return FanType::by_id(t); }
+fn fan_type(link: &Link, id: u32, forced: Option<u8>) -> Result<FanType, String> {
+    if let Some(t) = forced { return usable_type(t, "--type"); }
     let deadline = Instant::now() + Duration::from_secs(2);
     while Instant::now() < deadline {
         if let Some(t) = link.device(id).and_then(|d| d.status).map(|s| s.fan_type).filter(|t| *t != 0) {
-            return FanType::by_id(t);
+            return usable_type(t, "reported by the fan; use --type to override");
         }
         std::thread::sleep(Duration::from_millis(50));
     }
-    FanType::P56
+    Ok(FanType::P56)
 }
 
 fn run(link: &Link, id: u32, ft: FanType, cmd: &Cmd) -> Result<(), String> {
@@ -285,19 +320,13 @@ fn run(link: &Link, id: u32, ft: FanType, cmd: &Cmd) -> Result<(), String> {
             Ok(())
         }
         Cmd::Upload { file, name, slot, max_frames, x, y, scale, mirror } => {
-            if let Some(m) = FanType::check(ft.id) { return Err(m); }
             let pl = Placement { x_offset: *x, y_offset: *y, scale: *scale, mirror: *mirror };
             let frames = frames_from(file, &ft, &pl, *max_frames)?;
             let name = name.clone().unwrap_or_else(|| file.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or("upload".into()));
             println!("uploading {} frame(s) as {}…", frames.len(), p56_core::protocol::mp4_name(&name));
             e(link.upload(id, &frames, &name, Some(*slot), 1))
         }
-        Cmd::Cast { source, fps, seconds, x, y, scale, mirror } => {
-            if let Some(m) = FanType::check(ft.id) { return Err(m); }
-            let pl = Placement { x_offset: *x, y_offset: *y, scale: *scale, mirror: *mirror };
-            cast_loop(link, &ft, &pl, source, *fps, *seconds)
-        }
-        Cmd::Preview { .. } | Cmd::Types => unreachable!(),
+        Cmd::Cast { .. } | Cmd::Preview { .. } | Cmd::Types => unreachable!(),
     }
 }
 
@@ -324,18 +353,21 @@ fn frames_from(file: &Path, ft: &FanType, pl: &Placement, max: usize) -> Result<
     Ok(out)
 }
 
-fn cast_loop(link: &Link, ft: &FanType, pl: &Placement, source: &str, fps: f64, seconds: f64) -> Result<(), String> {
+/// Live cast to the fans in `groups` only (fan type, fan ids): every frame is encoded once
+/// per fan type and sent to that group's fans.
+fn cast_loop(link: &Link, groups: &[(FanType, Vec<u32>)], pl: &Placement, source: &str, fps: f64, seconds: f64) -> Result<(), String> {
     let period = Duration::from_secs_f64(1.0 / fps.clamp(0.5, 60.0));
     let started = Instant::now();
+    let encode = |img: &image::RgbImage| -> Vec<Vec<u8>> { groups.iter().map(|(ft, _)| transcode::encode(img, ft, pl).jpeg).collect() };
     // Pre-encode stills and GIFs; stream videos.
-    let mut frames: Vec<(Vec<u8>, u32)> = Vec::new();
+    let mut frames: Vec<(Vec<Vec<u8>>, u32)> = Vec::new();
     let mut video = None;
     if source == "test" {
-        frames.push((transcode::encode(&transcode::test_card(), ft, pl).jpeg, 0));
+        frames.push((encode(&transcode::test_card()), 0));
     } else {
         let bytes = std::fs::read(source).map_err(|e| format!("{source}: {e}"))?;
         match transcode::decode_frames(&bytes, 0) {
-            Ok(fr) => frames = fr.into_iter().map(|(f, ms)| (transcode::encode(&transcode::fit(f, 720), ft, pl).jpeg, ms)).collect(),
+            Ok(fr) => frames = fr.into_iter().map(|(f, ms)| (encode(&transcode::fit(f, 720)), ms)).collect(),
             Err(_) => video = Some(p56_core::video::open(Path::new(source), 720).map_err(|e| e.to_string())?),
         }
     }
@@ -344,18 +376,19 @@ fn cast_loop(link: &Link, ft: &FanType, pl: &Placement, source: &str, fps: f64, 
     loop {
         if seconds > 0.0 && started.elapsed().as_secs_f64() >= seconds { break; }
         let t = Instant::now();
-        let (jpeg, delay) = match &mut video {
+        let (jpegs, delay) = match &mut video {
             Some(v) => match v.next_frame() {
-                Some(f) => (transcode::encode(&f, ft, pl).jpeg, 0),
+                Some(f) => (encode(&f), 0),
                 None => { video = Some(p56_core::video::open(Path::new(source), 720).map_err(|e| e.to_string())?); continue; }
             },
             None => { let f = frames[i % frames.len()].clone(); i += 1; f }
         };
-        if link.cast(&jpeg) > 0 {
+        let sent: usize = groups.iter().zip(&jpegs).map(|((_, ids), jpeg)| link.cast_to(ids, jpeg)).sum();
+        if sent > 0 {
             n += 1;
             if n % 50 == 0 { log::info!("{n} frames cast"); }
-        } else if link.ids().is_empty() {
-            log::warn!("no fan connected");
+        } else if groups.iter().flat_map(|(_, ids)| ids).all(|id| link.device(*id).is_none()) {
+            log::warn!("the selected fan(s) are no longer connected");
             std::thread::sleep(Duration::from_secs(1));
         }
         let wait = if delay > 0 { Duration::from_millis(delay as u64) } else { period };

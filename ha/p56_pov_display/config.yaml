@@ -1,5 +1,5 @@
 name: P56 POV Display
-version: "2.0.4"
+version: "2.0.5"
 slug: p56_pov_display
 description: Holoscope/P56 POV fans in Home Assistant, without the vendor app
 url: https://github.com/trackerr/home-assistant-p56/tree/main/p56_pov_display
@@ -24,7 +24,7 @@ map:
 options:
   fan_ip: []
   advertise_ip: ""
-  lan_api: true
+  lan_api: false
   simulate: false
   log_level: info
 schema:
@@ -32,5 +32,6 @@ schema:
     - str
   advertise_ip: str?
   lan_api: bool
+  api_token: password?
   simulate: bool
   log_level: list(trace|debug|info|warn|error)

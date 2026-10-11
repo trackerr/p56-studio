@@ -11,14 +11,17 @@ use serde_json::{json, Value};
 fn free_tcp() -> u16 { TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap().local_addr().unwrap().port() }
 fn free_udp() -> u16 { UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap().local_addr().unwrap().port() }
 
-struct Srv { child: Child, base: String }
+struct Srv { child: Child, base: String, http: u16, tcp: u16 }
 impl Drop for Srv { fn drop(&mut self) { let _ = self.child.kill(); } }
 
-fn start(simulate: bool) -> Srv {
+fn start(simulate: bool) -> Srv { start_with(simulate, &[]) }
+
+fn start_with(simulate: bool, extra: &[&str]) -> Srv {
     let (http, tcp) = (free_tcp(), free_tcp());
     let mut args = vec!["--http-port".to_string(), http.to_string(), "--tcp-port".into(), tcp.to_string()];
     if simulate { args.extend(["--simulate".into(), "--sim-udp-port".into(), free_udp().to_string()]); }
-    let child = Command::new(env!("CARGO_BIN_EXE_p56-server")).args(&args).env("RUST_LOG", "warn")
+    args.extend(extra.iter().map(|s| s.to_string()));
+    let child = Command::new(env!("CARGO_BIN_EXE_p56-server")).args(&args).env("RUST_LOG", "warn").env_remove("P56_API_TOKEN")
         .stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap();
     let base = format!("http://127.0.0.1:{http}");
     let deadline = Instant::now() + Duration::from_secs(10);
@@ -26,7 +29,7 @@ fn start(simulate: bool) -> Srv {
         assert!(Instant::now() < deadline, "server did not start");
         std::thread::sleep(Duration::from_millis(100));
     }
-    Srv { child, base }
+    Srv { child, base, http, tcp }
 }
 
 impl Srv {
@@ -176,7 +179,7 @@ fn virtual_fan_follows_the_options_file() {
         .args(["--http-port", &http.to_string(), "--tcp-port", &tcp.to_string(), "--sim-udp-port", &free_udp().to_string()])
         .arg("--options-file").arg(&opts)
         .env("RUST_LOG", "warn").stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap();
-    let s = Srv { child, base: format!("http://127.0.0.1:{http}") };
+    let s = Srv { child, base: format!("http://127.0.0.1:{http}"), http, tcp };
     let deadline = Instant::now() + Duration::from_secs(10);
     while ureq::get(&format!("{}/api/ping", s.base)).call().is_err() {
         assert!(Instant::now() < deadline, "server did not start");
@@ -222,7 +225,7 @@ fn virtual_fan_follows_the_supervisor_options() {
         .args(["--options-url", &format!("http://127.0.0.1:{sup_port}/addons/self/info")])
         .env("SUPERVISOR_TOKEN", "test-token").env("RUST_LOG", "warn")
         .stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap();
-    let s = Srv { child, base: format!("http://127.0.0.1:{http}") };
+    let s = Srv { child, base: format!("http://127.0.0.1:{http}"), http, tcp };
     let deadline = Instant::now() + Duration::from_secs(10);
     while ureq::get(&format!("{}/api/ping", s.base)).call().is_err() {
         assert!(Instant::now() < deadline, "server did not start");
@@ -295,4 +298,180 @@ fn styles_icons_colour_scale_and_animations() {
     assert_eq!(code, 500);
     assert!(v["error"].as_str().unwrap_or("").contains("unknown style"), "{v}");
     s.wait("files on the fan", |st| st["playlist"].as_array().is_some_and(|p| ["styled.mp4", "price.mp4", "icon.mp4", "anim.mp4", "frames.mp4"].iter().all(|n| p.iter().any(|e| e["name"] == *n))));
+}
+
+// ---- auto-delete timers (show_seconds) --------------------------------------------------
+
+fn names(st: &Value) -> Vec<String> {
+    st["playlist"].as_array().map(|p| p.iter().filter_map(|e| e["name"].as_str().map(String::from)).collect()).unwrap_or_default()
+}
+
+fn slot_of(st: &Value, name: &str) -> Option<u64> {
+    st["playlist"].as_array()?.iter().find(|e| e["name"] == name).and_then(|e| e["slot"].as_u64())
+}
+
+fn connected_fan(s: &Srv) -> u64 {
+    let st = s.wait("virtual fan connects", |v| v["connected"] == true && v["devices"][0]["status"].is_object() && v["devices"][0]["mac"] != "");
+    st["devices"][0]["id"].as_u64().unwrap()
+}
+
+fn show_ok(s: &Srv, body: Value) -> Value {
+    let (code, v) = s.post("/api/show", body);
+    assert_eq!(code, 200, "{v}");
+    assert_eq!(v["success"], true, "{v}");
+    v
+}
+
+#[test]
+fn stale_timer_keeps_a_newer_upload_with_the_same_name() {
+    let s = start(true);
+    connected_fan(&s);
+    show_ok(&s, json!({ "text": "for a moment", "name": "x", "show_seconds": 3 }));
+    // the same name again, now to keep: the first upload's timer must not remove it
+    show_ok(&s, json!({ "text": "for good", "name": "x", "show_seconds": 0 }));
+    std::thread::sleep(Duration::from_secs(5));
+    let st = s.get("/api/state");
+    assert_eq!(names(&st).iter().filter(|n| *n == "x.mp4").count(), 1, "the permanent x must stay: {st}");
+}
+
+#[test]
+fn stale_timer_never_deletes_another_file_in_the_same_slot() {
+    let s = start(true);
+    let id = connected_fan(&s);
+    let v = show_ok(&s, json!({ "text": "for a moment", "name": "tmp", "show_seconds": 4 }));
+    let slot = v["results"][0]["slot"].as_u64().unwrap();
+    // removed by hand before its timer runs ...
+    s.call("set_value", json!({ "id": id, "what": "delete", "value": slot }));
+    s.wait("tmp deleted by hand", |st| !names(st).contains(&"tmp.mp4".to_string()));
+    // ... and another file takes that slot
+    let v = show_ok(&s, json!({ "text": "other", "name": "other" }));
+    assert_eq!(v["results"][0]["slot"].as_u64(), Some(slot), "{v}");
+    std::thread::sleep(Duration::from_secs(6));
+    let st = s.get("/api/state");
+    assert!(names(&st).contains(&"other.mp4".to_string()), "the timer of tmp deleted another file: {st}");
+}
+
+#[test]
+fn temporary_file_returns_to_the_previous_file_by_name() {
+    let s = start(true);
+    let id = connected_fan(&s);
+    for n in ["a", "b", "c"] { show_ok(&s, json!({ "text": n, "name": n })); }
+    s.call("set_value", json!({ "id": id, "what": "select", "value": 3 }));
+    s.wait("c plays", |st| st["devices"][0]["status"]["play_index"] == 3 && slot_of(st, "c.mp4") == Some(3));
+    show_ok(&s, json!({ "text": "note", "name": "note", "show_seconds": 4 }));
+    // the slots shift while the note is shown: c moves from 3 to 2
+    s.call("set_value", json!({ "id": id, "what": "delete", "value": 1 }));
+    s.wait("a deleted", |st| names(st) == ["b.mp4", "c.mp4", "note.mp4"]);
+    let st = s.wait("note removed, c plays again", |st| !names(st).contains(&"note.mp4".to_string())
+        && st["devices"][0]["status"]["play_index"].as_u64() == slot_of(st, "c.mp4"));
+    assert_eq!(names(&st), ["b.mp4", "c.mp4"], "{st}");
+}
+
+// ---- live cast to one fan -----------------------------------------------------------------
+
+#[test]
+fn cast_reaches_only_the_selected_fan() {
+    let s = start(false);
+    let pc = std::net::SocketAddr::from((Ipv4Addr::LOCALHOST, s.tcp));
+    let sim = |name: &str, last: u8| p56_sim::Sim::start(p56_sim::SimConfig {
+        name: name.into(), udp_port: 0, pc: Some(pc), mac: [0x02, 0xE0, 0xE0, 0x56, 0x01, last], ..Default::default()
+    }).unwrap();
+    let (a, b) = (sim("FAN-A", 0xA1), sim("FAN-B", 0xB2));
+    s.wait("two fans", |v| v["devices"].as_array().is_some_and(|d| d.len() == 2
+        && d.iter().all(|x| x["status"].is_object() && x["mac"].as_str().is_some_and(|m| !m.is_empty()))));
+    let (code, v) = s.post("/api/show", json!({ "text": "LIVE", "mode": "cast", "show_seconds": 1, "mac": "02:E0:E0:56:01:A1" }));
+    assert_eq!(code, 200, "{v}");
+    assert_eq!(v["fans"], 1, "{v}");
+    std::thread::sleep(Duration::from_secs(2));
+    let (na, nb) = (a.state().cast_ok, b.state().cast_ok);
+    assert!(na > 0, "the selected fan got no cast frames");
+    assert_eq!(nb, 0, "the other fan got {nb} cast frames");
+    assert!(a.state().protocol_errors.is_empty() && b.state().protocol_errors.is_empty());
+}
+
+// ---- API token and media folders -------------------------------------------------------
+
+/// This machine's address on the network (no packet is sent), if it has one.
+fn lan_ip() -> Option<Ipv4Addr> {
+    let s = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).ok()?;
+    s.connect("8.8.8.8:80").ok()?;
+    match s.local_addr().ok()?.ip() {
+        std::net::IpAddr::V4(ip) if !ip.is_loopback() && !ip.is_unspecified() && !(ip.octets()[0] == 172 && ip.octets()[1] == 30) => Some(ip),
+        _ => None,
+    }
+}
+
+fn answer(r: Result<ureq::Response, ureq::Error>) -> (u16, Value) {
+    match r {
+        Ok(r) => (r.status(), if r.content_type() == "application/json" { r.into_json().unwrap_or(Value::Null) } else { Value::Null }),
+        Err(ureq::Error::Status(c, r)) => (c, r.into_json().unwrap_or(Value::Null)),
+        Err(e) => panic!("{e}"),
+    }
+}
+
+#[test]
+fn api_token_is_required_from_the_network_only() {
+    let Some(ip) = lan_ip() else { eprintln!("skipped: this machine has no non-loopback IPv4 address"); return };
+    let token = "s3cret/+token";
+    let s = start_with(true, &["--api-token", token]);
+    let lan = format!("http://{ip}:{}", s.http);
+    let get = |p: &str, auth: Option<&str>| {
+        let mut r = ureq::get(&format!("{lan}{p}")).timeout(Duration::from_secs(10));
+        if let Some(a) = auth { r = r.set("Authorization", a); }
+        answer(r.call())
+    };
+    // from the network without (or with a wrong) token: refused
+    let (code, v) = get("/api/state", None);
+    assert_eq!((code, v["error"].as_str()), (401, Some("Unauthorized")), "{v}");
+    assert_eq!(get("/api/state", Some("Bearer wrong")).0, 401);
+    assert_eq!(get("/api/state?token=wrong", None).0, 401);
+    assert_eq!(get("/api/shown/02:e0:e0:56:00:f5", None).0, 401);
+    for p in ["/status", "/health"] { assert_eq!(get(p, None).0, 401, "{p}"); }
+    for p in ["/api/call/devices", "/api/show", "/text", "/upload", "/delete", "/on", "/off"] {
+        let (code, _) = answer(ureq::post(&format!("{lan}{p}")).send_json(json!({ "text": "x" })));
+        assert_eq!(code, 401, "POST {p}");
+    }
+    // with the token, as a header or (for EventSource) in the query
+    assert_eq!(get("/api/state", Some(&format!("Bearer {token}"))).0, 200);
+    assert_eq!(get("/api/state?token=s3cret%2F%2Btoken", None).0, 200);
+    let (code, v) = answer(ureq::post(&format!("{lan}/api/call/devices")).set("Authorization", &format!("bearer {token}")).send_json(json!({})));
+    assert_eq!((code, &v["ok"]), (200, &json!(true)), "{v}");
+    // the page itself and the ping stay open
+    assert_eq!(get("/", None).0, 200);
+    assert_eq!(get("/api/ping", None).0, 200);
+    // this machine (loopback) needs no token
+    assert_eq!(s.get("/api/state")["version"].is_string(), true);
+    let (code, _) = s.post("/api/call/devices", json!({}));
+    assert_eq!(code, 200);
+}
+
+#[test]
+fn show_reads_files_only_inside_media_dirs() {
+    let dir = std::env::temp_dir().join(format!("p56-media-{}", std::process::id()));
+    let (media, outside) = (dir.join("media"), dir.join("outside"));
+    std::fs::create_dir_all(&media).unwrap();
+    std::fs::create_dir_all(&outside).unwrap();
+    std::fs::write(media.join("pic.png"), image_png()).unwrap();
+    std::fs::write(outside.join("secret.png"), image_png()).unwrap();
+    let p = |p: std::path::PathBuf| p.to_str().unwrap().to_string();
+    let s = start_with(true, &["--media-dir", media.to_str().unwrap()]);
+    connected_fan(&s);
+    let v = show_ok(&s, json!({ "path": p(media.join("pic.png")), "name": "inside" }));
+    assert_eq!(v["results"][0]["name"], "inside.mp4", "{v}");
+    for bad in [outside.join("secret.png"), media.join("..").join("outside").join("secret.png"), media.join("missing.png")] {
+        let (code, v) = s.post("/api/show", json!({ "path": p(bad.clone()) }));
+        assert_eq!(code, 403, "{}: {v}", bad.display());
+        assert!(v["error"].as_str().unwrap_or("").contains("not allowed"), "{v}");
+    }
+    // the 1.x endpoint and the command API follow the same rule
+    let (code, _) = s.post("/upload", json!({ "image": p(outside.join("secret.png")) }));
+    assert_eq!(code, 403);
+    let (_, v) = s.post("/api/call/show_image", json!({ "path": p(outside.join("secret.png")) }));
+    assert_eq!(v["ok"], false, "{v}");
+    // without --media-dir no file is read at all
+    let s2 = start(false);
+    let (code, v) = s2.post("/api/show", json!({ "path": p(media.join("pic.png")) }));
+    assert_eq!(code, 403, "{v}");
+    assert!(v["error"].as_str().unwrap_or("").contains("disabled"), "{v}");
+    let _ = std::fs::remove_dir_all(&dir);
 }

@@ -16,6 +16,15 @@ args+=(--options-file /data/options.json --options-url http://supervisor/addons/
 if bashio::config.false 'lan_api'; then
     args+=(--local-only)
 fi
+# Clients on the network (not Home Assistant itself) must send this token.
+if bashio::config.has_value 'api_token'; then
+    # via the environment, so the token does not show up in the process list
+    export P56_API_TOKEN="$(bashio::config 'api_token')"
+elif bashio::config.true 'lan_api'; then
+    bashio::log.warning "lan_api is on without an api_token: anyone on your network can control the fans"
+fi
+# 'path' in /api/show may only read pictures from these (read-only) folders.
+args+=(--media-dir /media --media-dir /share)
 
 export RUST_LOG="$(bashio::config 'log_level' 'info')"
 bashio::log.info "Starting p56-server $(p56-server --version | cut -d' ' -f2)"

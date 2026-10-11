@@ -12,9 +12,15 @@ configuration:
   lan_api:
     name: API reachable on the network
     description: >-
-      On: the HTTP API and web UI on port 8765 answer the whole network
-      (needed for apps or scripts on other machines). Off: only Home Assistant
-      itself (integration, rest_command, the panel).
+      Off (default): only Home Assistant itself (integration, rest_command,
+      the panel) can use the HTTP API on port 8765. On: the whole network
+      (apps or scripts on other machines); protect it with an API token.
+  api_token:
+    name: API token
+    description: >-
+      Optional. When set, clients on the network must send it, as the header
+      "Authorization: Bearer <token>" or as "?token=<token>" in the URL.
+      Home Assistant itself and the panel do not need it.
   simulate:
     name: Virtual fan
     description: Start a simulated P56 fan, to try everything without hardware.

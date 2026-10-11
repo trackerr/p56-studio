@@ -8,7 +8,7 @@
 pub mod text;
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -38,6 +38,19 @@ pub struct Defaults {
     pub ip: Option<String>,
     pub targets: Vec<String>,
     pub port: Option<u16>,
+    /// Folders `show_text` / `show_image` may read a `path` from. Empty = `path` is refused.
+    pub media_dirs: Vec<std::path::PathBuf>,
+}
+
+/// A temporary file (`show_seconds` > 0) waiting for its auto-delete timer, per (fan, file name).
+/// Every upload of that name replaces or removes the entry, so an older timer sees that its
+/// generation is no longer current and leaves the file alone.
+#[derive(Default)]
+struct NameState {
+    /// From a service-wide counter, so a generation is never reused.
+    generation: u64,
+    /// File to switch back to when the temporary file is removed.
+    restore: Option<String>,
 }
 
 pub struct Service {
@@ -52,6 +65,12 @@ pub struct Service {
     last_activity: Mutex<Option<std::time::SystemTime>>,
     /// Round preview (PNG) of what each fan (by MAC) was last sent.
     shown: Mutex<HashMap<String, Vec<u8>>>,
+    /// Per (fan MAC or id, file name). Also held while an auto-delete timer removes its file,
+    /// so a new upload of the same name cannot interleave with that delete.
+    names: Mutex<HashMap<(String, String), NameState>>,
+    next_generation: AtomicU64,
+    /// Canonicalized `Defaults::media_dirs`.
+    media_dirs: Vec<std::path::PathBuf>,
     emit: Emit,
     defaults: Defaults,
 }
@@ -102,7 +121,7 @@ pub struct ShowRequest {
     #[serde(default)] pub text: Option<String>,
     /// Image as base64 or data URL.
     #[serde(default)] pub data: Option<String>,
-    /// Image file path (inside the add-on: /media, /share, /config).
+    /// Image file path on the server; only inside `Defaults::media_dirs` (add-on: /media, /share).
     #[serde(default, alias = "image")] pub path: Option<String>,
     #[serde(default, alias = "fg_color")] pub color: Option<Value>,
     #[serde(default, alias = "bg_color")] pub background: Option<Value>,
@@ -244,11 +263,87 @@ fn color(v: &Option<Value>, default: [u8; 3]) -> [u8; 3] {
 
 impl Service {
     pub fn new(emit: Emit, defaults: Defaults) -> Arc<Service> {
+        let media_dirs = defaults.media_dirs.iter().filter_map(|d| match std::fs::canonicalize(d) {
+            Ok(c) if c.is_dir() => Some(c),
+            Ok(_) => { log::warn!("media folder {} is not a folder; ignored", d.display()); None }
+            Err(e) => { log::warn!("media folder {}: {e}; ignored", d.display()); None }
+        }).collect();
         Arc::new(Service {
             link: Mutex::new(None), fan_type: Mutex::new(0), cast_running: Arc::new(AtomicBool::new(false)),
             upload_seq: AtomicU32::new(0), media: Mutex::new(HashMap::new()), next_media: AtomicU32::new(0),
-            live: Mutex::new(LiveStats::default()), last_activity: Mutex::new(None), shown: Mutex::new(HashMap::new()), emit, defaults,
+            live: Mutex::new(LiveStats::default()), last_activity: Mutex::new(None), shown: Mutex::new(HashMap::new()),
+            names: Mutex::new(HashMap::new()), next_generation: AtomicU64::new(0), media_dirs, emit, defaults,
         })
+    }
+
+    /// Check that `path` (a file the request wants read from the server) lies inside one of the
+    /// media folders, after resolving `..` and symlinks. Returns the resolved path to read.
+    pub fn media_path(&self, path: &str) -> Result<std::path::PathBuf, String> {
+        if self.media_dirs.is_empty() {
+            return Err("reading server files is disabled; use data or frames".into());
+        }
+        let allowed = || self.media_dirs.iter().map(|d| d.display().to_string().trim_start_matches(r"\\?\").to_string()).collect::<Vec<_>>().join(", ");
+        match std::fs::canonicalize(path) {
+            Ok(c) if self.media_dirs.iter().any(|d| c.starts_with(d)) && c.is_file() => Ok(c),
+            _ => Err(format!("path {path} is not allowed: it must be an existing file inside {}", allowed())),
+        }
+    }
+
+    /// Stable key for a fan in per-fan bookkeeping: its MAC, else its connection id.
+    fn fan_key(l: &Link, id: u32) -> String {
+        l.device(id).and_then(|d| d.info).map(|i| i.mac.to_ascii_lowercase()).filter(|m| !m.is_empty()).unwrap_or_else(|| format!("#{id}"))
+    }
+
+    /// A new upload of `name` to fan `id`: makes every pending auto-delete timer for it stale.
+    /// For a temporary upload, `restore` is the file its own timer switches back to; when that
+    /// is the file itself (shown again before its timer ran), the earlier target is kept.
+    /// Returns the key, the generation for the new timer and the restore target.
+    fn new_upload(&self, l: &Link, id: u32, name: &str, temporary: bool, restore: Option<String>) -> ((String, String), u64, Option<String>) {
+        let key = (Self::fan_key(l, id), name.to_string());
+        let generation = self.next_generation.fetch_add(1, Ordering::SeqCst) + 1;
+        let mut m = self.names.lock().unwrap();
+        if !temporary {
+            m.remove(&key);
+            return (key, generation, None);
+        }
+        let st = m.entry(key.clone()).or_default();
+        st.generation = generation;
+        st.restore = if restore.as_deref() == Some(name) { st.restore.take() } else { restore };
+        let restore = st.restore.clone();
+        (key, generation, restore)
+    }
+
+    /// Auto-delete timer of a temporary file: remove the file with exactly that name, but only
+    /// if no newer upload of that name happened, and switch back to the file that played
+    /// before (by name) if the temporary file was still playing.
+    fn expire(&self, l: &Link, key: &(String, String), generation: u64) {
+        let mut names = self.names.lock().unwrap();
+        let restore = match names.get(key) {
+            Some(st) if st.generation == generation => st.restore.clone(),
+            _ => return, // replaced by a newer upload of this name
+        };
+        names.remove(key);
+        // the fan may have reconnected with a new id
+        let Some(id) = l.ids().into_iter().find(|i| Self::fan_key(l, *i) == key.0 || format!("#{i}") == key.0) else { return };
+        let slot_of = |n: &str| l.device(id).and_then(|d| d.files.iter().find(|(_, f)| f == n).map(|(s, _)| *s));
+        // removed by hand meanwhile: nothing to do (never fall back to the old slot number)
+        let Some(slot) = slot_of(&key.1) else { return };
+        let was_playing = l.device(id).and_then(|d| d.status).is_some_and(|s| s.play_index == slot);
+        if let Err(e) = l.delete(id, slot) {
+            log::warn!("removing {} from fan #{id}: {e}", key.1);
+            return;
+        }
+        // keep the lock until the playlist shows the file gone, so a new upload of the same
+        // name cannot pick up the stale slot
+        let deadline = Instant::now() + Duration::from_secs(4);
+        while Instant::now() < deadline && slot_of(&key.1).is_some() {
+            let _ = l.refresh(id);
+            thread::sleep(Duration::from_millis(250));
+        }
+        drop(names);
+        if was_playing {
+            if let Some(back) = restore.as_deref().and_then(slot_of) { let _ = l.select(id, back); }
+        }
     }
 
     pub fn link(&self) -> Result<Link, String> {
@@ -399,8 +494,7 @@ impl Service {
                 id.and_then(|i| devs.iter().find(|d| d.id == i).cloned()).or_else(|| devs.into_iter().next())
             }).and_then(|d| d.status).map(|s| s.fan_type).filter(|t| *t != 0).unwrap_or(8)
         };
-        if let Some(m) = FanType::check(t) { return Err(m); }
-        Ok(FanType::by_id(t))
+        FanType::usable(t)
     }
 
     pub fn control(&self, id: u32, action: &str) -> Result<(), String> {
@@ -537,6 +631,8 @@ impl Service {
             }).collect::<Result<_, _>>()?
         };
         progress("sending", 0, frames.len());
+        // a pending auto-delete of an earlier show_text/show_image with this name must not remove this file
+        self.new_upload(&l, id, &p56_core::protocol::mp4_name(&name), false, None);
         l.upload(id, &frames, &name, Some(slot), seq).map_err(err)?;
         self.remember(&[id], &frames[0], &ft);
         progress("done", frames.len(), frames.len());
@@ -646,8 +742,9 @@ impl Service {
     // ---- show text / image (Home Assistant) --------------------------------------
 
     /// Show a text or picture on one or all fans. "upload" stores it in the playlist and
-    /// switches to it (and removes it again after `show_seconds`, returning to the previous
-    /// slot); "cast" streams it live for `show_seconds` (default 10) without storing anything.
+    /// switches to it (and removes it again after `show_seconds`, returning to the file that
+    /// played before); "cast" streams it live to the selected fans only for `show_seconds`
+    /// (default 10) without storing anything.
     pub fn show(self: &Arc<Self>, r: ShowRequest) -> Result<Value, String> {
         let l = self.link()?;
         let ids: Vec<u32> = match (r.id, r.mac.as_deref().filter(|m| !m.is_empty())) {
@@ -668,7 +765,7 @@ impl Service {
         } else {
             let bytes = match (&r.data, &r.path) {
                 (Some(d), _) => b64(d)?,
-                (None, Some(p)) => std::fs::read(p).map_err(|e| format!("{p}: {e}"))?,
+                (None, Some(p)) => std::fs::read(self.media_path(p)?).map_err(|e| format!("{p}: {e}"))?,
                 _ => return Err("provide 'text', 'icon', 'data', 'path' or 'frames'".into()),
             };
             let fr = transcode::decode_frames(&bytes, max_frames).map_err(|e| format!("cannot read image: {e}"))?;
@@ -680,29 +777,49 @@ impl Service {
         let cast = r.mode.as_deref() == Some("cast");
         let mut results = Vec::new();
         if cast {
-            let ft = self.fan_type_for(ids.first().copied())?;
-            let jpegs: Vec<Vec<u8>> = images.iter().map(|img| transcode::encode(img, &ft, &pl).jpeg).collect();
-            self.remember(&ids, &jpegs[0], &ft);
+            // only the selected fans, each with frames encoded for its own fan type
+            let mut groups: Vec<(FanType, Vec<u32>, Vec<Vec<u8>>)> = Vec::new();
+            for &id in &ids {
+                let ft = match self.fan_type_for(Some(id)) { Ok(f) => f, Err(e) => { results.push(json!({ "id": id, "success": false, "error": e })); continue } };
+                match groups.iter_mut().find(|(f, _, _)| *f == ft) {
+                    Some((_, gids, _)) => gids.push(id),
+                    None => groups.push((ft, vec![id], images.iter().map(|img| transcode::encode(img, &ft, &pl).jpeg).collect())),
+                }
+            }
+            if groups.is_empty() {
+                return Err(results.first().and_then(|r| r["error"].as_str()).unwrap_or("no fan connected").to_string());
+            }
+            for (ft, gids, jpegs) in &groups { self.remember(gids, &jpegs[0], ft); }
             let dur = if secs > 0.0 { secs } else { 10.0 };
-            let period = Duration::from_millis(if jpegs.len() > 1 { frame_ms.clamp(20, 2000) } else { 200 });
+            let n = images.len();
+            let period = Duration::from_millis(if n > 1 { frame_ms.clamp(20, 2000) } else { 200 });
+            let fans: usize = groups.iter().map(|(_, g, _)| g.len()).sum();
             let me = self.clone();
-            let n = jpegs.len();
             thread::spawn(move || {
                 let end = Instant::now() + Duration::from_secs_f64(dur);
                 let mut i = 0;
                 while Instant::now() < end && !me.cast_running.load(Ordering::SeqCst) {
-                    if let Ok(l) = me.link() { l.cast(&jpegs[i % jpegs.len()]); }
+                    if let Ok(l) = me.link() {
+                        for (_, gids, jpegs) in &groups { l.cast_to(gids, &jpegs[i % jpegs.len()]); }
+                    }
                     i += 1;
                     thread::sleep(period);
                 }
             });
-            return Ok(json!({ "success": true, "mode": "cast", "seconds": dur, "fans": ids.len(), "frames": n }));
+            return Ok(json!({ "success": true, "mode": "cast", "seconds": dur, "fans": fans, "frames": n, "results": results }));
         }
         for id in ids {
             let ft = match self.fan_type_for(Some(id)) { Ok(f) => f, Err(e) => { results.push(json!({ "id": id, "success": false, "error": e })); continue } };
             let jpegs: Vec<Vec<u8>> = images.iter().map(|img| transcode::encode(img, &ft, &pl).jpeg).collect();
             let name = p56_core::protocol::mp4_name(&r.name.clone().unwrap_or_else(|| format!("ha_{}", std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0))));
+            // what plays now, by name: a slot number shifts when files are deleted
+            let playing = l.device(id).and_then(|d| {
+                let s = d.status?.play_index;
+                d.files.iter().find(|(slot, _)| *slot == s).map(|(_, n)| n.clone())
+            });
+            // makes the timer of an earlier upload with this name stale before the file is touched
+            let (key, generation, _) = self.new_upload(&l, id, &name, secs > 0.0, playing);
             // same name again (e.g. a text entity that keeps updating): replace instead of adding
             if let Some(old) = l.device(id).and_then(|d| d.files.iter().find(|(_, n)| *n == name).map(|(s, _)| *s)) {
                 let _ = l.delete(id, old);
@@ -712,7 +829,6 @@ impl Service {
                     thread::sleep(Duration::from_millis(250));
                 }
             }
-            let prev = l.device(id).and_then(|d| d.status).map(|s| s.play_index).unwrap_or(0);
             let seq = self.upload_seq.fetch_add(1, Ordering::SeqCst) + 1;
             if let Err(e) = l.upload(id, &jpegs, &name, None, seq) {
                 results.push(json!({ "id": id, "success": false, "error": e.to_string() }));
@@ -733,16 +849,11 @@ impl Service {
             let _ = l.select(id, slot);
             self.remember(&[id], &jpegs[0], &ft);
             if secs > 0.0 {
+                let me = self.clone();
                 let l2 = l.clone();
-                let name2 = name.clone();
                 thread::spawn(move || {
                     thread::sleep(Duration::from_secs_f64(secs));
-                    let cur = l2.device(id).and_then(|d| d.files.iter().find(|(_, n)| *n == name2).map(|(s, _)| *s)).unwrap_or(slot);
-                    let _ = l2.delete(id, cur);
-                    if prev > 0 {
-                        let back = if prev > cur { prev - 1 } else { prev };
-                        let _ = l2.select(id, back);
-                    }
+                    me.expire(&l2, &key, generation);
                 });
             }
             results.push(json!({ "id": id, "success": true, "slot": slot, "name": name, "frames": jpegs.len() }));

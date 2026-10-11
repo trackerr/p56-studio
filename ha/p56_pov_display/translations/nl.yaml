@@ -12,9 +12,17 @@ configuration:
   lan_api:
     name: API bereikbaar op het netwerk
     description: >-
-      Aan: de HTTP-API en web-UI op poort 8765 antwoorden het hele netwerk
-      (nodig voor apps of scripts op andere computers). Uit: alleen Home
-      Assistant zelf (integratie, rest_command, het paneel).
+      Uit (standaard): alleen Home Assistant zelf (integratie, rest_command,
+      het paneel) kan de HTTP-API op poort 8765 gebruiken. Aan: het hele
+      netwerk (apps of scripts op andere computers); beveilig het dan met een
+      API-token.
+  api_token:
+    name: API-token
+    description: >-
+      Optioneel. Als dit is ingevuld, moeten apparaten op het netwerk het
+      meesturen, als header "Authorization: Bearer <token>" of als
+      "?token=<token>" in de URL. Home Assistant zelf en het paneel hebben het
+      niet nodig.
   simulate:
     name: Virtuele fan
     description: Start een gesimuleerde P56-fan, om alles zonder hardware te proberen.
