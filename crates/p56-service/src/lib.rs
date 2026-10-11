@@ -98,6 +98,27 @@ fn at_fan_rate<T: Clone>(frames: Vec<(T, u32)>, max: usize) -> Vec<T> {
 /// The newest picture of a cast source in the fan's layout, with its JPEG quality.
 type Newest = Arc<Mutex<Option<(Vec<u8>, u8)>>>;
 
+/// The windows that can be cast instead of the whole screen: visible, with a title, not tiny.
+fn desktop_windows() -> Value {
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    {
+        let mut out = Vec::new();
+        for w in xcap::Window::all().unwrap_or_default() {
+            let (Ok(id), Ok(title)) = (w.id(), w.title()) else { continue };
+            let big = w.width().unwrap_or(0) >= 120 && w.height().unwrap_or(0) >= 80;
+            if title.trim().is_empty() || !big || w.is_minimized().unwrap_or(true) {
+                continue;
+            }
+            out.push(json!({ "id": id, "title": title, "app": w.app_name().unwrap_or_default() }));
+        }
+        Value::Array(out)
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        json!([])
+    }
+}
+
 /// Turn on the fans in `ids` that are off: a fan that is off shows nothing that is cast to it.
 fn wake(l: &Link, ids: &[u32]) {
     for &id in ids {
@@ -624,6 +645,7 @@ impl Service {
                 Ok(Value::Null)
             }
             "show_text" | "show_image" => self.show(serde_json::from_value(a.clone()).map_err(err)?),
+            "windows" => Ok(desktop_windows()),
             "platform" => Ok(json!({ "os": std::env::consts::OS, "screen": cfg!(any(target_os = "windows", target_os = "macos")),
                 "version": env!("CARGO_PKG_VERSION") })),
             other => Err(format!("unknown command {other}")),
@@ -1010,7 +1032,10 @@ impl Service {
             }
             None => None,
         };
-        if source == "screen" && !cfg!(any(target_os = "windows", target_os = "macos")) {
+        // "window:<id>": one window instead of the whole screen (ids from the `windows` command)
+        let window_id: Option<u32> = source.strip_prefix("window:").and_then(|w| w.parse().ok());
+        let desktop = source == "screen" || window_id.is_some();
+        if desktop && !cfg!(any(target_os = "windows", target_os = "macos")) {
             return Err("screen casting is not available on this platform; use the camera or a file".into());
         }
         let session = self.cast_session.fetch_add(1, Ordering::SeqCst) + 1;
@@ -1024,6 +1049,11 @@ impl Service {
             #[cfg(any(target_os = "windows", target_os = "macos"))]
             let screen =
                 if source == "screen" { xcap::Monitor::all().ok().and_then(|m| m.into_iter().find(|m| m.is_primary().unwrap_or(false))) } else { None };
+            #[cfg(any(target_os = "windows", target_os = "macos"))]
+            let window = window_id.and_then(|id| xcap::Window::all().ok()?.into_iter().find(|w| w.id().ok() == Some(id)));
+            // a window that was closed or a screen that cannot be captured ends the cast after 3 s
+            #[cfg(any(target_os = "windows", target_os = "macos"))]
+            let mut misses = 0;
             while me.cast_session.load(Ordering::SeqCst) == session {
                 let t = Instant::now();
                 let (jpeg, q, delay) = if let Some(m) = &media {
@@ -1039,17 +1069,26 @@ impl Service {
                         }
                     }
                     (cache[k].clone().unwrap(), 0, m[k].1)
-                } else if source == "screen" {
+                } else if desktop {
                     #[cfg(any(target_os = "windows", target_os = "macos"))]
                     {
-                        let Some(mon) = &screen else { break };
-                        match mon.capture_image() {
+                        let shot = match (&window, &screen) {
+                            (Some(w), _) => w.capture_image(),
+                            (None, Some(m)) => m.capture_image(),
+                            (None, None) => break,
+                        };
+                        match shot {
                             Ok(rgba) => {
+                                misses = 0;
                                 let img = transcode::fit(image::DynamicImage::ImageRgba8(rgba).to_rgb8(), MAX_SIDE);
                                 let f = transcode::encode(&img, &ft, &pl);
                                 (f.jpeg, f.quality, 0)
                             }
                             Err(_) => {
+                                misses += 1;
+                                if misses > 30 {
+                                    break;
+                                }
                                 thread::sleep(Duration::from_millis(100));
                                 continue;
                             }

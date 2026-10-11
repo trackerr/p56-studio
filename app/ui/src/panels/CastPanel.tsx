@@ -11,6 +11,7 @@ import { PlacementBox } from './MediaPanel';
 
 type Src = 'test' | 'media' | 'screen' | 'camera' | 'ha';
 type HaCamera = { entity_id: string; name: string };
+type DesktopWindow = { id: number; title: string; app: string };
 
 // this device's camera: only where the browser offers it (not on a plain-http page, such as
 // Home Assistant opened without https)
@@ -32,6 +33,11 @@ export function CastPanel() {
   // camera entities of Home Assistant (the add-on); null where there is no Home Assistant
   const [haCams, setHaCams] = useState<HaCamera[] | null>(null);
   const [haCam, setHaCam] = useState('');
+  // "screen" = the whole screen, else the id of one window
+  const [wins, setWins] = useState<DesktopWindow[]>([]);
+  const [win, setWin] = useState('screen');
+  const loadWins = () => invoke<DesktopWindow[]>('windows').then((w) => setWins(w ?? [])).catch(() => setWins([]));
+  useEffect(() => { if (src === 'screen') loadWins(); }, [src]);
   useEffect(() => {
     invoke<HaCamera[]>('ha_cameras').then((c) => { setHaCams(c); setHaCam((cur) => cur || c[0]?.entity_id || ''); }).catch(() => setHaCams(null));
   }, []);
@@ -82,7 +88,7 @@ export function CastPanel() {
     if (src === 'test' || src === 'screen' || src === 'media' || src === 'ha') {
       if (src === 'media' && !media) { toast.error(t('cast.pickMediaFirst')); return; }
       if (src === 'ha' && !haCam) { toast.error(t('cast.pickHaCamera')); return; }
-      const source = src === 'media' ? `media:${media!.id}` : src === 'ha' ? `ha_camera:${haCam}` : src;
+      const source = src === 'media' ? `media:${media!.id}` : src === 'ha' ? `ha_camera:${haCam}` : src === 'screen' && win !== 'screen' ? `window:${win}` : src;
       try {
         await invoke('cast_start', { args: { source, fps, placement } });
         setRunning(true);
@@ -160,6 +166,17 @@ export function CastPanel() {
             {src === 'screen' && t('cast.screenHint')}
             {src === 'test' && t('cast.testHint')}
           </p>
+          {src === 'screen' && (
+            <div className="mt-3 max-w-sm">
+              <Select value={win} onValueChange={setWin} onOpenChange={(o) => o && loadWins()} disabled={running}>
+                <SelectTrigger data-testid="cast-window" aria-label={t('cast.window')}><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="screen">{t('cast.wholeScreen')}</SelectItem>
+                  {wins.map((w) => <SelectItem key={w.id} value={String(w.id)}>{w.app && !w.title.includes(w.app) ? `${w.title} · ${w.app}` : w.title}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           {src === 'ha' && !!haCams?.length && (
             <div className="mt-3 max-w-sm">
               <Select value={haCam} onValueChange={setHaCam} disabled={running}>
