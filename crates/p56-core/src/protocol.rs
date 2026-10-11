@@ -24,7 +24,7 @@ pub const MAX_UPLOAD_JPEG: usize = 0xF000;
 /// Holoscope sends the cast frame in chunks of this size and waits for an ack after each.
 pub const CAST_CHUNK: usize = 0x3908;
 
-/// Audio in every frame record of an uploaded file: 1/20 s of 8-bit 32 kHz PCM. We send silence.
+/// Audio in every frame record of an uploaded file: 1/20 s of 16-bit mono PCM at 16 kHz (Holoscope fills it from the video's sound track). We send silence.
 pub const UPLOAD_PCM: usize = 1600;
 /// The fan plays uploaded files at 20 frames per second.
 pub const FRAME_MS: u32 = 50;
