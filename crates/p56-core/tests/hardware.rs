@@ -192,3 +192,142 @@ fn cast_live() {
     eprintln!("{sent} frames sent in 10 s");
     assert!(sent >= 100, "only {sent} frames went out");
 }
+
+/// Where does a long video fail? Three uploads, each shown for 15 s: a red bar (160 frames,
+/// silent), green (160 frames with a tone) and blue (500 frames, silent, ~14 MB). Detailed
+/// pictures, so each JPEG is about as large as one from a real video.
+#[test]
+#[ignore]
+fn upload_long_video() {
+    let Some((link, id, ft)) = fan() else { return };
+    remove_test_files(&link, id);
+    let noisy = |n: usize, color: [u8; 3]| -> Vec<Vec<u8>> {
+        let mut seed = 12345u32;
+        (0..n)
+            .map(|i| {
+                let a = i as f64 / 40.0 * std::f64::consts::TAU;
+                let img = image::RgbImage::from_fn(720, 720, |x, y| {
+                    seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+                    let (dx, dy) = (x as f64 - 360.0, y as f64 - 360.0);
+                    let along = dx * a.cos() + dy * a.sin();
+                    let across = -dx * a.sin() + dy * a.cos();
+                    if along > 0.0 && along < 340.0 && across.abs() < 40.0 {
+                        image::Rgb(color)
+                    } else {
+                        let v = (seed >> 24) as u8 / 3;
+                        image::Rgb([v, v, v])
+                    }
+                });
+                transcode::encode_upload(&img, &ft, &Placement::default()).jpeg
+            })
+            .collect()
+    };
+    let tone: Vec<u8> = (0..160 * 800).flat_map(|i| (((i as f64 * 440.0 / 16000.0 * std::f64::consts::TAU).sin() * 8000.0) as i16).to_le_bytes()).collect();
+    let runs: [(&str, usize, [u8; 3], bool); 3] =
+        [("hwtest-red-160", 160, [255, 0, 0], false), ("hwtest-green-160-sound", 160, [0, 255, 0], true), ("hwtest-blue-500", 500, [0, 80, 255], false)];
+    for (name, n, color, sound) in runs {
+        let frames = noisy(n, color);
+        let bytes: usize = frames.iter().map(|f| f.len() + 1604).sum();
+        let t = std::time::Instant::now();
+        let r = link.upload_with_audio(id, &frames, if sound { Some(&tone) } else { None }, name, None);
+        eprintln!("{name}: {n} frames, {:.1} MB, {:.0} s → {r:?}", bytes as f64 / 1e6, t.elapsed().as_secs_f64());
+        if let Some(slot) = link.device(id).unwrap().files.iter().find(|(_, f)| f == &format!("{name}.mp4")).map(|(s, _)| *s) {
+            link.select(id, slot).unwrap();
+            eprintln!("  showing {name} (slot {slot}) for 15 s");
+            std::thread::sleep(Duration::from_secs(15));
+        }
+    }
+    remove_test_files(&link, id);
+}
+
+/// Find the largest file the fan stores: detailed frames (~54 kB) in growing numbers; prints the
+/// size, the time, whether the fan listed it, and what the fan sent besides status reports.
+#[test]
+#[ignore]
+fn upload_size_limit() {
+    let Some((link, id, ft)) = fan() else { return };
+    remove_test_files(&link, id);
+    let mut seed = 777u32;
+    let frame = |i: usize, seed: &mut u32| {
+        let img = image::RgbImage::from_fn(720, 720, |x, _| {
+            *seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+            let v = (*seed >> 24) as u8 / 3;
+            if (x as usize + i * 9) % 200 < 30 {
+                image::Rgb([255, 120, 0])
+            } else {
+                image::Rgb([v, v, v])
+            }
+        });
+        transcode::encode_upload(&img, &ft, &Placement::default()).jpeg
+    };
+    let counts: Vec<usize> = std::env::var("P56_COUNTS").ok().map(|s| s.split(',').filter_map(|n| n.parse().ok()).collect()).unwrap_or(vec![40, 80, 120]);
+    for n in counts {
+        let frames: Vec<Vec<u8>> = (0..n).map(|i| frame(i, &mut seed)).collect();
+        let bytes: usize = frames.iter().map(|f| f.len() + 1604).sum();
+        let name = format!("hwtest-size-{n}");
+        let start = link.packet_seq(id);
+        let t = std::time::Instant::now();
+        let r = link.upload(id, &frames, &name, None);
+        let secs = t.elapsed().as_secs_f64();
+        let mut other = Vec::new();
+        let mut k = 1;
+        while let Some(p) = link.wait_nth(id, start, k, Duration::ZERO, |_| true) {
+            if !matches!(
+                p,
+                p56_core::protocol::Packet::Status(_)
+                    | p56_core::protocol::Packet::Bluetooth(_)
+                    | p56_core::protocol::Packet::MachineInfo(_)
+                    | p56_core::protocol::Packet::FileList(_)
+            ) {
+                other.push(format!("{p:?}"));
+            }
+            k += 1;
+        }
+        eprintln!("{n} frames, {:.2} MB, {secs:.0} s → {r:?}; fan sent: {}", bytes as f64 / 1e6, other.join(", "));
+    }
+    remove_test_files(&link, id);
+}
+
+/// The largest JPEG per frame the fan accepts: 10-frame files with more and more detail.
+#[test]
+#[ignore]
+fn upload_frame_size_limit() {
+    let Some((link, id, ft)) = fan() else { return };
+    remove_test_files(&link, id);
+    let amps: Vec<u32> = std::env::var("P56_AMPS").ok().map(|s| s.split(',').filter_map(|n| n.parse().ok()).collect()).unwrap_or(vec![8, 16, 24, 32, 48, 64]);
+    for amp in amps {
+        let mut seed = 99u32;
+        let frames: Vec<Vec<u8>> = (0..10)
+            .map(|i| {
+                let img = image::RgbImage::from_fn(720, 720, |x, _| {
+                    seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+                    let v = ((seed >> 24) * amp / 255) as u8;
+                    if (x as usize + i * 9) % 200 < 30 {
+                        image::Rgb([255, 120, 0])
+                    } else {
+                        image::Rgb([v, v, v])
+                    }
+                });
+                transcode::encode_upload(&img, &ft, &Placement::default()).jpeg
+            })
+            .collect();
+        let max = frames.iter().map(|f| f.len()).max().unwrap();
+        let name = format!("hwtest-jpeg-{amp}");
+        let r = link.upload(id, &frames, &name, None);
+        eprintln!("noise {amp}: largest JPEG {:.1} kB → {r:?}", max as f64 / 1024.0);
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    remove_test_files(&link, id);
+}
+
+/// Cancel a transfer the fan may still be waiting for (5A 10 10 F5), then upload a small still.
+#[test]
+#[ignore]
+fn cancel_then_upload() {
+    let Some((link, id, ft)) = fan() else { return };
+    link.send_to(id, &p56_core::protocol::trans_cancel()).unwrap();
+    std::thread::sleep(Duration::from_secs(2));
+    let r = link.upload(id, &frames(&ft, 1), "hwtest-after-cancel", None);
+    eprintln!("after cancel: {r:?}; files {:?}", link.device(id).unwrap().files);
+    remove_test_files(&link, id);
+}

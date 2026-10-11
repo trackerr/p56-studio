@@ -100,7 +100,7 @@ rename count from 1: Holoscope selects list position + 1 and compares the status
 
 ## 5. File upload
 ```
-ON(01)→0E · NAME(84)→0E or 85 · FILE→0E · COMMIT(91)×2 · OFF(02) · ON(01) · SHOW(87 n)
+ON(01)→0E · NAME(84)→0E or 85 · FILE · COMMIT(91) every 500 ms until a status 86 · OFF(02) · ON(01) · SHOW(87 n)
 
 FILE   = [duration_ms u32le] RECORD × frames          (in pieces of 1440 B, 2 ms apart)
 RECORD = [len u32le][PCM 1600 B][JPEG][00 × 1–4]
@@ -115,6 +115,13 @@ RECORD = [len u32le][PCM 1600 B][JPEG][00 × 1–4]
   setting in Holoscope; the frame count is what earlier hardware tests used).
 - Each JPEG of a file may be up to `0xF000` (61440) bytes; Holoscope lowers the quality
   (q² per step from 0.95, at most 21 steps) and never cuts a JPEG short.
+- **Finish:** the fan may still be writing to its card after the last byte arrived, and sends no
+  status meanwhile. Holoscope.apk (`transfinish`) repeats COMMIT every 500 ms until a status `86`
+  arrives, and only then goes on. Switching the fan off earlier (as P56 Studio did before 0.3.3)
+  loses large files and can leave the card unusable until it is formatted (85 code 8 on every
+  upload). Holoscope sets no limit on length or size; a real P56 stored a 27 MB file this way.
+- **An `85` during the upload:** stop sending at once and send CANCEL (`5A 10 10 F5`) every
+  500 ms, as Holoscope does.
 - After an `85` error on the name, **never** send the file (the fan is then in command mode).
 - Every step is answered by exactly one `0E` or `85`; count them, so a late answer to a
   previous command can never be mistaken for the answer to the name.

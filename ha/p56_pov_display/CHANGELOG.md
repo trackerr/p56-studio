@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.1.3
+
+p56-server 0.3.3.
+
+- **Long videos and big pictures arrive safely.** Uploads of large files could get lost and leave
+  the fan's memory card refusing every upload until it was formatted. The server now waits until
+  the fan has stored the file, as the official app does. Tested with files up to 27 MB.
+
 ## 2.1.2
 
 p56-server 0.3.2.

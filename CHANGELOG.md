@@ -4,6 +4,16 @@ P56 Studio (Windows, Linux, Android), `p56` (CLI), `p56-sim` and `p56-server`.
 The Home Assistant add-on and integration have their own changelog in
 [`ha/p56_pov_display/CHANGELOG.md`](ha/p56_pov_display/CHANGELOG.md).
 
+## 0.3.3 — 2026-10-11
+
+### Fixed
+- **Long videos broke the fan's memory card.** After the last byte of a file the app switched
+  the fan off and on at once, while a real P56 was still writing a large file to its card: the
+  file was lost and the card refused every upload ("transfer failed", code 8) until it was
+  formatted. Like Holoscope, the app now repeats "finished" every half second until the fan
+  reports back, and stops and cancels at once when the fan reports an error. Tested on a real
+  P56 with files of 9, 15 and 27 MB (a 44 s gallery video is about 14 MB).
+
 ## 0.3.2 — 2026-10-11
 
 ### Fixed

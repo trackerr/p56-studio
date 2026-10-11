@@ -728,29 +728,62 @@ impl Link {
         let data_mark = self.packet_seq(id);
         let mut s = self.stream(id)?;
         let io = |e: std::io::Error| Error::Io(e.to_string());
+        // Like Holoscope: on an error code from the fan, stop sending at once and cancel the
+        // transfer (repeated), so the card is not left with half a file.
+        let abort = |e: FanError| {
+            for _ in 0..4 {
+                let _ = self.send_to(id, &proto::trans_cancel());
+                thread::sleep(Duration::from_millis(500));
+            }
+            Error::Fan(e)
+        };
         s.write_all(&head).map_err(io)?;
-        for chunk in records.chunks(UPLOAD_CHUNK) {
+        for (i, chunk) in records.chunks(UPLOAD_CHUNK).enumerate() {
             s.write_all(chunk).map_err(io)?;
             thread::sleep(Duration::from_millis(2));
+            if i % 64 == 63 {
+                if let Some(e) = fan_error() {
+                    return Err(abort(e));
+                }
+            }
         }
         // The fan acks the stored data (0E, or 29 "stored" / 21 on firmware that does not send
         // 0E here, as a real P56 does); give it time for large animations.
         let acked = expect(1000 + records.len() as u64 / 2000)?
             || self.wait_packet(id, data_mark, Duration::from_millis(500), |p| matches!(p, Packet::TransDone | Packet::TransContinue)).is_some();
+        // The fan may still be writing what it received to its card, and stays silent meanwhile.
+        // Like Holoscope.apk (transfinish): repeat COMMIT every 500 ms until the fan reports its
+        // status again. Switching it off before that (as this app did) breaks large files and can
+        // leave the card unusable until it is formatted.
         let commit = if frames.len() > 1 { proto::commit_with(frames.len() as u32) } else { proto::commit() };
-        let r = step(&commit, 1000).and_then(|_| step(&commit, 1000));
-        if let Err(e) = r {
-            let _ = self.send_to(id, &proto::trans_cancel());
-            return Err(e);
+        let finish = self.packet_seq(id);
+        let deadline = Instant::now() + Duration::from_secs(30 + (records.len() / 100_000) as u64);
+        loop {
+            self.send_to(id, &commit)?;
+            if self.wait_packet(id, finish, Duration::from_millis(500), |p| matches!(p, Packet::Status(_))).is_some() {
+                break;
+            }
+            if let Some(e) = fan_error() {
+                return Err(abort(e));
+            }
+            if gone() {
+                return Err(Error::NotConnected);
+            }
+            if Instant::now() >= deadline {
+                self.log(format!("fan #{id} did not finish storing {name} in time"));
+                break;
+            }
         }
         if let Some(e) = fan_error() {
-            let _ = self.send_to(id, &proto::trans_cancel());
-            return Err(Error::Fan(e));
+            return Err(abort(e));
         }
-        step(&proto::off(), 600)?;
-        step(&proto::on(), 600)?;
+        // answers to the repeated COMMITs may still come: wait for them before the next steps
+        self.quiesce(id, Duration::from_millis(300), Duration::from_secs(2));
+        let ready = |d: &[u8], ms: u64| self.send_ready(id, d, Duration::from_millis(ms));
+        ready(&proto::off(), 600)?;
+        ready(&proto::on(), 600)?;
         if let Some(slot) = show_slot {
-            step(&proto::select(slot), 1000)?;
+            ready(&proto::select(slot), 1000)?;
         }
         if let Some(e) = fan_error() {
             return Err(Error::Fan(e));

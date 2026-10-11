@@ -1126,8 +1126,10 @@ fn handle(sh: &Shared, out: &mut Out, pkt: &[u8], ft: u8, just_uploaded: &mut bo
                 if !sh.state.lock().unwrap().quiet_upload {
                     out.send(&[SOF, op::TRANS_DONE, op::TRANS_DONE, EOF]);
                     out.send(&files(sh));
-                    out.send(&status(sh));
                 }
+                // a fan reports its status again once the file is stored (a real P56 does so
+                // every half second; it is silent while it writes)
+                out.send(&status(sh));
             }
         }
         op::FILE_NAME => {
