@@ -17,7 +17,8 @@ export const IconPlay = icon(<path d="M7 4.5 19 12 7 19.5z" />);
 export const IconPause = icon(<><path d="M8 5v14" /><path d="M16 5v14" /></>);
 export const IconNext = icon(<><path d="M6 5l9 7-9 7z" /><path d="M18 5v14" /></>);
 export const IconStop = icon(<rect x="6" y="6" width="12" height="12" />);
-export const IconRotate = icon(<><path d="M4 12a8 8 0 1 0 2.34-5.66" /><path d="M4 4v5h5" /></>);
+/** Clockwise turn (the picture rotates 90° to the right). */
+export const IconRotate = icon(<><path d="M20 12a8 8 0 1 1-2.34-5.66" /><path d="M20 4v5h-5" /><path d="M12 9v3l2 1.5" /></>);
 export const IconRefresh = icon(<><path d="M20 12a8 8 0 1 1-2.34-5.66" /><path d="M20 4v5h-5" /></>);
 export const IconEye = icon(<><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></>);
 export const IconPencil = icon(<><path d="M4 20l4-1L19 8l-3-3L5 16z" /><path d="M14 7l3 3" /></>);
