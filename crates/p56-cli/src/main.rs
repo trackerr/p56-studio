@@ -465,7 +465,8 @@ fn run(link: &Link, id: u32, ft: FanType, cmd: &Cmd) -> Result<(), String> {
                     match s.color_mode {
                         1 => "true color",
                         2 => "high brightness",
-                        _ => "?",
+                        // a real P56 reports 0: it does not tell its colour mode
+                        _ => "not reported",
                     },
                     s.breath,
                     s.autostart,

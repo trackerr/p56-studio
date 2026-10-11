@@ -71,14 +71,21 @@ export function MediaPanel() {
   const cancel = useRef(false);
   const [txt, setTxt] = useState({ text: '', color: '#ffffff', bg: '#000000', motion: '' as Motion, speed: 1 });
 
-  async function makeText() {
+  // the text settings the current text media was made from, so Upload can tell whether it is stale
+  const madeText = useRef<{ id: number; key: string } | null>(null);
+  const textKey = JSON.stringify(txt);
+
+  async function makeText(): Promise<{ id: number; name: string } | null> {
     // a ticker takes a moment to render: uploading meanwhile would send the previous picture
     setBusy({ step: 'text' });
     try {
       const m = await invoke<MediaInfo>('media_text', { text: txt.text, color: txt.color, background: txt.bg, name: txt.text.slice(0, 24), motion: txt.motion, speed: txt.speed });
-      setPicked(null); setMedia(m); setFrame(0); setName(txt.text.slice(0, 24).replace(/[^\w -]/g, '').trim() || t('media.textName'));
+      const n = txt.text.slice(0, 24).replace(/[^\w -]/g, '').trim() || t('media.textName');
+      setPicked(null); setMedia(m); setFrame(0); setName(n);
+      madeText.current = { id: m.id, key: textKey };
       addLog(t('media.logText', { text: txt.text }));
-    } catch (e) { toast.error(t('media.textFailed'), { description: String(e) }); }
+      return { id: m.id, name: n };
+    } catch (e) { toast.error(t('media.textFailed'), { description: String(e) }); return null; }
     finally { setBusy(null); }
   }
 
@@ -165,9 +172,18 @@ export function MediaPanel() {
 
   async function doUpload() {
     if (!fan) { toast.error(t('common.noFan')); return; }
+    let mediaId = media?.id ?? 0, upName = name;
+    // A typed text that was not made yet (or changed since): make it first, instead of sending
+    // the test card or the previous text.
+    const isText = !media || media.id === madeText.current?.id;
+    if (!picked && isText && txt.text.trim() && madeText.current?.key !== textKey) {
+      const made = await makeText();
+      if (!made) return;
+      mediaId = made.id; upName = made.name;
+    }
     setBusy({ step: 'preparing' }); setProg(0);
     try {
-      const r = await invoke<string>('upload', { args: { id: fan.id, media: media?.id ?? 0, name: name || null, slot, placement, max_frames: maxFrames, sound } });
+      const r = await invoke<string>('upload', { args: { id: fan.id, media: mediaId, name: upName || null, slot, placement, max_frames: maxFrames, sound } });
       toast.success(t('media.uploaded'), { description: r });
       addLog(t('media.logUpload', { result: r }));
     } catch (e) {

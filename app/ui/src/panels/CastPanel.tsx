@@ -113,10 +113,14 @@ export function CastPanel() {
   }
 
   async function loop(v: HTMLVideoElement, id: number) {
+    let lastFrame = performance.now();
     while (live.current && id === session.current) {
       const t0 = performance.now();
       const b64 = grab(v, canvas.current);
+      // a camera that gives no picture would otherwise cast nothing without a word
+      if (!b64 && t0 - lastFrame > 5000) { fail(t('cast.failed'), t('cast.noFrames')); return; }
       if (b64) {
+        lastFrame = t0;
         try { await invoke('cast_frame', { data: b64, placement: placementRef.current }); }
         catch (e) {
           if (id === session.current) fail(t('cast.frameFailed'), e);
@@ -167,7 +171,10 @@ export function CastPanel() {
           </div>
         </Section>
         <PlacementBox />
-        <video ref={vidRef} muted playsInline className="hidden" />
+        {/* Never display:none: Android's WebView then decodes no frames (the camera turns on, but
+            the picture stays empty). Shown small while a camera or video is cast. */}
+        <video ref={vidRef} muted playsInline data-testid="cast-video"
+          className={running && (src === 'camera' || src === 'video') ? 'aspect-square w-32 rounded-full border border-border object-cover' : 'pointer-events-none fixed left-0 top-0 h-px w-px opacity-[0.01]'} />
       </div>
       <div className="min-w-0 lg:sticky lg:top-0 lg:self-start">
         <RoundView src={pv} spinning={running}

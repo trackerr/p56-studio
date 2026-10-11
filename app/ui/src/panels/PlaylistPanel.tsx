@@ -9,7 +9,7 @@ import { useT } from '@/lib/i18n';
 import { useNav } from '@/lib/nav';
 import { cn } from '@/lib/utils';
 import { useP56 } from '@/state';
-import { NoFan } from './FanPanel';
+import { NoFan, stem } from './FanPanel';
 
 export function PlaylistPanel() {
   const { fan, run } = useP56();
@@ -41,7 +41,7 @@ export function PlaylistPanel() {
                   {String(n).padStart(2, '0')}
                 </span>
                 <span className={cn('min-w-0 flex-1 truncate text-[13px]', on && 'text-primary')}>
-                  {name}
+                  {stem(name)}
                   {on && <span className="orbit-label ml-3 text-primary">{t('playlist.playing')}</span>}
                 </span>
                 <div className="flex shrink-0">

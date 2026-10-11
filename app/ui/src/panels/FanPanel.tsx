@@ -11,7 +11,7 @@ import { useP56 } from '@/state';
 
 const control = (id: number, action: string) => invoke('control', { id, action });
 const setValue = (id: number, what: string, value: number) => invoke('set_value', { id, what, value });
-const stem = (name: string) => name.replace(/\.mp4$/i, '');
+export const stem = (name: string) => name.replace(/\.mp4$/i, '');
 const pad = (n: number) => String(n).padStart(2, '0');
 
 export function NoFan() {
@@ -110,7 +110,7 @@ export function FanPanel() {
         <div className="flex min-w-0 flex-col items-center gap-5">
           <div className="flex flex-wrap justify-center gap-x-8 gap-y-2">
             <Readout label={t('fan.angle')}>{s?.angle ?? 0}°</Readout>
-            <Readout label={t('fan.color')}>{s?.color_mode === 2 ? t('fan.highBrightness') : t('fan.trueColor')}</Readout>
+            <Readout label={t('fan.color')}>{s?.color_mode === 1 ? t('fan.trueColor') : s?.color_mode === 2 ? t('fan.highBrightness') : t('fan.colorNotReported')}</Readout>
             <Readout label={t('fan.repeat')}>{s?.repeat_all === false ? t('fan.repeatOne') : t('fan.repeatAll')}</Readout>
           </div>
 

@@ -253,6 +253,16 @@ async function main() {
     await js(`$click('motion-none')`);
   });
 
+  await test('upload a typed text without pressing Text first', async () => {
+    await js(`$click('testcard')`); await sleep(200);
+    const before = (await sim()).files.length;
+    await js(`$type('text-input', 'Direct')`); await sleep(100);
+    await js(`$click('upload')`);
+    const s = await waitSim('Direct.mp4', (s) => s.files.some((f) => f.name === 'Direct.mp4'), 30000);
+    await sleep(1500);
+    if ((await sim()).files.length !== before + 1) throw new Error('expected only the text to be added: ' + JSON.stringify(s.files.map((f) => f.name)));
+  });
+
   await test('convert a video to frames and upload it', async () => {
     const webm = await js(MAKE_VIDEO, true);
     await js(`window.__p56pick('clip.webm', ${JSON.stringify(webm)}, 'video/webm')`);

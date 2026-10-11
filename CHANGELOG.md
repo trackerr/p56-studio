@@ -16,7 +16,13 @@ The Home Assistant add-on and integration have their own changelog in
   store portrait photos sideways with an orientation tag).
 - Casting turns a fan on that is off (it shows nothing that is cast to it otherwise).
 - While a text or ticker is being made, Upload waits for it instead of sending the previous
-  picture.
+  picture. A typed text that was not made yet (or was changed since) is made by Upload itself,
+  instead of sending the test card.
+- **Camera cast on Android sent nothing**: the hidden video element got no frames in Android's
+  WebView. It is now shown small while casting, and a camera or video that gives no picture for
+  5 s stops the cast with a message instead of silently casting nothing.
+- The playlist shows names without `.mp4`; a colour mode the fan does not report (a real P56
+  sends 0) is shown as "not reported" instead of a guess.
 - **Animations (GIF, video) are uploaded the way Holoscope does it.** A file is a duration
   followed by one record per frame (`[length][1600 B audio][JPEG][padding]`); this project used to
   put all JPEGs of an animation in one record. Verified in the machine code of Holoscope.apk
