@@ -9,7 +9,7 @@ rather than a generic dashboard.
 ## Principles
 
 - **Round where it means something.** The fan screen is one dial: the disc shows what is playing, the
-  inner arc is the brightness, the outer bezel is the picture angle. Both rings are real controls.
+  outer bezel is the picture angle (a real control); the brightness is a plain slider below the dial.
 - **Light, not colour.** Near-black ground, one warm white for everything that is on or chosen. The
   only colour is a thin red/blue fringe around the disc, like the fan's RGB LEDs. Red text is kept for
   destructive actions.

@@ -8,9 +8,8 @@ import { useT } from '@/lib/i18n';
 
 // ---- the orbit: a round view of the fan with its controls on the rings around it ----
 
-// geometry in a 640×640 viewBox: disc, brightness arc, angle bezel
+// geometry in a 640×640 viewBox: disc, inner ring, angle bezel
 const C = 320, R_DISC = 230, R_ARC = 270, R_BEZEL = 304;
-const ARC_FROM = 135, ARC_SWEEP = 270;   // the brightness arc runs clockwise from 7:30 to 4:30
 const DISC_INSET = `${((C - R_DISC) / 640) * 100}%`;
 const rad = (deg: number) => (deg * Math.PI) / 180;
 const polar = (deg: number, r: number) => [C + r * Math.cos(rad(deg)), C + r * Math.sin(rad(deg))] as const;
@@ -91,43 +90,13 @@ function useFocus() {
   return { focus, bind: { onFocus: () => setFocus(true), onBlur: () => setFocus(false) } };
 }
 
-function BrightnessRing({ c }: { c: RingControl }) {
-  const { current, angle, handlers, onKeyDown } = useRing(c, ARC_FROM, ARC_SWEEP);
-  const { focus, bind } = useFocus();
-  const L = circ(R_ARC), full = (ARC_SWEEP / 360) * L, part = ((angle - ARC_FROM) / 360) * L;
-  const [kx, ky] = polar(angle, R_ARC);
-  const [ax, ay] = polar(ARC_FROM, R_ARC - 24), [bx, by] = polar(ARC_FROM + ARC_SWEEP, R_ARC - 24);
-  return (
-    <g data-testid={c.testId}>
-      <g role="slider" tabIndex={c.disabled ? -1 : 0} aria-label={c.label} aria-valuemin={c.min} aria-valuemax={c.max} aria-valuenow={current}
-        aria-valuetext={c.format(current)} aria-disabled={c.disabled || undefined} onKeyDown={onKeyDown} {...bind} style={{ outline: 'none' }}>
-        <circle cx={C} cy={C} r={R_ARC} fill="none" stroke="hsl(var(--secondary))" strokeWidth={6} strokeLinecap="round"
-          strokeDasharray={`${full} ${L}`} transform={`rotate(${ARC_FROM} ${C} ${C})`} />
-        {focus && <circle cx={C} cy={C} r={R_ARC} fill="none" stroke="hsl(var(--primary) / 0.16)" strokeWidth={22} strokeLinecap="round"
-          strokeDasharray={`${full} ${L}`} transform={`rotate(${ARC_FROM} ${C} ${C})`} />}
-        <circle cx={C} cy={C} r={R_ARC} fill="none" stroke="hsl(var(--primary))" strokeWidth={6} strokeLinecap="round"
-          strokeDasharray={`${part} ${L}`} transform={`rotate(${ARC_FROM} ${C} ${C})`} />
-        <circle cx={kx} cy={ky} r={11} fill="hsl(var(--background))" stroke="hsl(var(--primary))" strokeWidth={3} />
-        {/* wide invisible hit area along the arc */}
-        <circle cx={C} cy={C} r={R_ARC} fill="none" stroke="transparent" strokeWidth={44} strokeDasharray={`${full + 30} ${L}`}
-          transform={`rotate(${ARC_FROM - 3} ${C} ${C})`} style={{ pointerEvents: c.disabled ? 'none' : 'stroke', cursor: 'grab', touchAction: 'none' }} {...handlers} />
-      </g>
-      <text x={ax} y={ay} textAnchor="middle" dominantBaseline="middle" className="fill-muted-foreground font-sans" fontSize={12}>{c.min}</text>
-      <text x={bx} y={by} textAnchor="middle" dominantBaseline="middle" className="fill-muted-foreground font-sans" fontSize={12}>{c.max}</text>
-      <text x={C} y={574} textAnchor="middle" className="fill-muted-foreground font-display" fontSize={9} letterSpacing={2.4}>{c.label.toUpperCase()}</text>
-      <text x={C} y={604} textAnchor="middle" className="fill-primary font-sans" fontSize={24} fontWeight={500}>{c.format(current)}</text>
-    </g>
-  );
-}
-
 function AngleBezel({ c, onPreview }: { c: RingControl; onPreview: (v: number | null) => void }) {
   // value 0 sits at 12 o'clock; -180 / +180 meet at 6 o'clock
   const { current, angle, handlers, onKeyDown } = useRing(c, -270, 360, onPreview);
   const { focus, bind } = useFocus();
   const L = circ(R_BEZEL);
-  // the label rides inside the bezel, except over the brightness readout at the bottom: there it moves outside
-  const bottom = Math.abs(current) > 140;
-  const [tx, ty] = polar(angle, bottom ? R_BEZEL + 28 : R_BEZEL - 22);
+  // the label rides just inside the bezel
+  const [tx, ty] = polar(angle, R_BEZEL - 22);
   return (
     <g data-testid={c.testId}>
       <g role="slider" tabIndex={c.disabled ? -1 : 0} aria-label={c.label} aria-valuemin={c.min} aria-valuemax={c.max} aria-valuenow={current}
@@ -157,11 +126,11 @@ function Fringe() {
 
 /**
  * The round view. `src` is an image of what the fan shows (else `children` are drawn in the disc).
- * Pass `brightness` / `angle` to make the rings into controls; without them the rings are decoration.
+ * Pass `angle` to make the outer ring the picture-angle control; without it the ring is decoration.
  */
-export function Orbit({ src, children, spinning, dim, brightness, angle, className, label }: {
+export function Orbit({ src, children, spinning, dim, angle, className, label }: {
   src?: string | null; children?: ReactNode; spinning?: boolean; dim?: boolean;
-  brightness?: RingControl; angle?: RingControl; className?: string; label?: string;
+  angle?: RingControl; className?: string; label?: string;
 }) {
   const [turn, setTurn] = useState<number | null>(null);
   const rotate = turn ?? angle?.value ?? 0;
@@ -183,7 +152,7 @@ export function Orbit({ src, children, spinning, dim, brightness, angle, classNa
             <circle cx={C} cy={C} r={R_BEZEL} fill="none" stroke="hsl(var(--muted-foreground))" strokeWidth={16} strokeDasharray={`2 ${circ(R_BEZEL) / 4 - 2}`} />
           </>
         )}
-        {brightness ? <BrightnessRing c={brightness} /> : <circle cx={C} cy={C} r={R_ARC} fill="none" stroke="hsl(var(--secondary))" strokeWidth={2} />}
+        <circle cx={C} cy={C} r={R_ARC} fill="none" stroke="hsl(var(--secondary))" strokeWidth={2} />
       </svg>
     </div>
   );

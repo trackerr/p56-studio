@@ -116,10 +116,6 @@ export function FanPanel() {
 
           <Orbit className="max-w-[600px]" spinning={!!s?.power && !!s?.playing} dim={!s?.power}
             label={current ? stem(current[1]) : undefined}
-            brightness={{
-              value: s?.brightness ?? 16, min: 1, max: 16, label: t('fan.brightness'), format: (v) => `${v}/16`, testId: 'sl-brightness', disabled: !s,
-              onCommit: (v) => run(t('fan.brightness'), (i) => setValue(i, 'brightness', v)),
-            }}
             angle={{
               value: s?.angle ?? 0, min: -180, max: 180, label: t('fan.angle'), format: (v) => `${v}°`, testId: 'sl-angle', disabled: !s,
               onCommit: (v) => run(t('fan.angle'), (i) => setValue(i, 'angle', v)),
@@ -131,6 +127,10 @@ export function FanPanel() {
             </DiscText>
           </Orbit>
           <p className="max-w-sm text-center text-xs text-muted-foreground">{t('fan.ringHint')}</p>
+          <div className="w-full max-w-sm">
+            <ValueSlider id="sl-brightness" label={t('fan.brightness')} value={s?.brightness ?? 16} min={1} max={16} format={(v) => `${v}/16`} disabled={!s}
+              onCommit={(v) => run(t('fan.brightness'), (i) => setValue(i, 'brightness', v))} />
+          </div>
 
           <div className="grid w-full max-w-sm grid-cols-3 items-start gap-2 sm:gap-6">
             <div className="flex min-w-0 flex-col items-center gap-2.5">

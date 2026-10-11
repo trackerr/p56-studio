@@ -4,6 +4,12 @@ P56 Studio (Windows, Linux, Android), `p56` (CLI), `p56-sim` and `p56-server`.
 The Home Assistant add-on and integration have their own changelog in
 [`ha/p56_pov_display/CHANGELOG.md`](ha/p56_pov_display/CHANGELOG.md).
 
+## Unreleased
+
+### Changed
+- Fan tab: the dial only turns the picture (outer ring); brightness is a plain slider (1–16)
+  below it, which is easier to use than the inner arc.
+
 ## 0.3.0 — 2026-10-11
 
 ### Fixed

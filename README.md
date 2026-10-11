@@ -19,7 +19,7 @@ Local, fast, no account, no cloud.
 [![Download for Android](https://img.shields.io/badge/Download-Android-060708?style=for-the-badge&logo=android&logoColor=F4EFE6)](https://github.com/trackerr/p56-studio/releases/latest)
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-add--on-060708?style=for-the-badge&logo=homeassistant&logoColor=F4EFE6)](https://github.com/trackerr/home-assistant-p56)
 
-<img src="docs/screenshots/fan.jpg" width="860" alt="P56 Studio: the fan as a round dial, with brightness on the inner arc and the picture angle on the outer ring">
+<img src="docs/screenshots/fan.jpg" width="860" alt="P56 Studio: the fan as a round dial, with the picture angle on the outer ring and the brightness slider below">
 
 </div>
 
@@ -32,8 +32,8 @@ Local, fast, no account, no cloud.
 <td width="50%" valign="top">
 
 **Full control**<br>
-The fan is drawn as a dial: drag the inner arc for brightness (16 steps) and the outer ring to turn
-the picture. Plus power, play/pause, colour mode, repeat, breathing light, autostart, group master,
+The fan is drawn as a dial: drag the outer ring to turn the picture; brightness (16 steps) is the
+slider below it. Plus power, play/pause, colour mode, repeat, breathing light, autostart, group master,
 volume, rename, delete, format and factory reset.
 
 **Upload anything**<br>

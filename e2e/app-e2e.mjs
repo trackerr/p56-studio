@@ -160,7 +160,8 @@ async function main() {
     await sleep(2000);
     start(exe('p56-sim'), ['--name', 'E2E-FAN', '--http', String(SIM_HTTP), '--max-files', '8', '--udp-port', '18988', '--pc', '127.0.0.1:16666']);
   } else {
-    start(exe('p56-sim'), ['--name', 'E2E-FAN', '--http', String(SIM_HTTP), '--max-files', '8']);
+    // own UDP port and a direct connection: another P56 app on the network (a phone) never gets this fan
+    start(exe('p56-sim'), ['--name', 'E2E-FAN', '--http', String(SIM_HTTP), '--max-files', '8', '--udp-port', '18987', '--pc', '127.0.0.1:6666']);
     await sleep(500);
     start(exe('p56-studio'), [], { WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${CDP_PORT}`, RUST_LOG: 'info' });
   }
