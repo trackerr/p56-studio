@@ -27,7 +27,10 @@ pub fn run() {
             });
             // previews of uploaded files survive a restart in the app's data folder
             let thumb_dir = app.path().app_data_dir().ok().map(|d| d.join("thumbs"));
-            app.manage(Service::new(emit, Defaults { thumb_dir, ..Defaults::default() }));
+            // P56_FAN_ALLOW=<ip>[,<ip>…]: accept fans from these addresses only (tests use it so a
+            // real fan on the network never joins a test run)
+            let allow_fans = std::env::var("P56_FAN_ALLOW").map(|v| v.split(',').filter_map(|a| a.trim().parse().ok()).collect()).unwrap_or_default();
+            app.manage(Service::new(emit, Defaults { thumb_dir, allow_fans, ..Defaults::default() }));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![p56])

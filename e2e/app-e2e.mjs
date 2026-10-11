@@ -164,7 +164,9 @@ async function main() {
     // own UDP port and a direct connection: another P56 app on the network (a phone) never gets this fan
     start(exe('p56-sim'), ['--name', 'E2E-FAN', '--http', String(SIM_HTTP), '--max-files', '8', '--udp-port', '18987', '--pc', '127.0.0.1:6666']);
     await sleep(500);
-    start(exe('p56-studio'), [], { WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${CDP_PORT}`, RUST_LOG: 'info' });
+    // only the simulator on this pc may connect: a real fan on the network must never get the
+    // test's actions (a run once renamed and filled the owner's fan)
+    start(exe('p56-studio'), [], { WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${CDP_PORT}`, RUST_LOG: 'info', P56_FAN_ALLOW: '127.0.0.1' });
   }
   await cdpConnect();
   await cdp('Runtime.enable');
@@ -192,6 +194,13 @@ async function main() {
     await waitSim('connected', (s) => s.connected, 15000);
     const end = Date.now() + 10000;
     while (!(await js(`$text('link-status')`)).includes('E2E-FAN')) { if (Date.now() > end) throw new Error('status: ' + await js(`$text('link-status')`)); await sleep(200); }
+    // never act on a real fan: stop the whole run when anything but the simulator connected
+    await sleep(3000);
+    const status = await js(`$text('link-status')`);
+    if (/\d+ fans/.test(status) || !status.includes('E2E-FAN')) {
+      console.error(`ABORTED: another fan connected (${status}); nothing was sent to it by the tests`);
+      await restoreStore(); cleanup(); process.exit(3);
+    }
     await js(`$tab('fan')`); await sleep(400);
     if (!(await js(`$text('fan-name')`)).includes('E2E-FAN')) throw new Error('fan name not shown');
     await shot('01-fan');
@@ -248,11 +257,17 @@ async function main() {
   await test('moving text: a ticker uploaded as an animation', async () => {
     await js(`$type('text-input', 'Lichtkrant')`); await sleep(100);
     await js(`$click('motion-scroll')`); await sleep(100);
-    await js(`$click('text-make')`); await sleep(50);
-    // while the ticker renders, upload must wait (it would send the previous picture)
-    const early = await js(`JSON.stringify({ off: document.querySelector('[data-testid=upload]').disabled, frames: Number(document.querySelector('[data-testid=media-info]')?.dataset.frames || 0) })`);
-    const e = JSON.parse(early);
-    if (!e.off && !(e.frames > 20)) throw new Error('upload is possible while the ticker is still being made');
+    await js(`$click('text-make')`);
+    // while the ticker renders, upload must wait (it would send the previous picture): the
+    // button is disabled until the frames are there
+    let waited = false;
+    for (let i = 0; i < 20 && !waited; i++) {
+      await sleep(25);
+      const e = JSON.parse(await js(`JSON.stringify({ off: document.querySelector('[data-testid=upload]').disabled, frames: Number(document.querySelector('[data-testid=media-info]')?.dataset.frames || 0) })`));
+      if (e.off) waited = true;
+      else if (e.frames > 20) break;
+      else if (i === 19) throw new Error('upload is possible while the ticker is still being made');
+    }
     const end = Date.now() + 15000;
     while (!(Number(await js(`$data('media-info', 'frames')`)) > 20)) { if (Date.now() > end) throw new Error('no ticker frames: ' + await js(`$text('media-info')`)); await sleep(200); }
     await js(`$type('up-name', 'ticker')`); await sleep(100);
@@ -345,7 +360,7 @@ async function main() {
 
   if (!android) await test('control through a p56-server (the app as its client)', async () => {
     const http = 8771;
-    const srv = start(join(target, profile, 'p56-server.exe'), ['--http-port', String(http), '--tcp-port', '6666', '--fan', '127.0.0.1', '--ip', '127.0.0.1']);
+    const srv = start(join(target, profile, 'p56-server.exe'), ['--http-port', String(http), '--tcp-port', '6666', '--fan', '127.0.0.1', '--ip', '127.0.0.1', '--fan-allow', '127.0.0.1']);
     await js(`$tab('app')`); await sleep(400);
     await js(`$click('mode-server')`); await sleep(200);
     await js(`$type('server-url', '127.0.0.1:${http}')`); await sleep(100);
