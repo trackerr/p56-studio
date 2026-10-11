@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.1.2
+
+p56-server 0.3.2.
+
+- **The file list pointed at the file next to the one that plays** on a real P56 (the fan
+  counts the playing file from 0). The integration's file select and sensors are right now too.
+- **Casting with an empty playlist** works: casting resumes a paused fan.
+- The P56 Studio app on Windows can cast its screen or a window through Home Assistant.
+
 ## 2.1.1
 
 p56-server 0.3.1. New: a [user guide](https://github.com/trackerr/home-assistant-p56/blob/main/docs/GUIDE.md),

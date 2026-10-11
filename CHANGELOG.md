@@ -4,9 +4,11 @@ P56 Studio (Windows, Linux, Android), `p56` (CLI), `p56-sim` and `p56-server`.
 The Home Assistant add-on and integration have their own changelog in
 [`ha/p56_pov_display/CHANGELOG.md`](ha/p56_pov_display/CHANGELOG.md).
 
-## Unreleased
+## 0.3.2 — 2026-10-11
 
 ### Fixed
+- **Casting with an empty playlist**: a P56 without files pauses itself and then showed nothing
+  that was cast. Casting now resumes a paused fan (as it already switched on a fan that is off).
 - **The playlist pointed at the file next to the one that plays** on a real P56: the fan reports
   the playing file counting from 0, while selecting counts from 1 (as Holoscope does). The
   status is now read that way, and the simulator reports it like a real fan.

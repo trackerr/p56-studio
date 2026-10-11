@@ -537,6 +537,13 @@ fn casting_turns_the_fan_on() {
     off();
     show_ok(&s, json!({ "text": "ON", "mode": "cast", "show_seconds": 2 }));
     s.wait("on by a timed cast", |v| v["devices"][0]["status"]["power"] == true);
+    // paused (as a P56 with an empty playlist): casting resumes it
+    s.call("cast_stop", json!({}));
+    s.call("control", json!({ "id": id, "action": "pause" }));
+    s.wait("paused", |v| v["devices"][0]["status"]["playing"] == false);
+    s.call("cast_start", json!({ "args": { "source": "test" } }));
+    s.wait("playing by cast_start", |v| v["devices"][0]["status"]["playing"] == true);
+    s.call("cast_stop", json!({}));
 }
 
 /// A stand-in for Home Assistant's REST API: two entities, one camera that needs the token.

@@ -119,11 +119,16 @@ fn desktop_windows() -> Value {
     }
 }
 
-/// Turn on the fans in `ids` that are off: a fan that is off shows nothing that is cast to it.
+/// Turn on the fans in `ids` that are off, and resume those that are paused: a fan that is off
+/// shows nothing that is cast to it, and a P56 with an empty playlist pauses itself.
 fn wake(l: &Link, ids: &[u32]) {
     for &id in ids {
-        if l.device(id).and_then(|d| d.status).is_some_and(|s| !s.power) {
+        let Some(s) = l.device(id).and_then(|d| d.status) else { continue };
+        if !s.power {
             let _ = l.on(id);
+        }
+        if !s.playing {
+            let _ = l.play(id);
         }
     }
 }

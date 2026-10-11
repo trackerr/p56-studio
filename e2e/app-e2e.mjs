@@ -84,14 +84,14 @@ async function shot(name) {
   if (r.result?.data) writeFileSync(join(out, `${name}.png`), Buffer.from(r.result.data, 'base64'));
 }
 
-// UI language: forced to English for the run, the owner's choice is put back afterwards.
-let prevLang, prevLastServer;
-async function restoreLang() {
-  if (prevLang === undefined || !ws || ws.readyState !== 1) return;
-  // also never leave the owner's app in "through a server" mode
-  const expr = (prevLang ? `localStorage.setItem('p56.lang', ${JSON.stringify(prevLang)});` : `localStorage.removeItem('p56.lang');`)
-    + ` localStorage.removeItem('p56.server');`
-    + (prevLastServer ? ` localStorage.setItem('p56.serverLast', ${JSON.stringify(prevLastServer)});` : ` localStorage.removeItem('p56.serverLast');`) + ' true';
+// The app shares its settings (localStorage) with the owner's installed P56 Studio: every p56.*
+// key is saved before the run and put back exactly afterwards (language, server mode, fan IP …).
+let prevStore;
+const P56_KEYS = `Object.keys(localStorage).filter((k) => k.startsWith('p56.'))`;
+async function restoreStore() {
+  if (prevStore === undefined || !ws || ws.readyState !== 1) return;
+  const expr = `${P56_KEYS}.forEach((k) => localStorage.removeItem(k));`
+    + ` Object.entries(${JSON.stringify(prevStore)}).forEach(([k, v]) => localStorage.setItem(k, v)); true`;
   await Promise.race([js(expr).catch(() => {}), sleep(2000)]);
 }
 
@@ -171,9 +171,14 @@ async function main() {
   await cdp('Page.enable');
   await sleep(1500);
   await js(HELPERS);
+  prevStore = JSON.parse(await js(`JSON.stringify(Object.fromEntries(${P56_KEYS}.map((k) => [k, localStorage.getItem(k)])))`));
+  // the owner's app may go through a P56 server: the test runs the app's own engine
+  if (prevStore['p56.server']) {
+    await js(`localStorage.removeItem('p56.server'); location.reload(); true`);
+    await sleep(3000);
+    await js(HELPERS);
+  }
   // run the UI in English; the switch applies at once (no reload) and stores 'p56.lang'
-  prevLang = await js(`localStorage.getItem('p56.lang')`);
-  prevLastServer = await js(`localStorage.getItem('p56.serverLast')`);
   await js(`localStorage.setItem('p56.lang', 'en'); $click('lang-en')`);
   await sleep(200);
   if (!android) {
@@ -378,11 +383,11 @@ async function main() {
     results.push(`    commands received: ${s.commands.length}, cast frames: ${s.cast_ok}, uploads: ${s.uploads}`);
   });
 
-  await restoreLang();
+  await restoreStore();
   console.log(`\n${passed} passed, ${failed} failed`);
   writeFileSync(join(out, 'result.txt'), results.join('\n') + `\n\n${passed} passed, ${failed} failed\n`);
   cleanup();
   process.exit(failed ? 1 : 0);
 }
 
-main().catch(async (e) => { console.error('E2E aborted:', e); await restoreLang(); cleanup(); process.exit(2); });
+main().catch(async (e) => { console.error('E2E aborted:', e); await restoreStore(); cleanup(); process.exit(2); });
