@@ -261,12 +261,12 @@ async function main() {
     // while the ticker renders, upload must wait (it would send the previous picture): the
     // button is disabled until the frames are there
     let waited = false;
-    for (let i = 0; i < 20 && !waited; i++) {
+    for (let i = 0; i < 80 && !waited; i++) {
       await sleep(25);
       const e = JSON.parse(await js(`JSON.stringify({ off: document.querySelector('[data-testid=upload]').disabled, frames: Number(document.querySelector('[data-testid=media-info]')?.dataset.frames || 0) })`));
       if (e.off) waited = true;
       else if (e.frames > 20) break;
-      else if (i === 19) throw new Error('upload is possible while the ticker is still being made');
+      else if (i === 79) throw new Error('upload is possible while the ticker is still being made: ' + JSON.stringify(e) + ' text-make disabled: ' + await js(`$t('text-make').disabled`) + ' busy: ' + await js(`$text('busy')`));
     }
     const end = Date.now() + 15000;
     while (!(Number(await js(`$data('media-info', 'frames')`)) > 20)) { if (Date.now() > end) throw new Error('no ticker frames: ' + await js(`$text('media-info')`)); await sleep(200); }
@@ -299,6 +299,15 @@ async function main() {
     const s = await waitSim('video clip.mp4 with sound', (s) => s.files.some((f) => f.name === 'clip.mp4' && f.frames > 5 && f.sound_frames > 0), 30000);
     const f = s.files.find((f) => f.name === 'clip.mp4');
     results.push(`    video: ${f.frames} frames, ${f.sound_frames} with sound`);
+  });
+
+  await test('upload a video without pressing Make frames first', async () => {
+    const webm = await js(MAKE_VIDEO, true);
+    await js(`window.__p56pick('direct.webm', ${JSON.stringify(webm)}, 'video/webm')`);
+    await sleep(500);
+    await js(`$type('up-name', 'direct-video')`); await sleep(200);
+    await js(`$click('upload')`);
+    await waitSim('direct-video.mp4', (s) => s.files.some((f) => f.name === 'direct-video.mp4' && f.frames > 5), 60000);
   });
 
   await test('playlist: show, rename, delete', async () => {

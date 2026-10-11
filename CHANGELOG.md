@@ -4,6 +4,12 @@ P56 Studio (Windows, Linux, Android), `p56` (CLI), `p56-sim` and `p56-server`.
 The Home Assistant add-on and integration have their own changelog in
 [`ha/p56_pov_display/CHANGELOG.md`](ha/p56_pov_display/CHANGELOG.md).
 
+## Unreleased
+
+### Changed
+- Media: **Upload & show** makes the frames of a picked video itself; "Make frames" is only
+  needed to choose frames/s, a start or an end first.
+
 ## 0.3.4 — 2026-10-12
 
 ### Fixed

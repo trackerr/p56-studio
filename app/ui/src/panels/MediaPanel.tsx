@@ -147,8 +147,9 @@ export function MediaPanel() {
     } finally { setBusy(null); }
   }
 
-  async function makeFrames() {
-    if (!picked) return;
+  /** Turn the picked video into frames; returns the new media id, or null (stopped or failed). */
+  async function makeFrames(): Promise<number | null> {
+    if (!picked) return null;
     cancel.current = false;
     setBusy({ step: 'frames' }); setProg(0);
     try {
@@ -158,15 +159,17 @@ export function MediaPanel() {
         await invoke('media_push', { media: id, data: b64, delay });
         setProg(Math.round(((i + 1) / n) * 100));
       }, () => cancel.current);
-      if (cancel.current) { await invoke('media_drop', { media: id }); toast.message(t('media.stopped')); return; }
+      if (cancel.current) { await invoke('media_drop', { media: id }); toast.message(t('media.stopped')); return null; }
       // the sound of the same stretch of the video, for the fan's speaker
       const audio = await decodeAudio(picked, vid.start, total / vid.fps);
       const audioMs = audio ? await invoke<number>('media_audio', { media: id, data: audio }).catch(() => 0) : 0;
       setMedia({ id, name: picked.name, frames: total, width: 0, height: 0, picked, audioMs });
       addLog(t('media.logVideo', { name: picked.name, count: total, fps: vid.fps }));
       toast.success(t('media.framesMade', { count: total }));
+      return id;
     } catch (e) {
       toast.error(t('media.videoFailed'), { description: String(e) });
+      return null;
     } finally { setBusy(null); setProg(null); }
   }
 
@@ -180,6 +183,13 @@ export function MediaPanel() {
       const made = await makeText();
       if (!made) return;
       mediaId = made.id; upName = made.name;
+    }
+    // A picked video whose frames were not made yet: make them first, with the settings of the
+    // "convert" box (no need to press Make frames by hand).
+    if (picked?.video && !media) {
+      const id = await makeFrames();
+      if (id === null) return;
+      mediaId = id;
     }
     setBusy({ step: 'preparing' }); setProg(0);
     try {
@@ -244,7 +254,7 @@ export function MediaPanel() {
                 ))}
               </div>
               <div className="mt-4 flex gap-2">
-                <Button onClick={makeFrames} disabled={!!busy} data-testid="make-frames">{t('media.makeFrames')}</Button>
+                <Button onClick={() => { makeFrames(); }} disabled={!!busy} data-testid="make-frames">{t('media.makeFrames')}</Button>
                 {busy && 'step' in busy && busy.step === 'frames' && <Button variant="ghost" onClick={() => (cancel.current = true)}><IconX />{t('common.stop')}</Button>}
               </div>
             </div>
@@ -267,7 +277,7 @@ export function MediaPanel() {
             </div>
           )}
           <div className="mt-4 flex flex-wrap items-center gap-3">
-            <Button onClick={doUpload} disabled={!!busy || !fan || (picked?.video && !media)} data-testid="upload"><IconUpload />{t('media.upload')}</Button>
+            <Button onClick={doUpload} disabled={!!busy || !fan} data-testid="upload"><IconUpload />{t('media.upload')}</Button>
             {!fan && <span className="text-xs text-muted-foreground">{t('media.connectFirst')}</span>}
             {busy && <span className="text-xs text-muted-foreground" data-testid="busy">{busyText}</span>}
           </div>
