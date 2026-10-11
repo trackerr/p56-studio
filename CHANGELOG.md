@@ -4,6 +4,16 @@ P56 Studio (Windows, Linux, Android), `p56` (CLI), `p56-sim` and `p56-server`.
 The Home Assistant add-on and integration have their own changelog in
 [`ha/p56_pov_display/CHANGELOG.md`](ha/p56_pov_display/CHANGELOG.md).
 
+## Unreleased
+
+### Fixed
+- **The playlist pointed at the file next to the one that plays** on a real P56: the fan reports
+  the playing file counting from 0, while selecting counts from 1 (as Holoscope does). The
+  status is now read that way, and the simulator reports it like a real fan.
+- Cast: "This screen" was missing when the app controls the fan through a P56 server (such as
+  Home Assistant). It now uses the browser's screen sharing there (choose a screen or window
+  in its own picker); also in the Home Assistant panel in a desktop browser.
+
 ## 0.3.1 — 2026-10-11
 
 ### Added

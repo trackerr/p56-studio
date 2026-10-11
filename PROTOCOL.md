@@ -91,7 +91,9 @@ sets the fan's *hotspot*, not a router (that is `8B`). `83` takes a slot number,
 | 2 (0x04) | repeat whole list (otherwise current file) |
 | 1 (0x02) | group master |
 
-`brightness` 1–16, `colour` 1 = true colour / 2 = high brightness, `angle` 0–360 (180 = neutral),
+`slot` is the playing file **0-based** (0 = the first file), while `SHOW (87 n)`, delete and
+rename count from 1: Holoscope selects list position + 1 and compares the status value with its
+0-based list positions. P56 Studio adds 1 when reading it. `brightness` 1–16, `colour` 1 = true colour / 2 = high brightness, `angle` 0–360 (180 = neutral),
 `group` = number of the group picture this fan belongs to (1–16, Holoscope ignores larger values),
 `type` = fan type (§6). **Correction:** byte 4 is the brightness and bytes 5–6 the configured angle
 (not "LEDs per arm" and "number of angles"); the flag bits are as above.

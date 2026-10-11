@@ -407,7 +407,9 @@ pub struct Status {
     pub breath: bool,
     pub autostart: bool,
     pub master: bool,
-    /// Currently playing slot (1-based, 0 = none).
+    /// Slot of the playing file, 1-based like every slot (`select`, the playlist). The fan sends
+    /// it 0-based: Holoscope compares it with its 0-based list positions and selects with
+    /// position + 1 (verified in Holoscope.apk `DeviceInterface::playindex` and its QML).
     pub play_index: u8,
     /// 1–16.
     pub brightness: u8,
@@ -434,7 +436,7 @@ impl Status {
             playing: f & 0x08 != 0,
             repeat_all: f & 0x04 != 0,
             master: f & 0x02 != 0,
-            play_index: body[1],
+            play_index: body[1].saturating_add(1),
             brightness: body[2],
             color_mode: body[3] >> 4,
             angle: (((body[3] & 0x0F) as u16) << 8) | body[4] as u16,
@@ -466,7 +468,19 @@ impl Status {
             f |= 0x02
         }
         let a = self.angle.min(0x0FFF);
-        vec![SOF, op::STATUS, f, self.play_index, self.brightness, (self.color_mode << 4) | (a >> 8) as u8, a as u8, self.group, self.fan_type, self.extra, EOF]
+        vec![
+            SOF,
+            op::STATUS,
+            f,
+            self.play_index.saturating_sub(1),
+            self.brightness,
+            (self.color_mode << 4) | (a >> 8) as u8,
+            a as u8,
+            self.group,
+            self.fan_type,
+            self.extra,
+            EOF,
+        ]
     }
 }
 
@@ -867,13 +881,14 @@ mod tests {
 
     #[test]
     fn status_with_f5_inside_frames_by_length() {
-        let s = Status { angle: 0xF5, play_index: 0xF5, ..Default::default() };
+        // play_index 0xF6 goes out as 0xF5 (0-based)
+        let s = Status { angle: 0xF5, play_index: 0xF6, ..Default::default() };
         let mut r = Reader::default();
         let mut stream = s.to_packet();
         stream.extend(vec![0x5A, 0x0E, 0x0E, 0xF5]);
         let out = r.push(&stream);
         assert_eq!(out.len(), 2);
-        assert!(matches!(&out[0], Packet::Status(p) if p.angle == 0xF5 && p.play_index == 0xF5));
+        assert!(matches!(&out[0], Packet::Status(p) if p.angle == 0xF5 && p.play_index == 0xF6));
         assert_eq!(out[1], Packet::Ready);
     }
 

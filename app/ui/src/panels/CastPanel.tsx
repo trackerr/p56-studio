@@ -9,13 +9,16 @@ import { useT } from '@/lib/i18n';
 import { useP56 } from '@/state';
 import { PlacementBox } from './MediaPanel';
 
-type Src = 'test' | 'media' | 'screen' | 'camera' | 'ha';
+type Src = 'test' | 'media' | 'screen' | 'display' | 'camera' | 'ha';
 type HaCamera = { entity_id: string; name: string };
 type DesktopWindow = { id: number; title: string; app: string };
 
 // this device's camera: only where the browser offers it (not on a plain-http page, such as
 // Home Assistant opened without https)
 const hasCamera = () => !!navigator.mediaDevices?.getUserMedia;
+// screen sharing through the browser (its own picker for a screen or window): used where the
+// engine cannot capture this screen itself, such as through a P56 server or Home Assistant
+const hasDisplay = () => !!navigator.mediaDevices?.getDisplayMedia;
 
 export function CastPanel() {
   const { devices, media, placement, platform, addLog } = useP56();
@@ -102,11 +105,19 @@ export function CastPanel() {
     const v = vidRef.current!;
     videoEl.current = v;
     try {
-      if (!hasCamera()) throw new Error(t('cast.noCamera'));
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 } }, audio: false });
+      let stream: MediaStream;
+      if (src === 'display') {
+        if (!hasDisplay()) throw new Error(t('cast.noDisplay'));
+        stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 15 }, audio: false });
+      } else {
+        if (!hasCamera()) throw new Error(t('cast.noCamera'));
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 } }, audio: false });
+      }
       // Stopped, restarted or unmounted while the permission prompt was open: drop this stream.
       if (id !== session.current) { stream.getTracks().forEach((track) => track.stop()); return; }
       streamRef.current = stream;
+      // sharing stopped from the browser's own bar: stop casting as well
+      stream.getVideoTracks()[0]?.addEventListener('ended', () => { if (id === session.current) stop(); });
       v.srcObject = stream;
       await v.play();
       if (id !== session.current) return;
@@ -151,6 +162,7 @@ export function CastPanel() {
     ['camera', t('cast.srcCamera'), IconCamera, hasCamera()],
     ['ha', t('cast.srcHa'), IconCamera, haCams !== null],
     ['screen', t('cast.srcScreen'), IconMonitor, platform.screen],
+    ['display', t('cast.srcScreen'), IconMonitor, !platform.screen && hasDisplay()],
   ];
   return (
     <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_380px] lg:gap-12">
@@ -164,6 +176,7 @@ export function CastPanel() {
             {src === 'ha' && (haCams?.length ? t('cast.haHint') : t('cast.noHaCameras'))}
             {src === 'camera' && t('cast.cameraHint')}
             {src === 'screen' && t('cast.screenHint')}
+            {src === 'display' && t('cast.displayHint')}
             {src === 'test' && t('cast.testHint')}
           </p>
           {src === 'screen' && (
@@ -202,7 +215,7 @@ export function CastPanel() {
         {/* Never display:none: Android's WebView then decodes no frames (the camera turns on, but
             the picture stays empty). Shown small while a camera or video is cast. */}
         <video ref={vidRef} muted playsInline data-testid="cast-video"
-          className={running && src === 'camera' ? 'aspect-square w-32 rounded-full border border-border object-cover' : 'pointer-events-none fixed left-0 top-0 h-px w-px opacity-[0.01]'} />
+          className={running && (src === 'camera' || src === 'display') ? 'aspect-square w-32 rounded-full border border-border object-cover' : 'pointer-events-none fixed left-0 top-0 h-px w-px opacity-[0.01]'} />
       </div>
       <div className="min-w-0 lg:sticky lg:top-0 lg:self-start">
         <RoundView src={pv} spinning={running}
