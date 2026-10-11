@@ -21,7 +21,7 @@ The Home Assistant add-on and integration have their own changelog in
   followed by one record per frame (`[length][1600 B audio][JPEG][padding]`); this project used to
   put all JPEGs of an animation in one record. Verified in the machine code of Holoscope.apk
   2.5.2 / 2.5.4 and Holoscope.exe 1.1.8. Still pictures were already right and are unchanged
-  byte for byte. A real P56 stores and lists a 40-frame animation in this layout.
+  byte for byte. Tested on a real P56: a 40-frame animation plays at the right speed.
 - Animations play at their own speed and in time with their sound: frames are picked on a
   50 ms timeline (the fan's fixed 20 frames per second).
 - Packet meanings aligned with Holoscope: the Bluetooth report (state, volume), the group layout
