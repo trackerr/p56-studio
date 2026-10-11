@@ -7,11 +7,21 @@ The Home Assistant add-on and integration have their own changelog in
 ## Unreleased
 
 ### Fixed
+- **Uploads on a real P56 were reported as failed and could not replace a file.** The fan lists
+  its files without `.mp4`; the names are now read as `name.mp4`, so an uploaded file is found
+  in the playlist and a file with the same name is replaced (the "already exists" error on a
+  second text or ticker). The simulator lists names the same way. A file in the playlist counts
+  as delivered: a real P56 does not acknowledge the data itself.
+- **Photos from a phone are upright.** The EXIF orientation of a picture is applied (phones
+  store portrait photos sideways with an orientation tag).
+- Casting turns a fan on that is off (it shows nothing that is cast to it otherwise).
+- While a text or ticker is being made, Upload waits for it instead of sending the previous
+  picture.
 - **Animations (GIF, video) are uploaded the way Holoscope does it.** A file is a duration
   followed by one record per frame (`[length][1600 B audio][JPEG][padding]`); this project used to
   put all JPEGs of an animation in one record. Verified in the machine code of Holoscope.apk
   2.5.2 / 2.5.4 and Holoscope.exe 1.1.8. Still pictures were already right and are unchanged
-  byte for byte. Needs a test on a real fan.
+  byte for byte. A real P56 stores and lists a 40-frame animation in this layout.
 - Animations play at their own speed and in time with their sound: frames are picked on a
   50 ms timeline (the fan's fixed 20 frames per second).
 - Packet meanings aligned with Holoscope: the Bluetooth report (state, volume), the group layout

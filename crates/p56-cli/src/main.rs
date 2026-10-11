@@ -490,11 +490,12 @@ fn run(link: &Link, id: u32, ft: FanType, cmd: &Cmd) -> Result<(), String> {
             let audio = if frames.len() > 1 && !*no_sound { p56_core::video::audio_pcm(file) } else { None };
             println!("uploading {} frame(s){} as {}…", frames.len(), if audio.is_some() { " with sound" } else { "" }, p56_core::protocol::mp4_name(&name));
             let o = link.upload_with_audio(id, &frames, audio.as_deref(), &name, Some(*slot)).map_err(|e| e.to_string())?;
-            if !o.acked {
-                eprintln!("warning: the fan did not acknowledge the data");
-            }
+            // a real P56 does not acknowledge the data: being in the playlist is the proof
             if !o.listed {
-                eprintln!("warning: the file did not show up in the fan's playlist (yet)");
+                eprintln!(
+                    "warning: the file did not show up in the fan's playlist (yet){}",
+                    if o.acked { "" } else { "; the fan did not acknowledge the data" }
+                );
             }
             Ok(())
         }

@@ -9,7 +9,13 @@ use std::time::Duration;
 use p56_core::transcode::{self, FanType, Placement};
 use p56_core::{Config, Link};
 
+/// One link for all tests in this process (the fan port can only be opened once).
 fn fan() -> Option<(Link, u32, FanType)> {
+    static FAN: std::sync::OnceLock<Option<(Link, u32, FanType)>> = std::sync::OnceLock::new();
+    FAN.get_or_init(connect).clone()
+}
+
+fn connect() -> Option<(Link, u32, FanType)> {
     if std::env::var("P56_HARDWARE").is_err() {
         eprintln!("skipped: set P56_HARDWARE=1 to test against a real fan");
         return None;
@@ -53,6 +59,7 @@ fn frames(ft: &FanType, n: usize) -> Vec<Vec<u8>> {
 #[ignore]
 fn upload_still_and_animation() {
     let Some((link, id, ft)) = fan() else { return };
+    remove_test_files(&link, id);
     let still = link.upload(id, &frames(&ft, 1), "hwtest-still", Some(1)).expect("still upload");
     eprintln!("still: {still:?}");
     assert!(still.listed, "the still picture is not in the playlist");
@@ -64,11 +71,15 @@ fn upload_still_and_animation() {
     link.select(id, slot).unwrap();
     eprintln!("look at the fan: a yellow bar should turn once every 2 seconds, for 10 s");
     std::thread::sleep(Duration::from_secs(10));
-    for name in ["hwtest-anim.mp4", "hwtest-still.mp4"] {
-        if let Some(s) = link.device(id).unwrap().files.iter().find(|(_, n)| n == name).map(|(s, _)| *s) {
-            link.delete(id, s).unwrap();
-            std::thread::sleep(Duration::from_millis(500));
-        }
+    remove_test_files(&link, id);
+}
+
+/// Delete every hwtest-* file (also ones left by an earlier, failed run).
+fn remove_test_files(link: &Link, id: u32) {
+    for _ in 0..20 {
+        let Some(s) = link.device(id).unwrap().files.iter().find(|(_, n)| n.starts_with("hwtest-")).map(|(s, _)| *s) else { return };
+        link.delete(id, s).unwrap();
+        std::thread::sleep(Duration::from_millis(1500));
     }
 }
 
@@ -80,4 +91,57 @@ fn cast_frames_are_acknowledged() {
     let acked = (0..50).filter(|_| link.cast_to(&[id], &test) == 1).count();
     eprintln!("{acked}/50 cast frames acknowledged");
     assert!(acked >= 45, "only {acked} of 50 cast frames were acknowledged");
+}
+
+/// How the fan answers the two chunks of a cast frame (for diagnosis): per frame, whether and
+/// after how long it reacted to each chunk.
+#[test]
+#[ignore]
+fn cast_chunk_answers() {
+    let Some((link, id, ft)) = fan() else { return };
+    let power = link.device(id).and_then(|d| d.status).is_some_and(|s| s.power);
+    eprintln!("fan is {}", if power { "on" } else { "off: turning it on" });
+    if !power {
+        link.on(id).unwrap();
+    }
+    let test = transcode::encode(&transcode::test_card(), &ft, &Placement::default()).jpeg;
+    let frame = p56_core::protocol::cast_frame(&test).unwrap();
+    for n in 0..10 {
+        let mut line = format!("frame {n}:");
+        for (i, chunk) in frame.chunks(p56_core::protocol::CAST_CHUNK).enumerate() {
+            let t = std::time::Instant::now();
+            let answered = link.send_wait(id, chunk, Duration::from_millis(3500)).unwrap();
+            line += &format!("  chunk {i} {} after {} ms", if answered { "answered" } else { "NO answer" }, t.elapsed().as_millis());
+        }
+        eprintln!("{line}");
+    }
+}
+
+/// Every packet the fan sends while a still picture is uploaded, with the time (for diagnosis).
+#[test]
+#[ignore]
+fn upload_trace() {
+    let Some((link, id, ft)) = fan() else { return };
+    let d = link.device(id).unwrap();
+    eprintln!("before: status {:?}\nfiles {:?}", d.status, d.files);
+    let start = link.packet_seq(id);
+    let t0 = std::time::Instant::now();
+    let watch = {
+        let link = link.clone();
+        std::thread::spawn(move || {
+            let mut n = 1;
+            while t0.elapsed() < Duration::from_secs(25) {
+                if let Some(p) = link.wait_nth(id, start, n, Duration::from_millis(500), |_| true) {
+                    eprintln!("{:>6} ms  {p:?}", t0.elapsed().as_millis());
+                    n += 1;
+                }
+            }
+        })
+    };
+    let r = link.upload(id, &frames(&ft, 1), "hwtest-trace", None);
+    eprintln!("{:>6} ms  upload returned {r:?}", t0.elapsed().as_millis());
+    watch.join().unwrap();
+    let d = link.device(id).unwrap();
+    eprintln!("after: files {:?}", d.files);
+    remove_test_files(&link, id);
 }

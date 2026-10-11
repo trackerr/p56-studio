@@ -496,12 +496,18 @@ pub fn preview_from_jpeg(jpeg: &[u8], ft: &FanType, size: u32) -> Result<RgbImag
 
 /// Convenience: load any image file (png/jpg/bmp/webp/gif) as RGB.
 pub fn load_rgb(path: &std::path::Path) -> Result<RgbImage, image::ImageError> {
-    Ok(image::open(path)?.to_rgb8())
+    decode_rgb(&std::fs::read(path).map_err(image::ImageError::IoError)?)
 }
 
-/// Decode an image from memory (any supported format).
+/// Decode an image from memory (any supported format), turned upright as its EXIF
+/// orientation says (phone cameras store portrait photos sideways with such a tag).
 pub fn decode_rgb(bytes: &[u8]) -> Result<RgbImage, image::ImageError> {
-    Ok(image::load_from_memory(bytes)?.to_rgb8())
+    use image::ImageDecoder;
+    let mut dec = image::ImageReader::new(std::io::Cursor::new(bytes)).with_guessed_format()?.into_decoder()?;
+    let orientation = dec.orientation().unwrap_or(image::metadata::Orientation::NoTransforms);
+    let mut img = image::DynamicImage::from_decoder(dec)?;
+    img.apply_orientation(orientation);
+    Ok(img.to_rgb8())
 }
 
 /// Frames of an image file in memory: an animated GIF yields every frame with its
@@ -572,6 +578,23 @@ pub fn test_card() -> RgbImage {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn exif_orientation_is_applied() {
+        // a 40×20 photo (left half red) stored sideways with orientation 6: "turn 90° clockwise"
+        let img = RgbImage::from_fn(40, 20, |x, _| if x < 20 { image::Rgb([255, 0, 0]) } else { image::Rgb([0, 0, 255]) });
+        let mut jpeg = Vec::new();
+        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, 95).encode_image(&img).unwrap();
+        let tiff: &[u8] = &[b'I', b'I', 42, 0, 8, 0, 0, 0, 1, 0, 0x12, 0x01, 3, 0, 1, 0, 0, 0, 6, 0, 0, 0, 0, 0, 0, 0];
+        let mut app1 = vec![0xFF, 0xE1, 0, (2 + 6 + tiff.len()) as u8];
+        app1.extend_from_slice(b"Exif\0\0");
+        app1.extend_from_slice(tiff);
+        jpeg.splice(2..2, app1);
+        let up = decode_rgb(&jpeg).unwrap();
+        assert_eq!(up.dimensions(), (20, 40));
+        // the red left half is now on top
+        assert!(up.get_pixel(10, 5)[0] > 200 && up.get_pixel(10, 35)[2] > 200);
+    }
 
     #[test]
     fn p56_jpeg_is_688x240() {

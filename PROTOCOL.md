@@ -73,7 +73,7 @@ sets the fan's *hotspot*, not a router (that is `8B`). `83` takes a slot number,
 | 0E | ready / received | `5A 0E 0E F5`, after every command and every upload block |
 | 21 / 22 | transfer: continue / (see note) | `5A 21 21 F5` / `5A 22 22 F5`. Holoscope.apk ignores `22`; Holoscope.exe reads it as "firmware update finished". P56 Studio ignores it during uploads. |
 | 29 | transfer stored (progress 100 %) | `5A 29 29 F5` |
-| 84 | playlist | `5A 84 <len16> "1 a.mp4/2 b.mp4" xor F5` (names at most 32 characters) |
+| 84 | playlist | `5A 84 <len16> "1 a/2 b" xor F5`: a real P56 lists the names without `.mp4` (names at most 32 characters). P56 Studio reads every name as `name.mp4` and also accepts names that already end in `.mp4`. |
 | 85 | error code | `5A 85 c c F5`: `06` name already exists, `0A` too many files, other: transfer failed |
 | 86 | status, 11 B | see below |
 | 8D | machine info, 126 B | group picture width, height, x, y @6–9 (0 when not in a group; earlier read as an IP address), name@14 (32), MAC@46 (6), hotspot@52 (32), router@84 (32), `F5`@125 |

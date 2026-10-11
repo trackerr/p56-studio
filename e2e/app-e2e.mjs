@@ -240,7 +240,11 @@ async function main() {
   await test('moving text: a ticker uploaded as an animation', async () => {
     await js(`$type('text-input', 'Lichtkrant')`); await sleep(100);
     await js(`$click('motion-scroll')`); await sleep(100);
-    await js(`$click('text-make')`);
+    await js(`$click('text-make')`); await sleep(50);
+    // while the ticker renders, upload must wait (it would send the previous picture)
+    const early = await js(`JSON.stringify({ off: document.querySelector('[data-testid=upload]').disabled, frames: Number(document.querySelector('[data-testid=media-info]')?.dataset.frames || 0) })`);
+    const e = JSON.parse(early);
+    if (!e.off && !(e.frames > 20)) throw new Error('upload is possible while the ticker is still being made');
     const end = Date.now() + 15000;
     while (!(Number(await js(`$data('media-info', 'frames')`)) > 20)) { if (Date.now() > end) throw new Error('no ticker frames: ' + await js(`$text('media-info')`)); await sleep(200); }
     await js(`$type('up-name', 'ticker')`); await sleep(100);

@@ -588,7 +588,9 @@ fn split_items(text: &[u8]) -> Vec<String> {
 }
 
 pub fn parse_filelist(body: &[u8]) -> Vec<(u8, String)> {
-    // body = <len16 be> <"1 a.mp4/2 b.mp4" or "a.mp4/b.mp4"> <xor>
+    // body = <len16 be> <"1 a/2 b", "1 a.mp4/2 b.mp4" or "a.mp4/b.mp4"> <xor>
+    // A real P56 lists names without ".mp4"; it is added back, so a name always matches the
+    // name it was uploaded, renamed or deleted with.
     if body.len() < 2 {
         return vec![];
     }
@@ -600,15 +602,17 @@ pub fn parse_filelist(body: &[u8]) -> Vec<(u8, String)> {
             Some((i, n)) if !i.is_empty() && i.chars().all(|c| c.is_ascii_digit()) => (i.parse().unwrap_or(next), n.trim().to_string()),
             _ => (next, tok),
         };
+        let name = if name.to_ascii_lowercase().ends_with(".mp4") { name } else { format!("{name}.mp4") };
         out.push((idx, name));
         next = idx.wrapping_add(1);
     }
     out
 }
 
-/// Playlist packet as the fan sends it (used by the simulator).
+/// Playlist packet as a real P56 sends it, names without ".mp4" (used by the simulator).
 pub fn filelist_packet(names: &[String]) -> Vec<u8> {
-    let text: String = names.iter().enumerate().map(|(i, n)| format!("{} {}", i + 1, ascii(n))).collect::<Vec<_>>().join("/");
+    let stem = |n: &str| if n.to_ascii_lowercase().ends_with(".mp4") { n[..n.len() - 4].to_string() } else { n.to_string() };
+    let text: String = names.iter().enumerate().map(|(i, n)| format!("{} {}", i + 1, ascii(&stem(n)))).collect::<Vec<_>>().join("/");
     let t = text.as_bytes().get(..2000).unwrap_or(text.as_bytes());
     let mut v = vec![SOF, op::FILE_NAME, (t.len() >> 8) as u8, t.len() as u8];
     v.extend_from_slice(t);
@@ -884,6 +888,11 @@ mod tests {
         let mut r = Reader::default();
         let out = r.push(&filelist_packet(&names));
         assert_eq!(out, vec![Packet::FileList(vec![(1, "a.mp4".into()), (2, "b c.mp4".into())])]);
+        // a real P56 lists the names without ".mp4" (as the simulator does)
+        assert!(filelist_packet(&names).windows(4).all(|w| w != b".mp4"));
+        let mut body = vec![0, 19];
+        body.extend_from_slice(b"1 fazant/2 Clip.MP4");
+        assert_eq!(parse_filelist(&body), vec![(1, "fazant.mp4".into()), (2, "Clip.MP4".into())]);
         let bt = Bluetooth { on: true, connected: true, connecting: false, volume: 7, devices: vec!["dev1".into(), "dev2".into()] };
         let out = r.push(&bluetooth_packet(&bt));
         assert_eq!(out, vec![Packet::Bluetooth(bt)]);

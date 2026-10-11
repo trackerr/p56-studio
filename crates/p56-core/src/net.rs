@@ -747,8 +747,8 @@ impl Link {
             "uploaded: {name}, {} frame(s), {} bytes{}{}",
             frames.len(),
             records.len() + head.len(),
-            if acked { "" } else { ", not acknowledged" },
-            if listed { "" } else { ", not in the playlist (yet)" }
+            if listed { "" } else { ", not in the playlist (yet)" },
+            if acked || listed { "" } else { ", not acknowledged" }
         ));
         Ok(UploadOutcome { acked, listed })
     }

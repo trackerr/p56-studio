@@ -38,14 +38,15 @@ export function PlacementBox() {
 }
 
 /** What the panel is busy with: a local step, or an upload stage reported by the backend. */
-type Busy = null | { step: 'reading' | 'frames' | 'preparing' } | { stage: string };
+type Step = 'reading' | 'frames' | 'preparing' | 'text';
+type Busy = null | { step: Step } | { stage: string };
 
 // Upload stages as emitted by the backend; both the old Dutch and English ids are accepted.
 const STAGES: Record<string, Key> = {
   transcoderen: 'media.stageTranscoding', transcoding: 'media.stageTranscoding', transcode: 'media.stageTranscoding', encoding: 'media.stageTranscoding',
   versturen: 'media.stageSending', sending: 'media.stageSending', send: 'media.stageSending', uploading: 'media.stageSending', upload: 'media.stageSending',
 };
-const STEPS: Record<'reading' | 'frames' | 'preparing', Key> = { reading: 'media.reading', frames: 'media.makingFrames', preparing: 'media.preparing' };
+const STEPS: Record<Step, Key> = { reading: 'media.reading', frames: 'media.makingFrames', preparing: 'media.preparing', text: 'media.makingText' };
 
 function busyLabel(b: Busy, t: TFunc): string {
   if (!b) return '';
@@ -71,11 +72,14 @@ export function MediaPanel() {
   const [txt, setTxt] = useState({ text: '', color: '#ffffff', bg: '#000000', motion: '' as Motion, speed: 1 });
 
   async function makeText() {
+    // a ticker takes a moment to render: uploading meanwhile would send the previous picture
+    setBusy({ step: 'text' });
     try {
       const m = await invoke<MediaInfo>('media_text', { text: txt.text, color: txt.color, background: txt.bg, name: txt.text.slice(0, 24), motion: txt.motion, speed: txt.speed });
       setPicked(null); setMedia(m); setFrame(0); setName(txt.text.slice(0, 24).replace(/[^\w -]/g, '').trim() || t('media.textName'));
       addLog(t('media.logText', { text: txt.text }));
     } catch (e) { toast.error(t('media.textFailed'), { description: String(e) }); }
+    finally { setBusy(null); }
   }
 
   // preview on every change

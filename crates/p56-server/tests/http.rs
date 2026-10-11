@@ -472,6 +472,29 @@ fn timed_cast_stops_and_is_replaced() {
     assert!(fan.state().protocol_errors.is_empty(), "{:?}", fan.state().protocol_errors);
 }
 
+/// A fan that is off shows nothing that is cast to it: every kind of cast turns it on.
+#[test]
+fn casting_turns_the_fan_on() {
+    let s = start(true);
+    let st = s.wait("virtual fan connects", |v| v["connected"] == true && v["devices"][0]["status"].is_object());
+    let id = st["devices"][0]["id"].as_u64().unwrap();
+    let off = || {
+        s.call("control", json!({ "id": id, "action": "off" }));
+        s.wait("off", |v| v["devices"][0]["status"]["power"] == false);
+    };
+    off();
+    s.call("cast_start", json!({ "args": { "source": "test" } }));
+    s.wait("on by cast_start", |v| v["devices"][0]["status"]["power"] == true);
+    s.call("cast_stop", json!({}));
+    off();
+    s.call("cast_frame", json!({ "data": base64_encode(&image_png()) }));
+    s.wait("on by a camera frame", |v| v["devices"][0]["status"]["power"] == true);
+    s.call("cast_stop", json!({}));
+    off();
+    show_ok(&s, json!({ "text": "ON", "mode": "cast", "show_seconds": 2 }));
+    s.wait("on by a timed cast", |v| v["devices"][0]["status"]["power"] == true);
+}
+
 // ---- API token and media folders -------------------------------------------------------
 
 /// This machine's address on the network (no packet is sent), if it has one.

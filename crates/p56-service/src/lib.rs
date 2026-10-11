@@ -93,11 +93,21 @@ fn at_fan_rate<T: Clone>(frames: Vec<(T, u32)>, max: usize) -> Vec<T> {
 }
 
 /// " (not confirmed by the fan)" when the fan did not acknowledge or list an upload.
+/// Turn on the fans in `ids` that are off: a fan that is off shows nothing that is cast to it.
+fn wake(l: &Link, ids: &[u32]) {
+    for &id in ids {
+        if l.device(id).and_then(|d| d.status).is_some_and(|s| !s.power) {
+            let _ = l.on(id);
+        }
+    }
+}
+
 fn unconfirmed(o: p56_core::net::UploadOutcome) -> &'static str {
-    match (o.acked, o.listed) {
-        (true, true) => "",
-        (_, true) => " (listed, but the fan did not acknowledge the data)",
-        _ => " (sent, but not confirmed by the fan)",
+    // a real P56 never acknowledges the data itself: the playlist is the proof
+    if o.listed {
+        ""
+    } else {
+        " (sent, but not confirmed by the fan)"
     }
 }
 
@@ -933,6 +943,7 @@ impl Service {
         let session = self.cast_session.fetch_add(1, Ordering::SeqCst) + 1;
         let me = self.clone();
         thread::spawn(move || {
+            wake(&l, &l.ids());
             let period = Duration::from_secs_f64(1.0 / fps.clamp(0.5, 60.0));
             let (mut n, mut last_report, mut i) = (0u64, Instant::now(), 0usize);
             let mut cache: Vec<Option<Vec<u8>>> = media.as_ref().map(|m| vec![None; m.len()]).unwrap_or_default();
@@ -1007,6 +1018,10 @@ impl Service {
         let ft = self.fan_type_for(None)?;
         let img = decode_source(&b64(data)?)?;
         let f = transcode::encode(&img, &ft, &placement.into());
+        if self.live.lock().unwrap().since.is_none() {
+            // first frame of a live cast
+            wake(&l, &l.ids());
+        }
         let fans = l.cast(&f.jpeg);
         let mut s = self.live.lock().unwrap();
         s.n += 1;
@@ -1099,6 +1114,9 @@ impl Service {
             let session = self.cast_session.fetch_add(1, Ordering::SeqCst) + 1;
             let me = self.clone();
             thread::spawn(move || {
+                if let Ok(l) = me.link() {
+                    wake(&l, &groups.iter().flat_map(|(_, g, _)| g.clone()).collect::<Vec<_>>());
+                }
                 let end = Instant::now() + Duration::from_secs_f64(dur);
                 let mut i = 0;
                 while Instant::now() < end && me.cast_session.load(Ordering::SeqCst) == session {
