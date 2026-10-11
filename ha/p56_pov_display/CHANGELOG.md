@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.1.5
+
+p56-server 0.3.5.
+
+- Panel, Media tab: **Upload & show** makes the frames of a picked video itself; "Make frames"
+  is only needed to choose frames/s, a start or an end first.
+
 ## 2.1.4
 
 p56-server 0.3.4.
