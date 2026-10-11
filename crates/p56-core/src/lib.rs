@@ -11,7 +11,7 @@ pub mod protocol;
 pub mod transcode;
 pub mod video;
 
-pub use net::{Config, Device, Event, Link};
+pub use net::{Config, Device, Event, Link, UploadOutcome};
 pub use protocol::{ColorMode, FanError, MachineInfo, Packet, Status};
 pub use transcode::{FanType, Frame, Placement, Support};
 
