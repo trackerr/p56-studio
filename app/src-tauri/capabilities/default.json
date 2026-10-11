@@ -8,7 +8,6 @@
     "dialog:default",
     "opener:default",
     "fs:allow-read-file",
-    "fs:allow-stat",
-    { "identifier": "fs:scope", "allow": [{ "path": "**" }, { "path": "**/*" }] }
+    "fs:allow-stat"
   ]
 }

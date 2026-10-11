@@ -29,6 +29,28 @@ struct Media {
     frames: Vec<(Vec<u8>, u32)>,
 }
 
+impl Media {
+    fn bytes(&self) -> usize {
+        self.frames.iter().map(|(b, _)| b.len()).sum()
+    }
+}
+
+/// Memory all loaded media may use together; the oldest items are dropped first.
+const MAX_MEDIA_BYTES: usize = 512 * 1024 * 1024;
+
+/// Drop the oldest media (never `keep`) until all of it fits in [`MAX_MEDIA_BYTES`] plus
+/// `extra`. Returns whether it fits.
+fn make_room(m: &mut HashMap<u32, Media>, keep: u32, extra: usize) -> bool {
+    loop {
+        let total: usize = m.values().map(Media::bytes).sum::<usize>() + extra;
+        if total <= MAX_MEDIA_BYTES {
+            return true;
+        }
+        let Some(oldest) = m.keys().copied().filter(|&k| k != keep).min() else { return false };
+        m.remove(&oldest);
+    }
+}
+
 #[derive(Default)]
 struct LiveStats {
     n: u64,
@@ -733,6 +755,7 @@ impl Service {
             m.remove(&oldest);
         }
         m.insert(id, Media { name, frames });
+        make_room(&mut m, id, 0);
         id
     }
 
@@ -768,6 +791,10 @@ impl Service {
         if md.frames.len() >= 3000 {
             return Err("at most 3000 frames".into());
         }
+        if !make_room(&mut m, media, bytes.len()) {
+            return Err(format!("this media is too large (more than {} MB)", MAX_MEDIA_BYTES >> 20));
+        }
+        let md = m.get_mut(&media).ok_or("media no longer exists")?;
         md.frames.push((bytes, delay));
         Ok(md.frames.len())
     }
@@ -1131,6 +1158,27 @@ pub fn fan_types() -> Value {
         })
         .collect::<Vec<_>>()
         .into()
+}
+
+#[cfg(test)]
+mod media_cache_tests {
+    use super::*;
+
+    fn media(mb: usize) -> Media {
+        Media { name: String::new(), frames: vec![(vec![0u8; mb << 20], 0)] }
+    }
+
+    #[test]
+    fn oldest_media_goes_first_and_the_current_one_stays() {
+        let mut m = HashMap::new();
+        m.insert(1, media(300));
+        m.insert(2, media(200));
+        m.insert(3, media(100));
+        assert!(make_room(&mut m, 3, 0));
+        assert_eq!(m.keys().copied().collect::<std::collections::BTreeSet<_>>(), [2, 3].into(), "600 MB → the oldest (1) dropped");
+        assert!(!make_room(&mut m, 3, MAX_MEDIA_BYTES), "the item being filled alone does not fit");
+        assert!(m.contains_key(&3), "the current item is never dropped");
+    }
 }
 
 #[cfg(test)]
