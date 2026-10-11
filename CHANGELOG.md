@@ -9,6 +9,7 @@ The Home Assistant add-on and integration have their own changelog in
 ### Fixed
 - **Casting with an empty playlist**: a P56 without files pauses itself and then showed nothing
   that was cast. Casting now resumes a paused fan (as it already switched on a fan that is off).
+  Confirmed on a real P56, as are the playlist order and casting a window through Home Assistant.
 - **The playlist pointed at the file next to the one that plays** on a real P56: the fan reports
   the playing file counting from 0, while selecting counts from 1 (as Holoscope does). The
   status is now read that way, and the simulator reports it like a real fan.

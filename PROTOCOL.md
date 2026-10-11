@@ -93,7 +93,7 @@ sets the fan's *hotspot*, not a router (that is `8B`). `83` takes a slot number,
 
 `slot` is the playing file **0-based** (0 = the first file), while `SHOW (87 n)`, delete and
 rename count from 1: Holoscope selects list position + 1 and compares the status value with its
-0-based list positions. P56 Studio adds 1 when reading it. `brightness` 1–16, `colour` 1 = true colour / 2 = high brightness, `angle` 0–360 (180 = neutral),
+0-based list positions. P56 Studio adds 1 when reading it (confirmed on a real P56). `brightness` 1–16, `colour` 1 = true colour / 2 = high brightness, `angle` 0–360 (180 = neutral),
 `group` = number of the group picture this fan belongs to (1–16, Holoscope ignores larger values),
 `type` = fan type (§6). **Correction:** byte 4 is the brightness and bytes 5–6 the configured angle
 (not "LEDs per arm" and "number of angles"); the flag bits are as above.
@@ -164,6 +164,8 @@ ON(01) · CAST_START(26) → 29 · ~70 ms · FRAME(28) FRAME(28) …   (no heart
   briefly and falls back. A real P56 shows the test card at 15 fps.
 - **No heartbeat (0D) or status poll (1C)** while casting: Holoscope.exe suppresses both.
 - **Stop:** nothing is sent; the frames simply stop.
+- A P56 with an empty playlist pauses itself, and a paused fan shows no cast frames: P56 Studio
+  sends PLAY (04) first when the fan reports it is paused (confirmed on a real P56).
 
 P56 Studio starts a session with `26` before the first frame and again after a pause of 1 s,
 waits at most 1 s for the `29`, sends no heartbeat or poll until 2 s after the last frame, and
