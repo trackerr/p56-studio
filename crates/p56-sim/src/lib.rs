@@ -1125,10 +1125,10 @@ fn handle(sh: &Shared, out: &mut Out, pkt: &[u8], ft: u8, just_uploaded: &mut bo
                 *just_uploaded = false;
                 if !sh.state.lock().unwrap().quiet_upload {
                     out.send(&[SOF, op::TRANS_DONE, op::TRANS_DONE, EOF]);
-                    out.send(&files(sh));
                 }
-                // a fan reports its status again once the file is stored (a real P56 does so
-                // every half second; it is silent while it writes)
+                // once the file is stored the fan sends its playlist and status by itself (a real
+                // P56 is silent while it receives and writes)
+                out.send(&files(sh));
                 out.send(&status(sh));
             }
         }

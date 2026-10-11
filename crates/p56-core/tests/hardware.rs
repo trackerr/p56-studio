@@ -389,3 +389,70 @@ fn upload_status_trace() {
     watch.join().unwrap();
     remove_test_files(&link, id);
 }
+
+/// Upload as from Linux (Home Assistant): a relay between the fan and the link takes everything
+/// the link writes at once and passes it on at the fan's pace, like a socket send buffer of many
+/// megabytes, so the link is done writing long before the fan has the data. The file must still
+/// be stored, and the card must still take uploads afterwards.
+#[test]
+#[ignore]
+fn upload_through_a_big_send_buffer() {
+    if std::env::var("P56_HARDWARE").is_err() {
+        return;
+    }
+    // the relay listens on the fan's port 6666 and connects to the link on 6667
+    let relay = std::net::TcpListener::bind(("0.0.0.0", 6666)).expect("port 6666 free");
+    std::thread::spawn(move || {
+        for fan in relay.incoming().flatten() {
+            let Ok(link) = std::net::TcpStream::connect(("127.0.0.1", 6667)) else { continue };
+            let (mut fan_r, mut link_w) = (fan.try_clone().unwrap(), link.try_clone().unwrap());
+            std::thread::spawn(move || std::io::copy(&mut fan_r, &mut link_w));
+            let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
+            let mut link_r = link;
+            std::thread::spawn(move || {
+                let mut buf = vec![0u8; 1 << 16];
+                while let Ok(n) = std::io::Read::read(&mut link_r, &mut buf) {
+                    if n == 0 || tx.send(buf[..n].to_vec()).is_err() {
+                        break;
+                    }
+                }
+            });
+            let mut fan_w = fan;
+            std::thread::spawn(move || {
+                for b in rx {
+                    if std::io::Write::write_all(&mut fan_w, &b).is_err() {
+                        break;
+                    }
+                }
+            });
+        }
+    });
+    let targets = std::env::var("P56_FAN").ok().and_then(|ip| format!("{ip}:8988").parse().ok()).into_iter().collect();
+    let (link, _rx) = Link::start(Config { targets, tcp_port: 6667, ..Default::default() }).unwrap();
+    assert!(link.wait_connected(Duration::from_secs(30)), "no fan through the relay");
+    let id = link.ids()[0];
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while link.device(id).and_then(|d| d.status).is_none() {
+        assert!(std::time::Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let ft = FanType::usable(link.device(id).unwrap().status.unwrap().fan_type).unwrap();
+    let mut seed = 31u32;
+    let frames: Vec<Vec<u8>> = (0..120)
+        .map(|i| {
+            let img = image::RgbImage::from_fn(720, 720, |x, _| {
+                seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+                let v = (seed >> 24) as u8 / 3;
+                if (x as usize + i * 9) % 200 < 30 { image::Rgb([255, 0, 200]) } else { image::Rgb([v, v, v]) }
+            });
+            transcode::encode_upload(&img, &ft, &Placement::default()).jpeg
+        })
+        .collect();
+    let t = std::time::Instant::now();
+    let r = link.upload(id, &frames, "hwtest-buffered", None);
+    eprintln!("buffered upload: {:.0} s → {r:?}", t.elapsed().as_secs_f64());
+    let small = link.upload(id, &frames[..1], "hwtest-after", None);
+    eprintln!("small upload afterwards: {small:?}; files {:?}", link.device(id).unwrap().files);
+    remove_test_files(&link, id);
+    link.shutdown();
+}

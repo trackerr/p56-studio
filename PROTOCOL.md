@@ -116,8 +116,10 @@ RECORD = [len u32le][PCM 1600 B][JPEG][00 × 1–4]
 - Each JPEG of a file may be up to `0xF000` (61440) bytes; Holoscope lowers the quality
   (q² per step from 0.95, at most 21 steps) and never cuts a JPEG short.
 - **Finish:** the fan may still be writing to its card after the last byte arrived, and sends no
-  status meanwhile. Holoscope.apk (`transfinish`) repeats COMMIT every 500 ms until a status `86`
-  arrives, and only then goes on. Switching the fan off earlier (as P56 Studio did before 0.3.3)
+  status meanwhile; once the file is stored it sends its playlist (`84`) with the file in it, by
+  itself, and then its status. Holoscope.apk (`transfinish`) repeats COMMIT every 500 ms until then.
+  P56 Studio waits for that playlist (a status alone is no proof: on Linux the last megabytes can
+  still be in the socket buffer, and the fan reports while it receives). Switching the fan off earlier (as P56 Studio did before 0.3.3)
   loses large files and can leave the card unusable until it is formatted (85 code 8 on every
   upload). Holoscope sets no limit on length or size; a real P56 stored a 27 MB file this way.
 - **An `85` during the upload:** stop sending at once and send CANCEL (`5A 10 10 F5`) every

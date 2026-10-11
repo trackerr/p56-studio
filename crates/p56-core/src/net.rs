@@ -751,16 +751,22 @@ impl Link {
         // 0E here, as a real P56 does); give it time for large animations.
         let acked = expect(1000 + records.len() as u64 / 2000)?
             || self.wait_packet(id, data_mark, Duration::from_millis(500), |p| matches!(p, Packet::TransDone | Packet::TransContinue)).is_some();
-        // The fan may still be writing what it received to its card, and stays silent meanwhile.
-        // Like Holoscope.apk (transfinish): repeat COMMIT every 500 ms until the fan reports its
-        // status again. Switching it off before that (as this app did) breaks large files and can
-        // leave the card unusable until it is formatted.
+        // Proof that the file is stored: the fan sends its playlist with the file in it, by itself,
+        // once the file is on its card. Nothing earlier counts: on Linux (Home Assistant) the last
+        // megabytes can still be in this socket's send buffer here, and the fan keeps reporting its
+        // status while it receives them. Switching it off before the file is stored loses the file
+        // and can leave the card refusing every upload until it is formatted. Meanwhile, like
+        // Holoscope.apk (transfinish), COMMIT every 500 ms.
         let commit = if frames.len() > 1 { proto::commit_with(frames.len() as u32) } else { proto::commit() };
         let finish = self.packet_seq(id);
-        let deadline = Instant::now() + Duration::from_secs(30 + (records.len() / 100_000) as u64);
+        // the fan stores about 300 kB/s; a whole file may still be on its way
+        let deadline = Instant::now() + Duration::from_secs(30 + ((records.len() + head.len()) / 100_000) as u64);
+        let stored_in = |p: &Packet| matches!(p, Packet::FileList(f) if f.iter().any(|(_, n)| n == &name));
+        let mut stored = false;
         loop {
             self.send_to(id, &commit)?;
-            if self.wait_packet(id, finish, Duration::from_millis(500), |p| matches!(p, Packet::Status(_))).is_some() {
+            if self.wait_packet(id, finish, Duration::from_millis(500), stored_in).is_some() {
+                stored = true;
                 break;
             }
             if let Some(e) = fan_error() {
@@ -770,9 +776,13 @@ impl Link {
                 return Err(Error::NotConnected);
             }
             if Instant::now() >= deadline {
-                self.log(format!("fan #{id} did not finish storing {name} in time"));
                 break;
             }
+        }
+        if !stored {
+            // no proof: leave the fan alone (no off/on/show), so it can still finish writing
+            self.log(format!("fan #{id} did not confirm {name} (not in its playlist); the fan was left as it is"));
+            return Ok(UploadOutcome { acked, listed: false });
         }
         if let Some(e) = fan_error() {
             return Err(abort(e));
@@ -788,8 +798,7 @@ impl Link {
         if let Some(e) = fan_error() {
             return Err(Error::Fan(e));
         }
-        // The fan sends its playlist after storing a file; look for the name in it.
-        let listed = self.wait_listed(id, &name, Duration::from_secs(6));
+        let listed = stored;
         if gone() {
             return Err(Error::NotConnected);
         }
@@ -801,25 +810,6 @@ impl Link {
             if acked || listed { "" } else { ", not acknowledged" }
         ));
         Ok(UploadOutcome { acked, listed })
-    }
-
-    /// Wait until the playlist of fan `id` contains `name`.
-    fn wait_listed(&self, id: u32, name: &str, timeout: Duration) -> bool {
-        let deadline = Instant::now() + timeout;
-        loop {
-            match self.device(id) {
-                Some(d) if d.files.iter().any(|(_, n)| n == name) => return true,
-                None => return false,
-                _ => {}
-            }
-            if Instant::now() >= deadline {
-                return false;
-            }
-            // a real fan does not always send its playlist by itself: ask (as Holoscope's 1C poll)
-            let s = self.packet_seq(id);
-            let _ = self.send_to(id, &proto::get_machine());
-            self.wait_packet(id, s, Duration::from_millis(700), |p| matches!(p, Packet::FileList(_)));
-        }
     }
 
     /// Push one live frame (a fan-layout JPEG) to every connected fan.

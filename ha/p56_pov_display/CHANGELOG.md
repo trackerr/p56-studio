@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.1.4
+
+p56-server 0.3.4.
+
+- **Large uploads through Home Assistant are stored safely.** 2.1.3 could still lose a long
+  video and leave the fan's memory card refusing uploads: on Home Assistant's Linux the server
+  thought the file was stored too early. It now waits until the fan lists the new file. If your
+  fan answers every upload with "transfer failed", format its card once (panel → Fan → Format).
+
 ## 2.1.3
 
 p56-server 0.3.3.

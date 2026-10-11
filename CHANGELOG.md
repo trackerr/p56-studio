@@ -4,6 +4,16 @@ P56 Studio (Windows, Linux, Android), `p56` (CLI), `p56-sim` and `p56-server`.
 The Home Assistant add-on and integration have their own changelog in
 [`ha/p56_pov_display/CHANGELOG.md`](ha/p56_pov_display/CHANGELOG.md).
 
+## 0.3.4 — 2026-10-12
+
+### Fixed
+- **Uploads through Home Assistant (Linux) still lost large files** and left the fan's memory
+  card refusing every upload. On Linux the last megabytes of a file can still be on their way
+  when the app has written them, and the fan reports its status while it receives them; the app
+  took that for "stored". It now waits for the proof: the playlist the fan sends by itself, with
+  the new file in it. Without that proof it no longer switches the fan off and on. Tested on a
+  real P56 through a relay that behaves like Linux.
+
 ## 0.3.3 — 2026-10-11
 
 ### Fixed
