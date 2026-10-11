@@ -10,6 +10,10 @@ The Home Assistant add-on and integration have their own changelog in
 - Fan tab: the dial only turns the picture (outer ring); brightness is a plain slider (1–16)
   below it, which is easier to use than the inner arc.
 
+### Fixed
+- Android: "Control through a P56 server" could not reach a server (such as the Home Assistant
+  add-on) in release builds, which blocked plain http; only debug builds allowed it.
+
 ## 0.3.0 — 2026-10-11
 
 ### Fixed

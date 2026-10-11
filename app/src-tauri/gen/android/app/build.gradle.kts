@@ -34,7 +34,10 @@ android {
         }
     }
     defaultConfig {
-        manifestPlaceholders["usesCleartextTraffic"] = "false"
+        // Plain http is needed in release builds too: "Control through a P56 server" talks to
+        // p56-server / the Home Assistant add-on on the local network, which has no https.
+        // (The fan itself uses raw TCP/UDP, which this setting does not affect.)
+        manifestPlaceholders["usesCleartextTraffic"] = "true"
         applicationId = "nl.trackerr.p56studio"
         minSdk = 24
         targetSdk = 36
