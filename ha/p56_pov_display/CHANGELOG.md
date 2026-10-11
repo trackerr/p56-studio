@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.1.1 (not released yet)
+
+- **Cast your Home Assistant cameras** to the fan: Cast → Home Assistant camera lists every
+  camera entity. The add-on now asks for access to Home Assistant's API (`homeassistant_api`)
+  for this.
+- Fan tab: brightness is a slider under the dial; "Video (live)" is gone from Cast (a video is
+  cast as media).
+
 ## 2.1.0
 
 p56-server 0.3.0, tested on a real P56.

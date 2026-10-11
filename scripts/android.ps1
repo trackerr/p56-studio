@@ -1,6 +1,7 @@
 # Android build / run helper for P56 Studio.
 #   powershell -File scripts\android.ps1 debug      # debug APK (arm64 + x86_64) → dist\
 #   powershell -File scripts\android.ps1 build      # signed release APK (arm64 + armv7 + x86_64) → dist\
+#   powershell -File scripts\android.ps1 phone      # quick signed APK for a phone (arm64, no LTO), installed and started
 #   powershell -File scripts\android.ps1 emulator   # start the emulator
 #   powershell -File scripts\android.ps1 install    # install the latest debug APK on the emulator/phone
 # Toolchain in %USERPROFILE%\.p56-android (JDK 17, SDK, NDK).
@@ -37,7 +38,8 @@ function Build-Apk([string[]]$targets, [bool]$release) {
       $targs = @('tauri', 'android', 'build', '--apk', '--target', $t)
       if (-not $release) { $targs += '--debug' }
       & npx @targs 2>&1 | Where-Object { "$_" -match 'error\[|warning: unused|Finished|symbolic link' } | ForEach-Object { Write-Host "   $_" }
-      $so = Join-Path $root "target\$($abi[$t][0])\$mode\libp56_studio_lib.so"
+      $targetDir = if ($env:CARGO_TARGET_DIR) { $env:CARGO_TARGET_DIR } else { Join-Path $root 'target' }
+      $so = Join-Path $targetDir "$($abi[$t][0])\$mode\libp56_studio_lib.so"
       if (-not (Test-Path $so)) { throw "Rust library for $t is missing: $so" }
       $dst = Join-Path $jni $abi[$t][1]
       New-Item -ItemType Directory -Force $dst | Out-Null
@@ -62,6 +64,18 @@ switch ($Cmd) {
   'env' { Write-Host "JAVA_HOME=$env:JAVA_HOME`nANDROID_HOME=$env:ANDROID_HOME`nNDK_HOME=$env:NDK_HOME" }
   'debug' { Build-Apk @('aarch64', 'x86_64') $false }
   'build' { Build-Apk @('aarch64', 'armv7', 'x86_64') $true }
+  'phone' {
+    # A third of the Rust work (arm64 only) and much faster linking (no LTO, parallel codegen),
+    # in its own target folder so the release build's cache stays intact. For testing; releases
+    # use 'build'.
+    $env:CARGO_TARGET_DIR = Join-Path $root 'target\phone'
+    $env:CARGO_PROFILE_RELEASE_LTO = 'false'
+    $env:CARGO_PROFILE_RELEASE_CODEGEN_UNITS = '16'
+    Build-Apk @('aarch64') $true
+    # the first connected device (set ANDROID_SERIAL to choose another)
+    adb install -r (Join-Path $dist "P56-Studio-$version-release.apk")
+    if ($LASTEXITCODE -eq 0) { adb shell monkey -p nl.trackerr.p56studio -c android.intent.category.LAUNCHER 1 | Out-Null }
+  }
   'install' {
     $apk = Join-Path $dist "P56-Studio-$version-debug.apk"
     adb install -r $apk
@@ -72,5 +86,5 @@ switch ($Cmd) {
     }
     Start-Process emulator -ArgumentList '-avd', 'p56', '-no-snapshot-save', '-no-boot-anim', '-no-audio', '-gpu', 'auto', '-memory', '3072'
   }
-  default { Write-Host 'usage: android.ps1 debug|build|install|emulator|env' }
+  default { Write-Host 'usage: android.ps1 debug|build|phone|install|emulator|env' }
 }

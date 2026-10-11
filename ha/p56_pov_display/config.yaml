@@ -16,6 +16,8 @@ panel_title: P56 POV
 discovery:
   - p56_pov
 hassio_api: true
+# camera entities for casting (the REST API through the Supervisor)
+homeassistant_api: true
 map:
   - type: media
     read_only: true

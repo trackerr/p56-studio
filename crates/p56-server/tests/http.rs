@@ -32,6 +32,10 @@ fn start(simulate: bool) -> Srv {
 }
 
 fn start_with(simulate: bool, extra: &[&str]) -> Srv {
+    start_env(simulate, extra, &[])
+}
+
+fn start_env(simulate: bool, extra: &[&str], envs: &[(&str, &str)]) -> Srv {
     let (http, tcp) = (free_tcp(), free_tcp());
     let mut args = vec!["--http-port".to_string(), http.to_string(), "--tcp-port".into(), tcp.to_string()];
     if simulate {
@@ -42,6 +46,10 @@ fn start_with(simulate: bool, extra: &[&str]) -> Srv {
         .args(&args)
         .env("RUST_LOG", "warn")
         .env_remove("P56_API_TOKEN")
+        .env_remove("SUPERVISOR_TOKEN")
+        .env_remove("P56_HA_URL")
+        .env_remove("P56_HA_TOKEN")
+        .envs(envs.iter().copied())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -493,6 +501,60 @@ fn casting_turns_the_fan_on() {
     off();
     show_ok(&s, json!({ "text": "ON", "mode": "cast", "show_seconds": 2 }));
     s.wait("on by a timed cast", |v| v["devices"][0]["status"]["power"] == true);
+}
+
+/// A stand-in for Home Assistant's REST API: two entities, one camera that needs the token.
+fn fake_home_assistant() -> u16 {
+    let srv = tiny_http::Server::http("127.0.0.1:0").unwrap();
+    let port = srv.server_addr().to_ip().unwrap().port();
+    std::thread::spawn(move || {
+        for req in srv.incoming_requests() {
+            let authed = req.headers().iter().any(|h| h.field.equiv("Authorization") && h.value.as_str() == "Bearer test-token");
+            let r = match (authed, req.url()) {
+                (false, _) => tiny_http::Response::from_data(b"401".to_vec()).with_status_code(401),
+                (true, "/states") => tiny_http::Response::from_data(
+                    serde_json::to_vec(&json!([
+                        { "entity_id": "light.kitchen", "attributes": { "friendly_name": "Kitchen" } },
+                        { "entity_id": "camera.front_door", "attributes": { "friendly_name": "Front door" } },
+                    ]))
+                    .unwrap(),
+                ),
+                (true, "/camera_proxy/camera.front_door") => tiny_http::Response::from_data(image_png()),
+                _ => tiny_http::Response::from_data(b"404".to_vec()).with_status_code(404),
+            };
+            let _ = req.respond(r);
+        }
+    });
+    port
+}
+
+/// In the add-on the server lists Home Assistant's cameras and casts one of them; outside Home
+/// Assistant both calls fail clearly, and only camera entities are ever fetched.
+#[test]
+fn home_assistant_cameras_are_listed_and_cast() {
+    let plain = start(true);
+    let (_, v) = plain.post("/api/call/ha_cameras", json!({}));
+    assert_eq!(v["ok"], false, "{v}");
+    drop(plain);
+
+    let ha = format!("http://127.0.0.1:{}", fake_home_assistant());
+    let s = start_env(false, &[], &[("P56_HA_URL", &ha), ("P56_HA_TOKEN", "test-token")]);
+    let pc = std::net::SocketAddr::from((Ipv4Addr::LOCALHOST, s.tcp));
+    let fan = p56_sim::Sim::start(p56_sim::SimConfig { name: "FAN".into(), udp_port: 0, pc: Some(pc), ..Default::default() }).unwrap();
+    s.wait("fan", |v| v["devices"].as_array().is_some_and(|d| d.len() == 1 && d[0]["status"].is_object()));
+    assert_eq!(s.call("ha_cameras", json!({})), json!([{ "entity_id": "camera.front_door", "name": "Front door" }]));
+    for bad in ["ha_camera:light.kitchen", "ha_camera:camera.x/../../states", "ha_camera:camera."] {
+        let (_, v) = s.post("/api/call/cast_start", json!({ "args": { "source": bad } }));
+        assert_eq!(v["ok"], false, "{bad}: {v}");
+    }
+    s.call("cast_start", json!({ "args": { "source": "ha_camera:camera.front_door", "fps": 10 } }));
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while fan.state().cast_ok < 10 {
+        assert!(Instant::now() < deadline, "the camera was not cast: {:?}", fan.state().protocol_errors);
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    s.call("cast_stop", json!({}));
+    assert!(fan.state().protocol_errors.is_empty(), "{:?}", fan.state().protocol_errors);
 }
 
 // ---- API token and media folders -------------------------------------------------------

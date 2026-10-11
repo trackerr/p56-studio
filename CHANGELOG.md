@@ -6,9 +6,15 @@ The Home Assistant add-on and integration have their own changelog in
 
 ## Unreleased
 
+### Added
+- Cast: in Home Assistant, any **camera entity** can be cast (Cast → Home Assistant camera); the
+  add-on fetches a new snapshot several times a second and keeps the fan in live mode.
+
 ### Changed
 - Fan tab: the dial only turns the picture (outer ring); brightness is a plain slider (1–16)
   below it, which is easier to use than the inner arc.
+- Cast: "Video (live)" is gone; a video is cast as media (make its frames on the Media tab).
+  "Camera" is offered only where the browser provides a camera.
 
 ### Fixed
 - Android: "Control through a P56 server" could not reach a server (such as the Home Assistant

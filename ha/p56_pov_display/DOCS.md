@@ -5,7 +5,8 @@ the vendor app does, and gives Home Assistant (and anything else) a simple HTTP 
 Everything runs inside Home Assistant; no phone, PC or cloud is needed.
 
 - **Panel** "P56 POV" in the sidebar: the full P56 Studio web app (playlist, upload of
-  pictures/GIF/video, live cast, brightness, angle, network settings …).
+  pictures/GIF/video, live cast (also of your Home Assistant cameras), brightness, angle,
+  network settings …).
 - **Integration** `p56_pov` is offered automatically (Settings → Devices & services):
   light, switches, selects, sensors, a text field, a notify entity, an image of what is
   shown, and the actions `p56_pov.show_text` / `p56_pov.show_image`.

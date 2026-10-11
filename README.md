@@ -41,8 +41,8 @@ Photos, GIFs and video (decoded right in the app), or just type a **text**: it i
 and sized to fit the round display.
 
 **Live cast**<br>
-Stream a test card, your media, a video, your **camera** or your **screen** to one or more fans
-at ~15 fps, with nothing stored on the fan.
+Stream a test card, your media (photos, GIFs, videos), your **camera**, your **screen** or, in
+Home Assistant, any **camera entity** to one or more fans at ~15 fps, with nothing stored on the fan.
 
 </td>
 <td width="50%" valign="top">

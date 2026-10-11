@@ -349,21 +349,88 @@ fn simulate_option(v: &Value) -> Option<bool> {
 
 /// Minimal HTTP GET returning JSON (plain http, as the Supervisor API is reached inside Home Assistant).
 fn fetch_json(url: &str) -> Option<Value> {
+    let token = std::env::var("SUPERVISOR_TOKEN").ok();
+    serde_json::from_slice(&http_get(url, token.as_deref(), "application/json")?).ok()
+}
+
+/// Minimal HTTP/1.0 GET (plain http only) returning the body of a 200 answer.
+fn http_get(url: &str, token: Option<&str>, accept: &str) -> Option<Vec<u8>> {
     let rest = url.strip_prefix("http://")?;
     let (hostport, path) = rest.split_once('/').map(|(h, p)| (h, format!("/{p}"))).unwrap_or((rest, "/".into()));
     let addr = if hostport.contains(':') { hostport.to_string() } else { format!("{hostport}:80") };
     let sock = std::net::ToSocketAddrs::to_socket_addrs(&addr).ok()?.next()?;
     let mut s = TcpStream::connect_timeout(&sock, Duration::from_secs(3)).ok()?;
     s.set_read_timeout(Some(Duration::from_secs(5))).ok()?;
-    let auth = std::env::var("SUPERVISOR_TOKEN").map(|t| format!("Authorization: Bearer {t}\r\n")).unwrap_or_default();
-    write!(s, "GET {path} HTTP/1.0\r\nHost: {hostport}\r\n{auth}Accept: application/json\r\n\r\n").ok()?;
-    let mut resp = String::new();
-    s.read_to_string(&mut resp).ok()?;
-    let (head, body) = resp.split_once("\r\n\r\n")?;
+    let auth = token.map(|t| format!("Authorization: Bearer {t}\r\n")).unwrap_or_default();
+    write!(s, "GET {path} HTTP/1.0\r\nHost: {hostport}\r\n{auth}Accept: {accept}\r\n\r\n").ok()?;
+    let mut resp = Vec::new();
+    s.take(32 << 20).read_to_end(&mut resp).ok()?;
+    let split = resp.windows(4).position(|w| w == b"\r\n\r\n")?;
+    let head = String::from_utf8_lossy(&resp[..split]);
     if !head.starts_with("HTTP/1.") || !head.split_whitespace().nth(1).is_some_and(|c| c == "200") {
         return None;
     }
-    serde_json::from_str(body).ok()
+    Some(resp[split + 4..].to_vec())
+}
+
+// ---- Home Assistant cameras (in the add-on) -------------------------------------------
+
+/// Home Assistant's REST API as the add-on reaches it (`homeassistant_api: true` in its config),
+/// or another one given by P56_HA_URL / P56_HA_TOKEN (tests). `None` outside Home Assistant.
+fn ha_api() -> Option<(String, String)> {
+    let token = std::env::var("P56_HA_TOKEN").or_else(|_| std::env::var("SUPERVISOR_TOKEN")).ok()?;
+    let base = std::env::var("P56_HA_URL").unwrap_or_else(|_| "http://supervisor/core/api".into());
+    Some((base.trim_end_matches('/').to_string(), token))
+}
+
+/// A camera entity id, nothing else (it becomes part of a URL).
+fn camera_entity(id: &str) -> bool {
+    id.strip_prefix("camera.").is_some_and(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_'))
+}
+
+/// The calls the server answers itself: Home Assistant cameras. `None` for every other call.
+fn ha_call(svc: &Arc<Service>, cmd: &str, args: &Value) -> Option<Result<Value, String>> {
+    let source = args["args"]["source"].as_str().unwrap_or_default();
+    if cmd != "ha_cameras" && !(cmd == "cast_start" && source.starts_with("ha_camera:")) {
+        return None;
+    }
+    let Some((base, token)) = ha_api() else {
+        return Some(Err("Home Assistant cameras are only available in the Home Assistant add-on".into()));
+    };
+    if cmd == "ha_cameras" {
+        let states = http_get(&format!("{base}/states"), Some(&token), "application/json").and_then(|b| serde_json::from_slice::<Value>(&b).ok());
+        let Some(states) = states.as_ref().and_then(|v| v.as_array()) else {
+            return Some(Err("Home Assistant did not list its entities (is homeassistant_api on?)".into()));
+        };
+        let mut cams: Vec<Value> = states
+            .iter()
+            .filter_map(|e| {
+                let id = e["entity_id"].as_str().filter(|id| camera_entity(id))?;
+                let name = e["attributes"]["friendly_name"].as_str().unwrap_or(id);
+                Some(json!({ "entity_id": id, "name": name }))
+            })
+            .collect();
+        cams.sort_by_key(|c| c["name"].as_str().unwrap_or_default().to_lowercase());
+        return Some(Ok(Value::Array(cams)));
+    }
+    let entity = source.trim_start_matches("ha_camera:").to_string();
+    if !camera_entity(&entity) {
+        return Some(Err(format!("not a camera entity: {entity}")));
+    }
+    let fps = args["args"]["fps"].as_f64().unwrap_or(10.0);
+    let pl: p56_core::Placement = serde_json::from_value::<p56_service::PlacementDto>(args["args"]["placement"].clone()).unwrap_or_default().into();
+    let url = format!("{base}/camera_proxy/{entity}");
+    let mut last = std::time::Instant::now() - Duration::from_secs(1);
+    // a new snapshot at most 5 times a second; the cast repeats the newest one in between
+    let next = move || {
+        if let Some(wait) = Duration::from_millis(200).checked_sub(last.elapsed()) {
+            thread::sleep(wait);
+        }
+        last = std::time::Instant::now();
+        http_get(&url, Some(&token), "image/*")
+    };
+    log::info!("casting Home Assistant camera {entity}");
+    Some(svc.cast_source(fps, pl, next).map(|_| Value::Null))
 }
 
 /// The simulated fan, switched on and off while the server runs.
@@ -434,7 +501,7 @@ fn handle(mut req: Request, svc: &Arc<Service>, subs: &Subscribers, origin: &Opt
         (Method::Post, p) if p.starts_with("/api/call/") => {
             let cmd = p.trim_start_matches("/api/call/").to_string();
             let args = body_json(&mut req);
-            match svc.call(&cmd, &args) {
+            match ha_call(svc, &cmd, &args).unwrap_or_else(|| svc.call(&cmd, &args)) {
                 Ok(v) => json_response(&json!({ "ok": true, "result": v }), 200),
                 Err(e) => json_response(&json!({ "ok": false, "error": e }), 200),
             }

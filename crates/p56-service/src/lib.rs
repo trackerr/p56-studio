@@ -93,6 +93,9 @@ fn at_fan_rate<T: Clone>(frames: Vec<(T, u32)>, max: usize) -> Vec<T> {
 }
 
 /// " (not confirmed by the fan)" when the fan did not acknowledge or list an upload.
+/// The newest picture of a cast source in the fan's layout, with its JPEG quality.
+type Newest = Arc<Mutex<Option<(Vec<u8>, u8)>>>;
+
 /// Turn on the fans in `ids` that are off: a fan that is off shows nothing that is cast to it.
 fn wake(l: &Link, ids: &[u32]) {
     for &id in ids {
@@ -1007,6 +1010,54 @@ impl Service {
             // stays quiet, so a late "stopped" never cancels the cast that replaced it.
             if me.cast_session.compare_exchange(session, session + 1, Ordering::SeqCst, Ordering::SeqCst).is_ok() {
                 me.emit("cast", json!({ "stopped": true }));
+            }
+        });
+        Ok(())
+    }
+
+    /// Cast pictures from `next` (an image file in memory per call, `None` while there is no new
+    /// one) as a session like `cast_start`'s: `cast_stop` or the next cast ends it. A slow source,
+    /// such as a camera snapshot, is fetched on its own thread while the newest picture is sent
+    /// at `fps`: the fan needs a frame about every 130 ms or it leaves live mode.
+    pub fn cast_source(self: &Arc<Self>, fps: f64, pl: Placement, mut next: impl FnMut() -> Option<Vec<u8>> + Send + 'static) -> Result<(), String> {
+        let l = self.link()?;
+        let ft = self.fan_type_for(None)?;
+        let session = self.cast_session.fetch_add(1, Ordering::SeqCst) + 1;
+        let latest: Newest = Arc::default();
+        let (me, slot) = (self.clone(), latest.clone());
+        thread::spawn(move || {
+            while me.cast_session.load(Ordering::SeqCst) == session {
+                match next().and_then(|b| decode_source(&b).ok()) {
+                    Some(img) => {
+                        let f = transcode::encode(&img, &ft, &pl);
+                        *slot.lock().unwrap() = Some((f.jpeg, f.quality));
+                    }
+                    None => thread::sleep(Duration::from_millis(250)),
+                }
+            }
+        });
+        let me = self.clone();
+        thread::spawn(move || {
+            wake(&l, &l.ids());
+            let period = Duration::from_secs_f64(1.0 / fps.clamp(1.0, 25.0));
+            let (mut n, mut last_report) = (0u64, Instant::now());
+            while me.cast_session.load(Ordering::SeqCst) == session {
+                let t = Instant::now();
+                let frame = latest.lock().unwrap().clone();
+                if let Some((jpeg, q)) = frame {
+                    let fans = l.cast(&jpeg);
+                    if fans > 0 {
+                        n += 1;
+                    }
+                    if last_report.elapsed() > Duration::from_millis(500) {
+                        me.emit_cast(&ft, n as f64 / last_report.elapsed().as_secs_f64(), fans, &jpeg, q);
+                        n = 0;
+                        last_report = Instant::now();
+                    }
+                }
+                if let Some(rest) = period.checked_sub(t.elapsed()) {
+                    thread::sleep(rest);
+                }
             }
         });
         Ok(())

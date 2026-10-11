@@ -1,17 +1,23 @@
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { IconCamera, IconCast, IconFilm, IconImage, IconMonitor, IconRings, IconStop, type Icon } from '@/components/icons';
+import { IconCamera, IconCast, IconImage, IconMonitor, IconRings, IconStop, type Icon } from '@/components/icons';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Choice, RoundView, Section, ValueSlider } from '@/components/bits';
 import { grab, invoke, onEvent } from '@/lib/api';
 import { useT } from '@/lib/i18n';
 import { useP56 } from '@/state';
 import { PlacementBox } from './MediaPanel';
 
-type Src = 'test' | 'media' | 'screen' | 'camera' | 'video';
+type Src = 'test' | 'media' | 'screen' | 'camera' | 'ha';
+type HaCamera = { entity_id: string; name: string };
+
+// this device's camera: only where the browser offers it (not on a plain-http page, such as
+// Home Assistant opened without https)
+const hasCamera = () => !!navigator.mediaDevices?.getUserMedia;
 
 export function CastPanel() {
-  const { devices, media, picked, placement, platform, addLog } = useP56();
+  const { devices, media, placement, platform, addLog } = useP56();
   const { t } = useT();
   const [src, setSrc] = useState<Src>('test');
   const [fps, setFps] = useState(15);
@@ -23,6 +29,12 @@ export function CastPanel() {
   const canvas = useRef(document.createElement('canvas'));
   const placementRef = useRef(placement);
   placementRef.current = placement;
+  // camera entities of Home Assistant (the add-on); null where there is no Home Assistant
+  const [haCams, setHaCams] = useState<HaCamera[] | null>(null);
+  const [haCam, setHaCam] = useState('');
+  useEffect(() => {
+    invoke<HaCamera[]>('ha_cameras').then((c) => { setHaCams(c); setHaCam((cur) => cur || c[0]?.entity_id || ''); }).catch(() => setHaCams(null));
+  }, []);
 
   useEffect(() => onEvent((e) => {
     if (e.type !== 'cast') return;
@@ -31,14 +43,13 @@ export function CastPanel() {
     if (e.data.preview) setPv(e.data.preview);
   }), []);
 
-  // Frontend-driven sources own a camera stream or a blob URL; both live in refs so every exit path
-  // (stop, unmount, frame error, failed start) releases them. `session` invalidates pending async work.
+  // The camera stream lives in a ref so every exit path (stop, unmount, frame error, failed
+  // start) releases it. `session` invalidates pending async work.
   const streamRef = useRef<MediaStream | null>(null);
-  const urlRef = useRef<string | null>(null);
   const videoEl = useRef<HTMLVideoElement | null>(null);
   const session = useRef(0);
 
-  /** Stop the camera tracks, revoke the video URL and detach both from the <video>. */
+  /** Stop the camera tracks and detach them from the <video>. */
   function releaseMedia() {
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
@@ -46,9 +57,7 @@ export function CastPanel() {
     if (v) {
       v.pause();
       v.srcObject = null;
-      if (urlRef.current) v.removeAttribute('src');
     }
-    if (urlRef.current) { URL.revokeObjectURL(urlRef.current); urlRef.current = null; }
   }
 
   /** End the current cast, whatever its source: frame loop, media, backend. Safe to call twice. */
@@ -70,37 +79,29 @@ export function CastPanel() {
 
   async function start() {
     if (!devices.length) { toast.error(t('common.noFan')); return; }
-    if (src === 'test' || src === 'screen' || src === 'media') {
+    if (src === 'test' || src === 'screen' || src === 'media' || src === 'ha') {
       if (src === 'media' && !media) { toast.error(t('cast.pickMediaFirst')); return; }
+      if (src === 'ha' && !haCam) { toast.error(t('cast.pickHaCamera')); return; }
+      const source = src === 'media' ? `media:${media!.id}` : src === 'ha' ? `ha_camera:${haCam}` : src;
       try {
-        await invoke('cast_start', { args: { source: src === 'media' ? `media:${media!.id}` : src, fps, placement } });
+        await invoke('cast_start', { args: { source, fps, placement } });
         setRunning(true);
         addLog(t('cast.logStarted', { src }));
       } catch (e) { fail(t('cast.failed'), e); }
       return;
     }
-    // frontend-driven sources
-    if (src === 'video' && !picked?.video) { toast.error(t('cast.pickVideoFirst')); return; }
+    // frontend-driven: this device's camera
     releaseMedia();
     const id = ++session.current;
     const v = vidRef.current!;
     videoEl.current = v;
     try {
-      if (src === 'camera') {
-        if (!navigator.mediaDevices?.getUserMedia) throw new Error(t('cast.noCamera'));
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 } }, audio: false });
-        // Stopped, restarted or unmounted while the permission prompt was open: drop this stream.
-        if (id !== session.current) { stream.getTracks().forEach((track) => track.stop()); return; }
-        streamRef.current = stream;
-        v.srcObject = stream;
-      } else {
-        const p = picked!;
-        const url = URL.createObjectURL(new Blob([p.bytes as BlobPart], { type: p.mime }));
-        urlRef.current = url;
-        v.srcObject = null;
-        v.src = url;
-        v.loop = true;
-      }
+      if (!hasCamera()) throw new Error(t('cast.noCamera'));
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 } }, audio: false });
+      // Stopped, restarted or unmounted while the permission prompt was open: drop this stream.
+      if (id !== session.current) { stream.getTracks().forEach((track) => track.stop()); return; }
+      streamRef.current = stream;
+      v.srcObject = stream;
       await v.play();
       if (id !== session.current) return;
       live.current = true;
@@ -141,8 +142,8 @@ export function CastPanel() {
   const items: [Src, string, Icon, boolean][] = [
     ['test', t('common.testCard'), IconRings, true],
     ['media', t('cast.srcMedia'), IconImage, true],
-    ['video', t('cast.srcVideo'), IconFilm, true],
-    ['camera', t('cast.srcCamera'), IconCamera, true],
+    ['camera', t('cast.srcCamera'), IconCamera, hasCamera()],
+    ['ha', t('cast.srcHa'), IconCamera, haCams !== null],
     ['screen', t('cast.srcScreen'), IconMonitor, platform.screen],
   ];
   return (
@@ -154,11 +155,21 @@ export function CastPanel() {
             options={items.filter(([, , , ok]) => ok).map(([v, l, I]) => ({ value: v, label: l, icon: I, testId: `src-${v}` }))} />
           <p className="mt-2 text-xs text-muted-foreground">
             {src === 'media' && (media ? t('cast.usingMedia', { name: media.name, count: media.frames }) : t('cast.pickMediaHint'))}
-            {src === 'video' && (picked?.video ? t('cast.videoHint', { name: picked.name }) : t('cast.pickVideoHint'))}
+            {src === 'ha' && (haCams?.length ? t('cast.haHint') : t('cast.noHaCameras'))}
             {src === 'camera' && t('cast.cameraHint')}
             {src === 'screen' && t('cast.screenHint')}
             {src === 'test' && t('cast.testHint')}
           </p>
+          {src === 'ha' && !!haCams?.length && (
+            <div className="mt-3 max-w-sm">
+              <Select value={haCam} onValueChange={setHaCam} disabled={running}>
+                <SelectTrigger data-testid="ha-camera" aria-label={t('cast.srcHa')}><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {haCams.map((c) => <SelectItem key={c.entity_id} value={c.entity_id}>{c.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div className="mt-4"><ValueSlider label={t('common.fps')} value={fps} min={1} max={25} onCommit={setFps} disabled={running} /></div>
           <div className="mt-6 flex items-center gap-5">
             {!running
@@ -174,7 +185,7 @@ export function CastPanel() {
         {/* Never display:none: Android's WebView then decodes no frames (the camera turns on, but
             the picture stays empty). Shown small while a camera or video is cast. */}
         <video ref={vidRef} muted playsInline data-testid="cast-video"
-          className={running && (src === 'camera' || src === 'video') ? 'aspect-square w-32 rounded-full border border-border object-cover' : 'pointer-events-none fixed left-0 top-0 h-px w-px opacity-[0.01]'} />
+          className={running && src === 'camera' ? 'aspect-square w-32 rounded-full border border-border object-cover' : 'pointer-events-none fixed left-0 top-0 h-px w-px opacity-[0.01]'} />
       </div>
       <div className="min-w-0 lg:sticky lg:top-0 lg:self-start">
         <RoundView src={pv} spinning={running}

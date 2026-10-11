@@ -321,11 +321,11 @@ async function main() {
     await js(`$click('cast-stop')`); await sleep(500);
   });
 
-  await test('live cast: video (live)', async () => {
-    const b = (await sim()).cast_ok;
-    await js(`$click('src-video')`); await js(`$click('cast-start')`);
-    await waitSim('video cast', (s) => s.cast_ok >= b + 10, 20000);
-    await js(`$click('cast-stop')`); await sleep(500);
+  await test('cast sources: no live video, Home Assistant cameras only in Home Assistant', async () => {
+    // a video is cast as media (frames made on the Media tab); outside the add-on there are no HA cameras
+    if (await js(`!!$t('src-video')`)) throw new Error('the video source is still there');
+    if (await js(`!!$t('src-ha')`)) throw new Error('Home Assistant cameras offered outside Home Assistant');
+    if (!(await js(`!!$t('src-test') && !!$t('src-media')`))) throw new Error('test card or media source missing');
   });
 
   await test('format and factory reset (with confirmation)', async () => {
