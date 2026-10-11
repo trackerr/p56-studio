@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { t } from '@/lib/i18n';
-import { DEFAULT_PLACEMENT, invoke, onEvent, type Device, type FanTypeInfo, type MediaInfo, type Picked, type Placement } from '@/lib/api';
+import { DEFAULT_PLACEMENT, invoke, remoteServer, onEvent, type Device, type FanTypeInfo, type MediaInfo, type Picked, type Placement } from '@/lib/api';
 
 export type CurrentMedia = MediaInfo & { picked?: Picked };
 type Platform = { os: string; screen: boolean; version: string };
@@ -89,10 +89,12 @@ export function P56Provider({ children }: { children: ReactNode }) {
   }, [addLog]);
 
   const restartLink = useCallback(async () => {
+    // through a p56-server: never stop its link (other devices use it too)
+    if (remoteServer) { await refresh(); return; }
     await invoke('stop_link').catch(() => {});
     setDevices([]);
     await startLink();
-  }, [startLink]);
+  }, [startLink, refresh]);
 
   useEffect(() => {
     if (started.current) return;

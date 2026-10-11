@@ -12,6 +12,7 @@ import { NetworkPanel } from '@/panels/NetworkPanel';
 import { AppPanel } from '@/panels/AppPanel';
 import { cn } from '@/lib/utils';
 import { I18nProvider, LangSwitch, useT } from '@/lib/i18n';
+import { remoteServer } from '@/lib/api';
 import { NavProvider, type TabId } from '@/lib/nav';
 
 function Header() {
@@ -52,6 +53,7 @@ function Header() {
         <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground" data-testid="link-status">
           <span className={cn('h-[7px] w-[7px] shrink-0 rounded-full', dot)} />
           <span className="truncate">{text}</span>
+          {remoteServer && <span className="hidden shrink-0 sm:inline" title={remoteServer}>· {t('header.viaServer')}</span>}
           {devices.length > 1 && <span className="hidden shrink-0 md:inline">· {t('header.fans', { count: devices.length })}</span>}
         </div>
         <LangSwitch className="shrink-0" />

@@ -32,6 +32,12 @@ The Home Assistant add-on and integration have their own changelog in
   the CLI.
 - Bluetooth state (on, connected, connecting) and the speaker volume as the fan reports them.
 - Model names per fan type (P56, P50, P62, …); turn a picture in 90° steps.
+- **Several controllers for one fan:** P56 Studio can control the fans through a p56-server
+  (App tab) instead of its own engine, so phones, computers and Home Assistant share one fan.
+
+### Security
+- p56-server refuses requests from other web sites (a page could otherwise make this computer's
+  browser call the API on localhost); P56 Studio's own origin gets CORS headers.
 
 ### Changed
 - New look, "Baan": the fan as a dial (brightness on the inner arc, picture angle on the outer

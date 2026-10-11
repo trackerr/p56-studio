@@ -150,8 +150,9 @@ Then open **http://localhost:8765/**. It powers the Home Assistant add-on; stati
 It answers only this machine until you add `--lan`; protect that with `--api-token <token>`.
 `--fan-allow <ip>` limits which addresses may connect as a fan.
 
-One server can be the single controller of your fans while Home Assistant and any number of
-browsers use it at the same time: a fan keeps one connection, to the app or server it found.
+One server can be the single controller of your fans while Home Assistant, browsers and P56
+Studio on other phones and computers use it at the same time (App tab → *Control through a P56
+server*): a fan keeps one connection, to the app or server it found.
 
 <details>
 <summary>API in short</summary>

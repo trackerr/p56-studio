@@ -504,6 +504,30 @@ fn the_network_is_refused_unless_lan_is_given() {
     assert!(s.get("/api/state")["version"].is_string(), "this machine does");
 }
 
+/// A web page on another site may not make this machine's browser call the API (CSRF through
+/// localhost); P56 Studio's own origin gets CORS headers; clients without an Origin keep working.
+#[test]
+fn foreign_web_pages_are_refused_and_the_app_gets_cors() {
+    let s = start(false);
+    let url = format!("{}/api/call/devices", s.base);
+    let (code, v) = answer(ureq::post(&url).set("Origin", "https://evil.example").send_json(json!({})));
+    assert_eq!(code, 403, "{v}");
+    assert_eq!(answer(ureq::get(&format!("{}/api/state", s.base)).set("Origin", "http://evil.example").call()).0, 403);
+    // the page itself (same origin) and clients without an Origin
+    let own = format!("http://127.0.0.1:{}", s.http);
+    assert_eq!(answer(ureq::post(&url).set("Origin", &own).send_json(json!({}))).0, 200);
+    assert_eq!(answer(ureq::post(&url).send_json(json!({}))).0, 200);
+    // P56 Studio: CORS headers on the answer and on the preflight
+    for app in ["tauri://localhost", "http://tauri.localhost", "https://tauri.localhost"] {
+        let r = ureq::post(&url).set("Origin", app).send_json(json!({})).unwrap();
+        assert_eq!(r.header("Access-Control-Allow-Origin"), Some(app));
+        let r = ureq::request("OPTIONS", &url).set("Origin", app).set("Access-Control-Request-Method", "POST").call().unwrap();
+        assert_eq!(r.status(), 204);
+        assert_eq!(r.header("Access-Control-Allow-Origin"), Some(app));
+        assert!(r.header("Access-Control-Allow-Headers").is_some_and(|h| h.contains("Authorization")));
+    }
+}
+
 #[test]
 fn too_large_bodies_get_413() {
     let s = start(false);

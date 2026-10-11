@@ -137,6 +137,44 @@ fn has_token(req: &Request, token: &str) -> bool {
             .is_some_and(|(_, q)| q.split('&').any(|kv| kv.strip_prefix("token=").is_some_and(|v| same_secret(&percent_decode(v), token.as_bytes()))))
 }
 
+/// Origins of P56 Studio itself (Tauri on Windows / Linux / macOS / Android).
+const APP_ORIGINS: [&str; 3] = ["tauri://localhost", "http://tauri.localhost", "https://tauri.localhost"];
+
+fn header<'a>(req: &'a Request, name: &'static str) -> Option<&'a str> {
+    req.headers().iter().find(|h| h.field.equiv(name)).map(|h| h.value.as_str())
+}
+
+/// Where a browser request comes from, as far as it matters: `Ok(Some(origin))` for P56 Studio
+/// (it gets CORS headers), `Ok(None)` for no Origin (curl, Home Assistant) or the page itself, and
+/// `Err(())` for any other web page. Browsers send Origin on every cross-site request, so a page
+/// on another site can never make this machine's browser call the API (no CSRF via localhost).
+fn origin(req: &Request) -> Result<Option<String>, ()> {
+    let Some(o) = header(req, "Origin").map(str::trim).filter(|o| !o.is_empty() && *o != "null") else { return Ok(None) };
+    if APP_ORIGINS.contains(&o) {
+        return Ok(Some(o.to_string()));
+    }
+    let host = header(req, "Host").unwrap_or("");
+    let own = o.strip_prefix("http://").or_else(|| o.strip_prefix("https://")).is_some_and(|h| h.eq_ignore_ascii_case(host));
+    if own {
+        Ok(None)
+    } else {
+        Err(())
+    }
+}
+
+/// CORS headers for P56 Studio's origin.
+fn cors<R: Read>(resp: Response<R>, origin: &Option<String>) -> Response<R> {
+    match origin {
+        None => resp,
+        Some(o) => resp
+            .with_header(Header::from_bytes("Access-Control-Allow-Origin", o.as_bytes()).unwrap())
+            .with_header(Header::from_bytes("Vary", "Origin").unwrap())
+            .with_header(Header::from_bytes("Access-Control-Allow-Headers", "Authorization, Content-Type").unwrap())
+            .with_header(Header::from_bytes("Access-Control-Allow-Methods", "GET, POST, OPTIONS").unwrap())
+            .with_header(Header::from_bytes("Access-Control-Max-Age", "600").unwrap()),
+    }
+}
+
 fn allowed(addr: Option<&std::net::SocketAddr>) -> bool {
     match addr.map(|a| a.ip()) {
         Some(std::net::IpAddr::V4(ip)) => ip.is_loopback() || (ip.octets()[0] == 172 && ip.octets()[1] == 30 && (ip.octets()[2] & 0xFE) == 32),
@@ -204,16 +242,29 @@ fn main() {
             let _ = req.respond(json_response(&json!({ "error": "Forbidden" }), 403));
             continue;
         }
+        // Home Assistant's ingress proxy (Supervisor network) forwards the browser's HA origin.
+        let supervisor = trusted && req.remote_addr().is_some_and(|a| !a.ip().is_loopback());
+        let origin = match origin(&req) {
+            Ok(o) => o,
+            Err(()) if supervisor => None,
+            Err(()) => {
+                log::debug!("403 for {} from a foreign web page ({:?})", req.url().split('?').next().unwrap_or(""), header(&req, "Origin"));
+                let _ = req.respond(json_response(&json!({ "error": "Forbidden: requests from other web sites are not accepted" }), 403));
+                continue;
+            }
+        };
         if let Some(t) = &token {
             if !trusted && !public(req.method(), req.url()) && !has_token(&req, t) {
                 log::debug!("401 for {} {} from {:?}", req.method(), req.url().split('?').next().unwrap_or(""), req.remote_addr());
-                let _ =
-                    req.respond(json_response(&json!({ "error": "Unauthorized" }), 401).with_header(Header::from_bytes("WWW-Authenticate", "Bearer").unwrap()));
+                let _ = req.respond(cors(
+                    json_response(&json!({ "error": "Unauthorized" }), 401).with_header(Header::from_bytes("WWW-Authenticate", "Bearer").unwrap()),
+                    &origin,
+                ));
                 continue;
             }
         }
         if req.body_length().is_some_and(|n| n > MAX_BODY) {
-            let _ = req.respond(json_response(&json!({ "error": format!("Payload too large (max {} MB)", MAX_BODY >> 20) }), 413));
+            let _ = req.respond(cors(json_response(&json!({ "error": format!("Payload too large (max {} MB)", MAX_BODY >> 20) }), 413), &origin));
             continue;
         }
         let stream = req.url().split('?').next().is_some_and(|p| p.trim_end_matches('/') == "/api/events");
@@ -225,7 +276,7 @@ fn main() {
         let subs = subs.clone();
         thread::spawn(move || {
             let _slot = slot;
-            handle(req, &svc, &subs)
+            handle(req, &svc, &subs, &origin)
         });
     }
 }
@@ -362,7 +413,7 @@ fn body_json(req: &mut Request) -> Value {
     serde_json::from_str(&s).unwrap_or(Value::Null)
 }
 
-fn handle(mut req: Request, svc: &Arc<Service>, subs: &Subscribers) {
+fn handle(mut req: Request, svc: &Arc<Service>, subs: &Subscribers, origin: &Option<String>) {
     let url = req.url().split('?').next().unwrap_or("/").trim_end_matches('/').to_string();
     let method = req.method().clone();
     let path = if url.is_empty() { "/".to_string() } else { url };
@@ -376,7 +427,7 @@ fn handle(mut req: Request, svc: &Arc<Service>, subs: &Subscribers) {
         }
         (Method::Get, "/api/ping") => json_response(&json!({ "ok": true, "server": "p56-server", "version": env!("CARGO_PKG_VERSION") }), 200),
         (Method::Get, "/api/events") => {
-            sse(req, subs);
+            sse(req, subs, origin);
             return;
         }
         (Method::Get, "/api/state") => json_response(&state(svc), 200),
@@ -396,7 +447,7 @@ fn handle(mut req: Request, svc: &Arc<Service>, subs: &Subscribers) {
                     let r = Response::from_data(png)
                         .with_header(Header::from_bytes("Content-Type", "image/png").unwrap())
                         .with_header(Header::from_bytes("Cache-Control", "no-store").unwrap());
-                    let _ = req.respond(r);
+                    let _ = req.respond(cors(r, origin));
                     return;
                 }
                 None => json_response(&json!({ "error": "Nothing shown yet" }), 404),
@@ -454,7 +505,7 @@ fn handle(mut req: Request, svc: &Arc<Service>, subs: &Subscribers) {
         (Method::Options, _) => json_response(&Value::Null, 204),
         _ => json_response(&json!({ "error": "Not found" }), 404),
     };
-    let _ = req.respond(resp);
+    let _ = req.respond(cors(resp, origin));
 }
 
 fn all_fans(svc: &Service) -> Vec<u32> {
@@ -499,11 +550,14 @@ fn state(svc: &Service) -> Value {
 }
 
 /// Server-sent events: one `data:` line per event, a comment every 15 s to keep proxies open.
-fn sse(req: Request, subs: &Subscribers) {
+fn sse(req: Request, subs: &Subscribers, origin: &Option<String>) {
     let (tx, rx): (Sender<String>, Receiver<String>) = mpsc::channel();
     subs.lock().unwrap().push(tx);
     let mut w = req.into_writer();
-    let head = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-store\r\nConnection: keep-alive\r\nX-Accel-Buffering: no\r\n\r\n";
+    let cors = origin.as_ref().map(|o| format!("Access-Control-Allow-Origin: {o}\r\nVary: Origin\r\n")).unwrap_or_default();
+    let head = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-store\r\nConnection: keep-alive\r\nX-Accel-Buffering: no\r\n{cors}\r\n"
+    );
     if w.write_all(head.as_bytes()).and_then(|_| w.write_all(b": p56\n\n")).and_then(|_| w.flush()).is_err() {
         return;
     }

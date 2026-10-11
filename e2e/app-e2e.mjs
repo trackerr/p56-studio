@@ -88,7 +88,9 @@ async function shot(name) {
 let prevLang;
 async function restoreLang() {
   if (prevLang === undefined || !ws || ws.readyState !== 1) return;
-  const expr = prevLang ? `localStorage.setItem('p56.lang', ${JSON.stringify(prevLang)}); true` : `localStorage.removeItem('p56.lang'); true`;
+  // also never leave the owner's app in "through a server" mode
+  const expr = (prevLang ? `localStorage.setItem('p56.lang', ${JSON.stringify(prevLang)});` : `localStorage.removeItem('p56.lang');`)
+    + ` localStorage.removeItem('p56.server'); true`;
   await Promise.race([js(expr).catch(() => {}), sleep(2000)]);
 }
 
@@ -304,6 +306,32 @@ async function main() {
     await waitSim('reset', (s) => s.resets === 1 && s.device_name === 'E2E-FAN');
     await js(`$click('btn-format')`); await sleep(300); await js(`$confirm()`);
     await waitSim('format', (s) => s.formats === 1 && s.files.length === 0);
+  });
+
+  if (!android) await test('control through a p56-server (the app as its client)', async () => {
+    const http = 8771;
+    const srv = start(join(target, profile, 'p56-server.exe'), ['--http-port', String(http), '--tcp-port', '6666', '--fan', '127.0.0.1', '--ip', '127.0.0.1']);
+    await js(`$tab('app')`); await sleep(400);
+    await js(`$click('mode-server')`); await sleep(200);
+    await js(`$type('server-url', '127.0.0.1:${http}')`); await sleep(100);
+    // "use" lets the app's own link go (so the fan can reach the server) and reloads
+    await js(`$click('server-use')`);
+    await sleep(3000);
+    await js(HELPERS);
+    const end = Date.now() + 20000;
+    while (!(await js(`$text('link-status')`)).includes('E2E-FAN')) { if (Date.now() > end) throw new Error('through the server: ' + await js(`$text('link-status')`)); await sleep(300); }
+    if (!(await js(`$text('link-status')`)).includes('via server')) throw new Error('header does not say "via server"');
+    await js(`$tab('fan')`); await sleep(400);
+    const before = (await sim()).power;
+    await js(`$click('btn-power')`); await waitSim('power toggled through the server', (s) => s.power !== before);
+    await js(`$click('btn-power')`); await waitSim('power back', (s) => s.power === before);
+    await shot('07-via-server');
+    // back to the app's own engine (the server lets go of the fan first)
+    srv.kill(); await sleep(500);
+    await js(`$tab('app')`); await sleep(300);
+    await js(`$click('mode-local')`);
+    await sleep(2500);
+    await js(HELPERS);
   });
 
   await test('no protocol errors in the simulator', async () => {

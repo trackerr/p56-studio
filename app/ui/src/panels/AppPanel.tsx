@@ -4,8 +4,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Section } from '@/components/bits';
-import { invoke, isTauri } from '@/lib/api';
+import { Choice, Section } from '@/components/bits';
+import { invoke, isTauri, pingServer, remoteServer, serverUrl, setRemoteServer } from '@/lib/api';
 import { LangSwitch, useT } from '@/lib/i18n';
 import { useP56 } from '@/state';
 
@@ -53,7 +53,9 @@ export function AppPanel() {
         <p className="mt-3 text-xs leading-relaxed text-muted-foreground">{t('app.fanTypeHint')}</p>
       </Section>
 
-      <Section title={t('app.connection')}>
+      {isTauri && <ServerMode />}
+
+      {!remoteServer && <Section title={t('app.connection')}>
         <div className="space-y-4">
           <div className="space-y-1.5"><Label className="text-xs text-muted-foreground" htmlFor="set-ip">{t('app.ipLabel')}</Label>
             <Input id="set-ip" value={ip} placeholder={t('app.example', { value: '192.168.4.2' })} onChange={(e) => setIp(e.target.value)} /></div>
@@ -62,7 +64,7 @@ export function AppPanel() {
           <Button data-testid="apply-net" onClick={async () => { lsSet('p56.ip', ip.trim()); lsSet('p56.targets', targets.trim()); await restartLink(); toast.success(t('app.reconnected')); }}>{t('app.apply')}</Button>
         </div>
         <pre className="mt-4 overflow-auto font-mono text-[11px] leading-relaxed text-muted-foreground">{linkInfo}</pre>
-      </Section>
+      </Section>}
 
       <Section title={t('lang.label')} aside={<LangSwitch testId="app-lang" />} className="lg:col-span-2">
         <p className="text-xs leading-relaxed text-muted-foreground">{t('lang.hint')}</p>
@@ -73,5 +75,31 @@ export function AppPanel() {
         <p className="mt-3 text-xs text-muted-foreground">P56 Studio {platform.version} · {platform.os || (isTauri ? '' : t('app.browserDemo'))}</p>
       </Section>
     </div>
+  );
+}
+
+/** Control the fan through a p56-server instead of this app's own engine. */
+function ServerMode() {
+  const { t } = useT();
+  const [mode, setMode] = useState<'local' | 'server'>(remoteServer ? 'server' : 'local');
+  const [url, setUrl] = useState(remoteServer);
+  const [found, setFound] = useState<boolean | null>(null);
+  const test = async () => setFound(await pingServer(url));
+  return (
+    <Section title={t('app.serverTitle')} className="lg:col-span-2">
+      <Choice label={t('app.serverTitle')} value={mode} onChange={(m) => { setMode(m); if (m === 'local' && remoteServer) setRemoteServer(''); }}
+        options={[{ value: 'local', label: t('app.modeLocal'), testId: 'mode-local' }, { value: 'server', label: t('app.modeServer'), testId: 'mode-server' }]} />
+      {mode === 'server' && (
+        <form className="mt-3 flex flex-wrap items-center gap-2" onSubmit={(e) => { e.preventDefault(); setRemoteServer(url); }}>
+          <Input className="min-w-48 flex-1" value={url} placeholder={t('app.example', { value: '192.168.1.10:8765' })} aria-label={t('app.serverAddress')}
+            data-testid="server-url" onChange={(e) => { setUrl(e.target.value); setFound(null); }} />
+          <Button type="button" variant="secondary" disabled={!url.trim()} onClick={test}>{t('app.serverTest')}</Button>
+          <Button type="submit" data-testid="server-use" disabled={!url.trim() || serverUrl(url) === remoteServer}>{t('app.serverUse')}</Button>
+        </form>
+      )}
+      <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+        {found === true ? t('app.serverOk') : found === false ? t('app.serverMissing') : remoteServer ? t('app.serverActive', { url: remoteServer }) : t('app.serverHint')}
+      </p>
+    </Section>
   );
 }

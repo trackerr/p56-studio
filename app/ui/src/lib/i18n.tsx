@@ -26,6 +26,7 @@ const en = {
   'tabShort.cast': 'Cast',
   'nav.label': 'Main menu',
   'header.pickFan': 'Choose a fan',
+  'header.viaServer': 'via server',
   'lang.label': 'Language',
   'lang.hint': 'Interface language. Messages from the fan and technical details are shown as they are received.',
 
@@ -263,6 +264,16 @@ const en = {
   'app.seenUdp': 'fans seen via UDP: {list}',
   'app.noneUdp': 'no fan seen via UDP yet',
   'app.log': 'Log',
+  'app.serverTitle': 'Control through a P56 server',
+  'app.modeLocal': 'This app controls the fan',
+  'app.modeServer': 'Through a P56 server',
+  'app.serverAddress': 'Server address',
+  'app.serverTest': 'Test',
+  'app.serverUse': 'Use this server',
+  'app.serverOk': 'A P56 server answers at this address.',
+  'app.serverMissing': 'No P56 server answers at this address. Is it running with --lan?',
+  'app.serverActive': 'This app controls the fans through {url}.',
+  'app.serverHint': 'A fan keeps one connection. Through a p56-server (or the Home Assistant add-on) several phones and computers can control it at the same time. Start the server with --lan and an API token to reach it from other devices.',
   'app.browserDemo': 'browser (demo fan)',
 } satisfies Record<string, Entry>;
 
@@ -285,6 +296,7 @@ const nl: Record<Key, Entry> = {
   'tabShort.cast': 'Cast',
   'nav.label': 'Hoofdmenu',
   'header.pickFan': 'Kies een fan',
+  'header.viaServer': 'via server',
   'lang.label': 'Taal',
   'lang.hint': 'Taal van de app. Meldingen van de fan en technische details worden getoond zoals ze binnenkomen.',
 
@@ -513,6 +525,16 @@ const nl: Record<Key, Entry> = {
   'app.seenUdp': 'fans gezien via UDP: {list}',
   'app.noneUdp': 'nog geen fan gezien via UDP',
   'app.log': 'Logboek',
+  'app.serverTitle': 'Bedienen via een P56-server',
+  'app.modeLocal': 'Deze app bedient de fan',
+  'app.modeServer': 'Via een P56-server',
+  'app.serverAddress': 'Adres van de server',
+  'app.serverTest': 'Testen',
+  'app.serverUse': 'Deze server gebruiken',
+  'app.serverOk': 'Op dit adres antwoordt een P56-server.',
+  'app.serverMissing': 'Op dit adres antwoordt geen P56-server. Draait hij met --lan?',
+  'app.serverActive': 'Deze app bedient de fans via {url}.',
+  'app.serverHint': 'Een fan houdt één verbinding. Via een p56-server (of de Home Assistant-add-on) kunnen meerdere telefoons en computers hem tegelijk bedienen. Start de server met --lan en een API-token om hem vanaf andere apparaten te bereiken.',
   'app.browserDemo': 'browser (demo-fan)',
 };
 

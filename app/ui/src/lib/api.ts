@@ -67,15 +67,51 @@ function authHeaders(h: Record<string, string> = {}): Record<string, string> {
   return apiToken ? { ...h, Authorization: `Bearer ${apiToken}` } : h;
 }
 
-// Served by p56-server (Home Assistant add-on)? Relative URLs keep working behind ingress.
-const serverProbe: Promise<boolean> = isTauri ? Promise.resolve(false)
+// ---- where the commands go ----
+// In the app: to the built-in engine, or (when set in the App tab) to a p56-server on the network,
+// so several devices can control one fan through it. In a browser: to the p56-server that served
+// the page (relative URLs keep working behind Home Assistant's ingress), else to the demo fan.
+const SERVER_KEY = 'p56.server';
+/** The p56-server this app uses instead of its own engine ('' = none). */
+export const remoteServer: string = (() => {
+  if (!isTauri) return '';
+  try { return (localStorage.getItem(SERVER_KEY) || '').trim(); } catch { return ''; }
+})();
+const withSlash = (u: string) => u.replace(/\/*$/, '/');
+const base = remoteServer ? withSlash(remoteServer) : '';
+/** "192.168.1.10" → "http://192.168.1.10:8765": add the scheme and p56-server's port when missing. */
+export function serverUrl(input: string): string {
+  let u = input.trim().replace(/\/+$/, '');
+  if (!u) return '';
+  if (!/^https?:\/\//i.test(u)) u = `http://${u}`;
+  const host = u.replace(/^https?:\/\//i, '').split('/')[0];
+  if (!/:\d+$/.test(host)) u = u.replace(host, `${host}:8765`);
+  return u;
+}
+/** Use a p56-server from now on ('' = the app's own engine again); reloads the app. */
+export async function setRemoteServer(url: string) {
+  const u = serverUrl(url);
+  // let go of the fan, so it can connect to the server instead (the engine keeps running otherwise)
+  if (isTauri && u && !remoteServer) await T.core.invoke('p56', { cmd: 'stop_link', args: {} }).catch(() => {});
+  try { if (u) localStorage.setItem(SERVER_KEY, u); else localStorage.removeItem(SERVER_KEY); } catch { /* private mode */ }
+  window.location.reload();
+}
+/** Is a p56-server answering at `url`? (for the App tab's "test" button) */
+export async function pingServer(url: string): Promise<boolean> {
+  try {
+    const r = await fetch(`${withSlash(serverUrl(url))}api/ping`, { cache: 'no-store', headers: authHeaders() });
+    return r.ok && !!(await r.json())?.ok;
+  } catch { return false; }
+}
+
+const serverProbe: Promise<boolean> = remoteServer ? Promise.resolve(true) : isTauri ? Promise.resolve(false)
   : fetch('api/ping', { cache: 'no-store', headers: authHeaders() }).then((r) => r.ok && r.json()).then((j) => !!j?.ok).catch(() => false);
-export const transport = serverProbe.then((s) => (isTauri ? 'tauri' : s ? 'server' : 'demo') as 'tauri' | 'server' | 'demo');
+export const transport = serverProbe.then((s) => (s ? 'server' : isTauri ? 'tauri' : 'demo') as 'tauri' | 'server' | 'demo');
 
 export async function invoke<R = unknown>(cmd: string, args?: Record<string, unknown>): Promise<R> {
-  if (isTauri) return T.core.invoke('p56', { cmd, args: args ?? {} });
+  if (isTauri && !remoteServer) return T.core.invoke('p56', { cmd, args: args ?? {} });
   if (await serverProbe) {
-    const r = await fetch(`api/call/${cmd}`, { method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(args ?? {}) });
+    const r = await fetch(`${base}api/call/${cmd}`, { method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(args ?? {}) });
     if (r.status === 401) { requireAuth(); throw t('api.unauthorized'); }
     const j = await r.json();
     if (!j.ok) throw j.error;
@@ -90,11 +126,11 @@ export function onEvent(cb: (e: P56Event) => void): () => void {
   return () => listeners.delete(cb);
 }
 function emit(e: P56Event) { listeners.forEach((l) => l(e)); }
-if (isTauri) T.event.listen('p56', (e: { payload: P56Event }) => emit(e.payload));
+if (isTauri && !remoteServer) T.event.listen('p56', (e: { payload: P56Event }) => emit(e.payload));
 serverProbe.then((s) => {
   if (!s) return;
   const connect = () => {
-    const es = new EventSource(apiToken ? `api/events?token=${encodeURIComponent(apiToken)}` : 'api/events');
+    const es = new EventSource(`${base}api/events${apiToken ? `?token=${encodeURIComponent(apiToken)}` : ''}`);
     es.onmessage = (m) => { try { emit(JSON.parse(m.data)); } catch { /* ignore */ } };
     es.onerror = () => { es.close(); setTimeout(connect, 3000); };
   };
