@@ -9,51 +9,52 @@ Control P56 / Holoscope POV hologram fans from Windows, Android, the command lin
 Local, fast, no account, no cloud.
 
 [![CI](https://github.com/trackerr/p56-studio/actions/workflows/ci.yml/badge.svg)](https://github.com/trackerr/p56-studio/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/trackerr/p56-studio?color=22d3ee)](https://github.com/trackerr/p56-studio/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/trackerr/p56-studio/total?color=22d3ee)](https://github.com/trackerr/p56-studio/releases)
-![Platforms](https://img.shields.io/badge/platforms-Windows%20%C2%B7%20Android%20%C2%B7%20Linux-555)
-![Rust](https://img.shields.io/badge/made%20with-Rust-dea584?logo=rust)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/trackerr/p56-studio?color=3a3833)](https://github.com/trackerr/p56-studio/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/trackerr/p56-studio/total?color=3a3833)](https://github.com/trackerr/p56-studio/releases)
+![Platforms](https://img.shields.io/badge/platforms-Windows%20%C2%B7%20Android%20%C2%B7%20Linux-3a3833)
+![Rust](https://img.shields.io/badge/made%20with-Rust-3a3833?logo=rust)
+[![License: MIT](https://img.shields.io/badge/license-MIT-3a3833.svg)](LICENSE)
 
-[![Download for Windows](https://img.shields.io/badge/Download-Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/trackerr/p56-studio/releases/latest)
-[![Download for Android](https://img.shields.io/badge/Download-Android-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/trackerr/p56-studio/releases/latest)
-[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-add--on-18BCF2?style=for-the-badge&logo=homeassistant&logoColor=white)](https://github.com/trackerr/home-assistant-p56)
+[![Download for Windows](https://img.shields.io/badge/Download-Windows-060708?style=for-the-badge&logo=windows&logoColor=F4EFE6)](https://github.com/trackerr/p56-studio/releases/latest)
+[![Download for Android](https://img.shields.io/badge/Download-Android-060708?style=for-the-badge&logo=android&logoColor=F4EFE6)](https://github.com/trackerr/p56-studio/releases/latest)
+[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-add--on-060708?style=for-the-badge&logo=homeassistant&logoColor=F4EFE6)](https://github.com/trackerr/home-assistant-p56)
 
-<img src="docs/screenshots/cast.jpg" width="860" alt="P56 Studio casting a live test card to a fan">
+<img src="docs/screenshots/fan.jpg" width="860" alt="P56 Studio: the fan as a round dial, with brightness on the inner arc and the picture angle on the outer ring">
 
 </div>
 
 ---
 
-## ✨ Features
+## Features
 
 <table>
 <tr>
 <td width="50%" valign="top">
 
-**🎛️ Full control**<br>
-Power, play/pause, brightness (16 steps), picture angle, colour mode, repeat, breathing light,
-autostart, group master, volume, rename, delete, format and factory reset.
+**Full control**<br>
+The fan is drawn as a dial: drag the inner arc for brightness (16 steps) and the outer ring to turn
+the picture. Plus power, play/pause, colour mode, repeat, breathing light, autostart, group master,
+volume, rename, delete, format and factory reset.
 
-**🖼️ Upload anything**<br>
+**Upload anything**<br>
 Photos, GIFs and video (decoded right in the app), or just type a **text**: it is word-wrapped
 and sized to fit the round display.
 
-**📡 Live cast**<br>
+**Live cast**<br>
 Stream a test card, your media, a video, your **camera** or your **screen** to one or more fans
 at ~15 fps, with nothing stored on the fan.
 
 </td>
 <td width="50%" valign="top">
 
-**👀 True preview**<br>
+**True preview**<br>
 See exactly what the fan will show, both as the round picture and as the fan's own polar
 layout, before you send it.
 
-**📶 Network setup**<br>
+**Network setup**<br>
 Rename the fan, change its hotspot, put it on your Wi-Fi (router mode), manage Bluetooth.
 
-**🏠 Home Assistant**<br>
+**Home Assistant**<br>
 An add-on and integration: text with icons and ready-made styles, notifications, camera
 snapshots, GIFs and videos on the fan from your automations. [Learn more →](https://github.com/trackerr/home-assistant-p56)
 
@@ -61,21 +62,23 @@ snapshots, GIFs and videos on the fan from your automations. [Learn more →](ht
 </tr>
 </table>
 
-## 📸 Screenshots
+## Screenshots
 
 <table>
 <tr>
-<td width="62%"><img src="docs/screenshots/media.jpg" alt="Media tab with a text on the round preview"><br><sub><b>Media</b>: text, photo, GIF or video, with the round preview and the fan's own picture layout</sub></td>
+<td width="62%"><img src="docs/screenshots/media.jpg" alt="Media tab with a text on the round preview and the unwrapped strip below"><br><sub><b>Media</b>: text, photo, GIF or video, with the round preview and the picture as the fan receives it</sub></td>
 <td width="38%" rowspan="2" align="center"><img src="docs/screenshots/phone.png" width="260" alt="P56 Studio on a phone"><br><sub>The same app on <b>Android</b></sub></td>
 </tr>
 <tr>
-<td><img src="docs/screenshots/fan.jpg" alt="Fan tab with all controls"><br><sub><b>Fan</b>: every setting of the fan in one place</sub></td>
+<td><img src="docs/screenshots/cast.jpg" alt="Cast tab streaming the test card"><br><sub><b>Cast</b>: a test card, your media, a video, the camera or the screen, live</sub></td>
 </tr>
 </table>
 
+The look is called *Baan* (Dutch for orbit): everything is round, like the fan itself. See [docs/DESIGN.md](docs/DESIGN.md).
+
 ---
 
-## 🚀 Get started
+## Get started
 
 ### Windows
 
@@ -102,7 +105,7 @@ one-click install buttons, a sidebar panel with this app, and actions like `p56_
 
 ---
 
-## 🧪 No fan? Use the simulator
+## No fan? Use the simulator
 
 `p56-sim` behaves exactly like a real fan on your network, so you can try everything without hardware.
 
@@ -114,7 +117,7 @@ p56-sim --count 3            # three fans
 Open P56 Studio and the simulated fan connects by itself. **http://localhost:8099/** shows what
 it displays, its settings and any protocol errors.
 
-## ⌨️ Command line
+## Command line
 
 <details>
 <summary><b>p56</b>: every feature from a terminal or script</summary>
@@ -133,7 +136,7 @@ p56 --help
 Options for all commands: `--target <fan-ip>:8988` (reach a fan directly), `--fan <n>` / `--all` (several fans), `--type <fan type>`, `--wait <seconds>`.
 </details>
 
-## 🌐 Server
+## Server
 
 `p56-server` runs the same engine headless, with an HTTP API, live events and this web app:
 
@@ -160,7 +163,7 @@ Full reference: [add-on documentation](ha/p56_pov_display/DOCS.md#http-api-port-
 
 ---
 
-## 🔌 Supported fans
+## Supported fans
 
 | Fan types (as reported by the fan) | Status |
 | --- | --- |
@@ -171,7 +174,7 @@ Full reference: [add-on documentation](ha/p56_pov_display/DOCS.md#http-api-port-
 The protocol was worked out from the Holoscope app and is documented in
 [PROTOCOL.md](PROTOCOL.md). Everything is tested against the built-in simulator.
 
-## 🏗️ How it fits together
+## How it fits together
 
 ```mermaid
 flowchart LR
@@ -201,15 +204,15 @@ flowchart LR
 | --- | --- |
 | [`crates/p56-core`](crates/p56-core) | Protocol, picture conversion (polar warp, JPEG), network link |
 | [`crates/p56-service`](crates/p56-service) | Everything the apps do, behind one command API |
-| [`app/`](app) | P56 Studio: Tauri 2 shell + React/shadcn UI (`app/ui`) |
+| [`app/`](app) | P56 Studio: Tauri 2 shell + React UI (`app/ui`, Radix primitives with its own design: [DESIGN.md](docs/DESIGN.md)) |
 | [`crates/p56-cli`](crates/p56-cli) | `p56` command line |
 | [`crates/p56-sim`](crates/p56-sim) | Simulated fans with a web view |
 | [`crates/p56-server`](crates/p56-server) | Headless server for Home Assistant and other hosts |
 | [`ha/`](ha) | Home Assistant add-on and integration — the source of [home-assistant-p56](https://github.com/trackerr/home-assistant-p56), which is published from this folder with `git subtree split --prefix ha` (make changes here, not there) |
-| [`e2e/`](e2e), [`scripts/`](scripts) | End-to-end tests, gauntlet loop, Android build |
+| [`e2e/`](e2e), [`scripts/`](scripts) | End-to-end tests, gauntlet loop, Android build, README screenshots |
 </details>
 
-## 🛠️ Build and test
+## Build and test
 
 <details>
 <summary>Build from source</summary>

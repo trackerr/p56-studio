@@ -222,13 +222,43 @@ const demoFan: Device = {
 let demoMedia = 0;
 const demoFrames = new Map<number, number>();
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-function demoPreview(): Preview {
-  const c = document.createElement('canvas'); c.width = c.height = 240;
+const demoTexts = new Map<number, { text: string; color: string; bg: string }>();
+/** Demo preview: the test card or a text card, plus that picture unwrapped into angle × radius like the fan's own layout. */
+function demoPreview(media = 0): Preview {
+  const N = 360, c = document.createElement('canvas'); c.width = c.height = N;
   const g = c.getContext('2d')!;
-  g.fillStyle = '#000'; g.fillRect(0, 0, 240, 240);
-  [[110, '#ff3b3b'], [80, '#3bff7a'], [50, '#3b7aff']].forEach(([r, col]) => { g.strokeStyle = col as string; g.lineWidth = 8; g.beginPath(); g.arc(120, 120, r as number, 0, Math.PI * 2); g.stroke(); });
-  const url = c.toDataURL('image/png');
-  return { round: url, layout: url, jpeg_bytes: 18873, quality: 80, width: 688, height: 240, frames: 1 };
+  const txt = demoTexts.get(media);
+  g.fillStyle = txt?.bg ?? '#000'; g.fillRect(0, 0, N, N);
+  if (txt) {
+    const words = txt.text.split(/\s+/).filter(Boolean);
+    let size = 84, lines: string[] = [];
+    for (; size > 18; size -= 4) {
+      g.font = `bold ${size}px sans-serif`;
+      lines = [];
+      for (const w of words) {
+        const l = lines.length ? `${lines[lines.length - 1]} ${w}` : w;
+        if (lines.length && g.measureText(l).width <= N * 0.72) lines[lines.length - 1] = l; else lines.push(w);
+      }
+      if (lines.every((l) => g.measureText(l).width <= N * 0.72) && lines.length * size * 1.1 <= N * 0.6) break;
+    }
+    g.fillStyle = txt.color; g.textAlign = 'center'; g.textBaseline = 'middle';
+    lines.forEach((l, i) => g.fillText(l, N / 2, N / 2 + (i - (lines.length - 1) / 2) * size * 1.1));
+  } else {
+    [[165, '#ff3b3b'], [120, '#3bff7a'], [75, '#3b7aff']].forEach(([r, col]) => { g.strokeStyle = col as string; g.lineWidth = 12; g.beginPath(); g.arc(N / 2, N / 2, r as number, 0, Math.PI * 2); g.stroke(); });
+  }
+  const W = 688, H = 240, px = g.getImageData(0, 0, N, N).data;
+  const s = document.createElement('canvas'); s.width = W; s.height = H;
+  const sg = s.getContext('2d')!, out = sg.createImageData(W, H);
+  for (let x = 0; x < W; x++) {
+    const th = (x / W) * Math.PI * 2 - Math.PI / 2;
+    for (let y = 0; y < H; y++) {
+      const r = (y / H) * (N / 2);
+      const sx = Math.min(N - 1, Math.round(N / 2 + r * Math.cos(th))), sy = Math.min(N - 1, Math.round(N / 2 + r * Math.sin(th)));
+      out.data.set(px.subarray((sy * N + sx) * 4, (sy * N + sx) * 4 + 4), (y * W + x) * 4);
+    }
+  }
+  sg.putImageData(out, 0, 0);
+  return { round: c.toDataURL('image/png'), layout: s.toDataURL('image/png'), jpeg_bytes: 18873, quality: 80, width: W, height: H, frames: 1 };
 }
 async function demo(cmd: string, a: any): Promise<unknown> {
   await sleep(60);
@@ -266,11 +296,11 @@ async function demo(cmd: string, a: any): Promise<unknown> {
       if (a.what === 'rename') demoFan.files = demoFan.files.map(([n, f]) => [n, n === a.slot ? (a.a.endsWith('.mp4') ? a.a : a.a + '.mp4') : f]);
       return null;
     case 'media_load': demoMedia++; demoFrames.set(demoMedia, 1); return { id: demoMedia, name: a.name, frames: 1, width: 1024, height: 768 };
-    case 'media_text': demoMedia++; demoFrames.set(demoMedia, 1); return { id: demoMedia, name: a.name || t('demo.textName'), frames: 1, width: 720, height: 720 };
+    case 'media_text': demoMedia++; demoFrames.set(demoMedia, 1); demoTexts.set(demoMedia, { text: a.text, color: a.color, bg: a.background }); return { id: demoMedia, name: a.name || t('demo.textName'), frames: 1, width: 720, height: 720 };
     case 'media_begin': demoMedia++; demoFrames.set(demoMedia, 0); return demoMedia;
     case 'media_push': { const n = (demoFrames.get(a.media) ?? 0) + 1; demoFrames.set(a.media, n); return n; }
     case 'media_drop': return null;
-    case 'preview': return { ...demoPreview(), frames: demoFrames.get(a.media) ?? 1 };
+    case 'preview': return { ...demoPreview(a.media), frames: demoFrames.get(a.media) ?? 1 };
     case 'upload': {
       for (const [stage, d] of [['transcoding', 0], ['sending', 1]] as const) { emit({ type: 'progress', data: { stage, done: d, total: 2 } }); await sleep(300); }
       const name = (a.args.name || 'media') + '.mp4';

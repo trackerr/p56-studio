@@ -1,30 +1,41 @@
+@import '@fontsource/michroma/latin-400.css';
+@import '@fontsource/red-hat-mono/latin-400.css';
+@import '@fontsource/red-hat-mono/latin-500.css';
+@import '@fontsource/red-hat-mono/latin-700.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * "Baan" (orbit): everything round, like the fan itself. Near-black ground, warm white light,
+ * one RGB fringe as the only colour. Michroma for labels, Red Hat Mono for everything else.
+ */
 @layer base {
   :root, .dark {
-    /* deep blue-black with a cyan "hologram" accent */
-    --background: 222 24% 7%;
-    --foreground: 210 20% 92%;
-    --card: 222 22% 10%;
-    --card-foreground: 210 20% 92%;
-    --popover: 222 22% 11%;
-    --popover-foreground: 210 20% 92%;
-    --primary: 192 100% 61%;
-    --primary-foreground: 200 80% 8%;
-    --secondary: 220 16% 17%;
-    --secondary-foreground: 210 20% 92%;
-    --muted: 220 16% 15%;
-    --muted-foreground: 218 12% 62%;
-    --accent: 220 16% 18%;
-    --accent-foreground: 210 20% 96%;
-    --destructive: 0 78% 60%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 220 14% 20%;
-    --input: 220 14% 22%;
-    --ring: 192 100% 61%;
-    --radius: 0.45rem;
+    --background: 210 14% 3%;      /* #060708 */
+    --foreground: 40 20% 91%;      /* #EDEAE4 */
+    --card: 210 8% 5%;             /* #0B0C0D */
+    --card-foreground: 40 20% 91%;
+    --popover: 210 8% 6%;
+    --popover-foreground: 40 20% 91%;
+    --primary: 39 39% 93%;         /* #F4EFE6, the "light" */
+    --primary-foreground: 210 14% 3%;
+    --secondary: 40 5% 11%;        /* #1D1C1A */
+    --secondary-foreground: 40 20% 91%;
+    --muted: 40 5% 11%;
+    --muted-foreground: 38 5% 54%; /* #8E8A83 */
+    --accent: 40 5% 13%;
+    --accent-foreground: 39 39% 93%;
+    --destructive: 7 100% 74%;     /* #FF8A7A */
+    --destructive-foreground: 210 14% 3%;
+    --border: 40 5% 11%;           /* hairlines */
+    --input: 43 6% 21%;            /* #3A3833, control outlines */
+    --ring: 39 39% 93%;
+    --radius: 2px;
+    --fringe-r: #ff2d55;
+    --fringe-g: #2dff8a;
+    --fringe-b: #3d7bff;
   }
 }
 
@@ -32,17 +43,34 @@
   * { @apply border-border; }
   html, body, #root { height: 100%; }
   body {
-    @apply bg-background text-foreground antialiased;
-    font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
-    background-image: radial-gradient(1200px 500px at 85% -10%, hsl(192 100% 61% / 0.06), transparent 60%);
+    @apply bg-background font-sans text-foreground antialiased;
+    font-size: 14px;
     -webkit-tap-highlight-color: transparent;
   }
-  code, .font-mono { font-family: "Cascadia Mono", Consolas, ui-monospace, monospace; }
+  ::selection { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); }
+  :focus-visible { outline: 1px solid hsl(var(--ring)); outline-offset: 3px; }
+  input[type='color'] { -webkit-appearance: none; appearance: none; padding: 0; }
+  input[type='color']::-webkit-color-swatch-wrapper { padding: 3px; }
+  input[type='color']::-webkit-color-swatch { border: 0; border-radius: 50%; }
+  * { scrollbar-width: thin; scrollbar-color: hsl(var(--input)) transparent; }
 }
 
-/* slow light sweep over the round preview while casting */
-@keyframes sweep { to { transform: rotate(360deg); } }
-.blade-sweep {
-  background: conic-gradient(from 0deg, transparent 0deg, hsl(192 100% 61% / 0.18) 12deg, transparent 40deg);
-  animation: sweep 1.2s linear infinite;
+@layer components {
+  /* small wide caps: section titles, readout labels, navigation */
+  .orbit-label {
+    @apply font-display text-[9px] uppercase tracking-[0.22em] text-muted-foreground;
+  }
+  .orbit-value { @apply font-sans text-primary tabular-nums; }
+}
+
+/* the light sweep of the blade over a round preview */
+@keyframes orbit-spin { to { transform: rotate(360deg); } }
+.orbit-sweep {
+  background: conic-gradient(from 0deg, transparent 0deg, rgb(255 255 255 / 0.14) 6deg, transparent 48deg);
+  animation: orbit-spin 1.6s linear infinite;
+}
+/* a dot circling while the app looks for a fan */
+.orbit-seek { animation: orbit-spin 2.4s linear infinite; transform-origin: 50% 50%; }
+@media (prefers-reduced-motion: reduce) {
+  .orbit-sweep, .orbit-seek { animation: none; }
 }

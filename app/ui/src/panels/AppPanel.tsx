@@ -37,7 +37,7 @@ export function AppPanel() {
     : t('app.broadcastingAs', { ip: localIp || '…' });
 
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
+    <div className="grid gap-x-12 gap-y-8 lg:grid-cols-2">
       <Section title={t('app.fanType')}>
         <Select value={type} onValueChange={setType}>
           <SelectTrigger data-testid="fan-type"><SelectValue /></SelectTrigger>
@@ -50,27 +50,27 @@ export function AppPanel() {
             ))}
           </SelectContent>
         </Select>
-        <p className="mt-2 text-xs text-muted-foreground">{t('app.fanTypeHint')}</p>
+        <p className="mt-3 text-xs leading-relaxed text-muted-foreground">{t('app.fanTypeHint')}</p>
       </Section>
 
       <Section title={t('app.connection')}>
-        <div className="space-y-3">
-          <div className="space-y-1"><Label className="text-xs text-muted-foreground" htmlFor="set-ip">{t('app.ipLabel')}</Label>
+        <div className="space-y-4">
+          <div className="space-y-1.5"><Label className="text-xs text-muted-foreground" htmlFor="set-ip">{t('app.ipLabel')}</Label>
             <Input id="set-ip" value={ip} placeholder={t('app.example', { value: '192.168.4.2' })} onChange={(e) => setIp(e.target.value)} /></div>
-          <div className="space-y-1"><Label className="text-xs text-muted-foreground" htmlFor="set-targets">{t('app.targetsLabel')}</Label>
+          <div className="space-y-1.5"><Label className="text-xs text-muted-foreground" htmlFor="set-targets">{t('app.targetsLabel')}</Label>
             <Input id="set-targets" value={targets} placeholder={t('app.example', { value: '192.168.1.50' })} onChange={(e) => setTargets(e.target.value)} /></div>
           <Button data-testid="apply-net" onClick={async () => { lsSet('p56.ip', ip.trim()); lsSet('p56.targets', targets.trim()); await restartLink(); toast.success(t('app.reconnected')); }}>{t('app.apply')}</Button>
         </div>
-        <pre className="mt-3 overflow-auto rounded-md bg-black/40 p-2 font-mono text-[11px] leading-relaxed text-muted-foreground">{linkInfo}</pre>
+        <pre className="mt-4 overflow-auto font-mono text-[11px] leading-relaxed text-muted-foreground">{linkInfo}</pre>
       </Section>
 
       <Section title={t('lang.label')} aside={<LangSwitch testId="app-lang" />} className="lg:col-span-2">
-        <p className="text-xs text-muted-foreground">{t('lang.hint')}</p>
+        <p className="text-xs leading-relaxed text-muted-foreground">{t('lang.hint')}</p>
       </Section>
 
       <Section title={t('app.log')} className="lg:col-span-2">
-        <pre ref={logRef} data-testid="log" className="h-56 overflow-auto whitespace-pre-wrap rounded-md bg-black/40 p-2 font-mono text-[11px] text-muted-foreground">{log.join('\n') || '—'}</pre>
-        <p className="mt-2 text-xs text-muted-foreground">P56 Studio {platform.version} · {platform.os || (isTauri ? '' : t('app.browserDemo'))}</p>
+        <pre ref={logRef} data-testid="log" className="h-60 overflow-auto whitespace-pre-wrap border border-border bg-black p-3 font-mono text-[11px] leading-relaxed text-muted-foreground">{log.join('\n') || '—'}</pre>
+        <p className="mt-3 text-xs text-muted-foreground">P56 Studio {platform.version} · {platform.os || (isTauri ? '' : t('app.browserDemo'))}</p>
       </Section>
     </div>
   );

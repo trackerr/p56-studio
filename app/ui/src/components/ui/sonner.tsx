@@ -1,34 +1,33 @@
-import { useTheme } from "next-themes"
-import { Toaster as Sonner } from "sonner"
-import { useT } from "@/lib/i18n"
+import { Toaster as Sonner } from 'sonner';
+import { useT } from '@/lib/i18n';
 
-type ToasterProps = React.ComponentProps<typeof Sonner>
+type ToasterProps = React.ComponentProps<typeof Sonner>;
 
+/** Notifications: square, hairline border, mono text; colour only on the leading glyph. */
 const Toaster = ({ toastOptions, ...props }: ToasterProps) => {
-  const { theme = "system" } = useTheme()
-  const { t } = useT()
-
+  const { t } = useT();
   return (
     <Sonner
-      theme={theme as ToasterProps["theme"]}
+      theme="dark"
       className="toaster group"
-      containerAriaLabel={t("common.notifications")}
+      containerAriaLabel={t('common.notifications')}
       toastOptions={{
-        closeButtonAriaLabel: t("common.close"),
+        closeButtonAriaLabel: t('common.close'),
         classNames: {
-          toast:
-            "group toast group-[.toaster]:bg-background group-[.toaster]:text-foreground group-[.toaster]:border-border group-[.toaster]:shadow-lg",
-          description: "group-[.toast]:text-muted-foreground",
-          actionButton:
-            "group-[.toast]:bg-primary group-[.toast]:text-primary-foreground",
-          cancelButton:
-            "group-[.toast]:bg-muted group-[.toast]:text-muted-foreground",
+          toast: 'group toast !rounded-[2px] !border !border-line !bg-card !font-sans !text-[13px] !text-foreground !shadow-none',
+          title: '!font-medium',
+          description: '!text-muted-foreground',
+          icon: '[&_svg]:!text-primary',
+          error: '[&_[data-icon]_svg]:!text-destructive',
+          closeButton: '!border-line !bg-card !text-muted-foreground hover:!text-primary',
+          actionButton: '!bg-primary !text-primary-foreground',
+          cancelButton: '!bg-secondary !text-muted-foreground',
         },
         ...toastOptions,
       }}
       {...props}
     />
-  )
-}
+  );
+};
 
-export { Toaster }
+export { Toaster };

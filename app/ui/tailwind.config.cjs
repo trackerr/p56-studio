@@ -7,7 +7,13 @@ module.exports = {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        sans: ['"Red Hat Mono"', 'ui-monospace', 'Consolas', 'monospace'],
+        mono: ['"Red Hat Mono"', 'ui-monospace', 'Consolas', 'monospace'],
+        display: ['Michroma', '"Segoe UI"', 'sans-serif'],
+      },
       colors: {
+        line: "hsl(var(--input))",
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- P56 Studio icon, "Baan" style: bezel, brightness arc, disc with RGB fringe, one blade at 12 o'clock.
+       Render to app-icon.png (1024², transparent) and run `npx tauri icon app-icon.png` in app/. -->
+  <circle cx="512" cy="512" r="488" fill="#060708"/>
+  <circle cx="512" cy="512" r="446" fill="none" stroke="#8E8A83" stroke-width="26" stroke-dasharray="7 226.86" stroke-dashoffset="3.5"/>
+  <circle cx="512" cy="512" r="384" fill="none" stroke="#1D1C1A" stroke-width="54" stroke-linecap="round"
+          stroke-dasharray="1809.6 2412.7" transform="rotate(135 512 512)"/>
+  <circle cx="512" cy="512" r="384" fill="none" stroke="#F4EFE6" stroke-width="54" stroke-linecap="round"
+          stroke-dasharray="1357.2 2412.7" transform="rotate(135 512 512)"/>
+  <circle cx="512" cy="512" r="296" fill="#000"/>
+  <circle cx="505" cy="512" r="298" fill="none" stroke="#ff2d55" stroke-opacity=".75" stroke-width="7"/>
+  <circle cx="519" cy="512" r="298" fill="none" stroke="#3d7bff" stroke-opacity=".8" stroke-width="7"/>
+  <line x1="512" y1="512" x2="512" y2="262" stroke="#F4EFE6" stroke-width="44" stroke-linecap="round"/>
+  <circle cx="512" cy="512" r="40" fill="#F4EFE6"/>
+</svg>

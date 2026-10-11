@@ -21,6 +21,10 @@ const en = {
   'tab.cast': 'Cast',
   'tab.network': 'Network',
   'tab.app': 'App',
+  'tabShort.playlist': 'List',
+  'tabShort.network': 'Net',
+  'nav.label': 'Main menu',
+  'header.pickFan': 'Choose a fan',
   'lang.label': 'Language',
   'lang.hint': 'Interface language. Messages from the fan and technical details are shown as they are received.',
 
@@ -95,7 +99,12 @@ const en = {
   'fan.colorMode': 'Color mode',
   'fan.trueColor': 'True color',
   'fan.highBrightness': 'High brightness',
-  'fan.playback': 'Playback & behavior',
+  'fan.playback': 'Playback',
+  'fan.behavior': 'Behavior',
+  'fan.ringHint': 'Drag the outer ring to turn the picture, the inner arc to set the brightness.',
+  'strip.title': 'Now on the fan',
+  'strip.add': 'Add',
+  'strip.show': 'Show {name}',
   'fan.repeat': 'Repeat',
   'fan.repeatAll': 'Whole list',
   'fan.repeatOne': 'Current',
@@ -116,7 +125,7 @@ const en = {
   // playlist
   'playlist.title': { one: 'Playlist · {count} file', other: 'Playlist · {count} files' },
   'playlist.empty': 'The playlist is empty. Add something via {media}.',
-  'playlist.playing': '● playing',
+  'playlist.playing': 'playing',
   'playlist.show': 'Show',
   'playlist.rename': 'Rename',
   'playlist.deleteTitle': 'Delete "{name}"?',
@@ -194,6 +203,7 @@ const en = {
   'cast.screenHint': 'Mirrors your main screen to the fan.',
   'cast.testHint': "Red, green and blue rings with a white line to 12 o'clock.",
   'cast.start': 'Start casting',
+  'cast.live': 'Casting live',
   'cast.toFans': { one: 'to {count} fan', other: 'to {count} fans' },
   'cast.stats': { one: '{fps} fps · {count} fan · JPEG {kb} kB · q{q}', other: '{fps} fps · {count} fans · JPEG {kb} kB · q{q}' },
   'cast.starting': 'starting…',
@@ -209,7 +219,7 @@ const en = {
   'net.off': 'Off',
   'net.scan': 'Scan',
   'net.disconnect': 'Disconnect',
-  'net.connected': '● connected',
+  'net.connected': 'connected',
   'net.connect': 'Connect',
   'net.noDevices': 'No devices yet. Turn Bluetooth on and click {scan}.',
   'net.hotspot': "Fan's own Wi-Fi (hotspot)",
@@ -263,6 +273,10 @@ const nl: Record<Key, Entry> = {
   'tab.cast': 'Casten',
   'tab.network': 'Netwerk',
   'tab.app': 'App',
+  'tabShort.playlist': 'Lijst',
+  'tabShort.network': 'Net',
+  'nav.label': 'Hoofdmenu',
+  'header.pickFan': 'Kies een fan',
   'lang.label': 'Taal',
   'lang.hint': 'Taal van de app. Meldingen van de fan en technische details worden getoond zoals ze binnenkomen.',
 
@@ -333,7 +347,12 @@ const nl: Record<Key, Entry> = {
   'fan.colorMode': 'Kleurmodus',
   'fan.trueColor': 'True color',
   'fan.highBrightness': 'Hoge helderheid',
-  'fan.playback': 'Afspelen & gedrag',
+  'fan.playback': 'Afspelen',
+  'fan.behavior': 'Gedrag',
+  'fan.ringHint': 'Sleep de buitenrand om het beeld te draaien, de binnenste boog voor de helderheid.',
+  'strip.title': 'Nu op de fan',
+  'strip.add': 'Toevoegen',
+  'strip.show': '{name} tonen',
   'fan.repeat': 'Herhalen',
   'fan.repeatAll': 'Hele lijst',
   'fan.repeatOne': 'Huidig',
@@ -353,7 +372,7 @@ const nl: Record<Key, Entry> = {
 
   'playlist.title': { one: 'Afspeellijst · {count} bestand', other: 'Afspeellijst · {count} bestanden' },
   'playlist.empty': 'De afspeellijst is leeg. Voeg iets toe via {media}.',
-  'playlist.playing': '● speelt',
+  'playlist.playing': 'speelt',
   'playlist.show': 'Tonen',
   'playlist.rename': 'Hernoemen',
   'playlist.deleteTitle': '"{name}" wissen?',
@@ -429,6 +448,7 @@ const nl: Record<Key, Entry> = {
   'cast.screenHint': 'Spiegelt je hoofdscherm naar de fan.',
   'cast.testHint': 'Rode, groene en blauwe ring met een witte lijn naar 12 uur.',
   'cast.start': 'Start casten',
+  'cast.live': 'Live aan het casten',
   'cast.toFans': { one: 'naar {count} fan', other: 'naar {count} fans' },
   'cast.stats': { one: '{fps} fps · {count} fan · JPEG {kb} kB · q{q}', other: '{fps} fps · {count} fans · JPEG {kb} kB · q{q}' },
   'cast.starting': 'starten…',
@@ -443,7 +463,7 @@ const nl: Record<Key, Entry> = {
   'net.off': 'Uit',
   'net.scan': 'Zoeken',
   'net.disconnect': 'Loskoppelen',
-  'net.connected': '● verbonden',
+  'net.connected': 'verbonden',
   'net.connect': 'Verbinden',
   'net.noDevices': 'Nog geen apparaten. Zet bluetooth aan en klik op {scan}.',
   'net.hotspot': 'Eigen wifi van de fan (hotspot)',
@@ -568,16 +588,16 @@ export function useT(): I18n {
   return ctx ?? fallback;
 }
 
-/** Compact NL / EN switch. */
+/** Compact NL / EN switch: two words, the active one lit. */
 export function LangSwitch({ className, testId = 'lang' }: { className?: string; testId?: string }) {
   const { lang, setLang: set, t: tt } = useT();
   const onKey = useCallback((l: Lang) => () => set(l), [set]);
   return (
     <div role="group" aria-label={tt('lang.label')} data-testid={`${testId}-switch`}
-      className={'inline-flex overflow-hidden rounded-md border border-border text-[11px] font-semibold ' + (className ?? '')}>
+      className={'inline-flex font-display text-[10px] tracking-[0.14em] ' + (className ?? '')}>
       {LANGS.map((l) => (
         <button key={l} type="button" lang={l} title={LANG_NAMES[l]} aria-pressed={lang === l} data-testid={`${testId}-${l}`} onClick={onKey(l)}
-          className={'px-2 py-1 uppercase transition-colors ' + (lang === l ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary hover:text-foreground')}>
+          className={'min-h-11 min-w-10 uppercase transition-colors ' + (lang === l ? 'text-primary' : 'text-muted-foreground hover:text-foreground')}>
           {l}
         </button>
       ))}

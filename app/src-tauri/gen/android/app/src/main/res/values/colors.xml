@@ -7,4 +7,6 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+    <!-- the app ground ("Baan"), so start-up and the system bars do not flash white -->
+    <color name="baan_ground">#FF060708</color>
 </resources>

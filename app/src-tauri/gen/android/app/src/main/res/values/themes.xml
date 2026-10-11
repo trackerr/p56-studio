@@ -1,6 +1,8 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <!-- Base application theme. -->
     <style name="Theme.p56_studio" parent="Theme.Material3.DayNight.NoActionBar">
-        <!-- Customize your theme here. -->
+        <item name="android:windowBackground">@color/baan_ground</item>
+        <item name="android:statusBarColor">@color/baan_ground</item>
+        <item name="android:navigationBarColor">@color/baan_ground</item>
     </style>
 </resources>

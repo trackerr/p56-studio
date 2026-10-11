@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { FileImage, FlaskConical, Upload, Film, X, Type } from 'lucide-react';
 import { toast } from 'sonner';
+import { IconFilm, IconImage, IconRings, IconType, IconUpload, IconX } from '@/components/icons';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -20,8 +20,8 @@ export function PlacementBox() {
       <ValueSlider label={t('media.horizontal')} value={p.x} min={-0.5} max={0.5} step={0.01} format={(v) => v.toFixed(2)} onCommit={(x) => setPlacement({ ...p, x })} />
       <ValueSlider label={t('media.vertical')} value={p.y} min={-0.5} max={0.5} step={0.01} format={(v) => v.toFixed(2)} onCommit={(y) => setPlacement({ ...p, y })} />
       <ValueSlider label={t('media.scale')} value={p.scale} min={0.3} max={2} step={0.01} format={(v) => `${v.toFixed(2)}×`} onCommit={(scale) => setPlacement({ ...p, scale })} />
-      <div className="flex items-center justify-between py-2">
-        <Label htmlFor="sw-mirror" className="font-normal">{t('media.mirror')}</Label>
+      <div className="flex items-center justify-between gap-3">
+        <Label htmlFor="sw-mirror">{t('media.mirror')}</Label>
         <Switch id="sw-mirror" checked={p.mirror} onCheckedChange={(mirror) => setPlacement({ ...p, mirror })} />
       </div>
     </Section>
@@ -168,38 +168,38 @@ export function MediaPanel() {
     ['max', t('common.maxFrames'), 1, 3000, 1],
   ] as const;
   return (
-    <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
-      <div className="space-y-4">
-        <Section title={t('common.source')}>
+    <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_380px] lg:gap-12">
+      <div className="min-w-0 space-y-8">
+        <Section title={t('common.source')} className="border-t-0 pt-0">
           <div className="flex flex-wrap gap-2">
-            <Button onClick={pick} disabled={!!busy} data-testid="pick"><FileImage className="mr-1.5 h-4 w-4" />{t('media.pick')}</Button>
+            <Button onClick={pick} disabled={!!busy} data-testid="pick"><IconImage />{t('media.pick')}</Button>
             <Button variant="secondary" disabled={!!busy} data-testid="testcard" onClick={() => { setPicked(null); setMedia(null); setName(t('media.testCardName')); setFrame(0); }}>
-              <FlaskConical className="mr-1.5 h-4 w-4" />{t('common.testCard')}
+              <IconRings />{t('common.testCard')}
             </Button>
           </div>
-          <form className="mt-3 flex flex-wrap items-center gap-2" onSubmit={(e) => { e.preventDefault(); makeText(); }}>
+          <form className="mt-4 flex flex-wrap items-center gap-2" onSubmit={(e) => { e.preventDefault(); makeText(); }}>
             <Input className="min-w-48 flex-1" placeholder={t('media.textPlaceholder')} aria-label={t('media.text')} value={txt.text} data-testid="text-input" onChange={(e) => setTxt({ ...txt, text: e.target.value })} />
-            <input type="color" aria-label={t('media.textColor')} title={t('media.textColor')} value={txt.color} onChange={(e) => setTxt({ ...txt, color: e.target.value })} className="h-9 w-10 cursor-pointer rounded border border-input bg-transparent" />
-            <input type="color" aria-label={t('media.background')} title={t('media.background')} value={txt.bg} onChange={(e) => setTxt({ ...txt, bg: e.target.value })} className="h-9 w-10 cursor-pointer rounded border border-input bg-transparent" />
-            <Button type="submit" variant="secondary" disabled={!txt.text.trim() || !!busy} data-testid="text-make"><Type className="mr-1.5 h-4 w-4" />{t('media.text')}</Button>
+            <input type="color" aria-label={t('media.textColor')} title={t('media.textColor')} value={txt.color} onChange={(e) => setTxt({ ...txt, color: e.target.value })} className="h-11 w-11 cursor-pointer rounded-full border border-line bg-transparent" />
+            <input type="color" aria-label={t('media.background')} title={t('media.background')} value={txt.bg} onChange={(e) => setTxt({ ...txt, bg: e.target.value })} className="h-11 w-11 cursor-pointer rounded-full border border-line bg-transparent" />
+            <Button type="submit" variant="secondary" disabled={!txt.text.trim() || !!busy} data-testid="text-make"><IconType />{t('media.text')}</Button>
           </form>
           {/* data-frames / data-size let tests check the result without depending on the UI language */}
-          <p className="mt-2 text-sm text-muted-foreground" data-testid="media-info" data-frames={media?.frames ?? 0} data-size={media?.width ? `${media.width}x${media.height}` : ''}>
+          <p className="mt-3 text-xs text-muted-foreground" data-testid="media-info" data-frames={media?.frames ?? 0} data-size={media?.width ? `${media.width}x${media.height}` : ''}>
             {media ? <>{t('media.info', { name: media.name, count: media.frames })}{media.width ? ` · ${media.width}×${media.height}` : ''}</>
               : picked?.video ? t('media.infoVideo', { name: picked.name }) : t('media.infoTestCard')}
           </p>
           {picked?.video && (
-            <div className="mt-3 rounded-md border border-dashed border-border p-3">
-              <div className="mb-2 flex items-center gap-2 text-sm"><Film className="h-4 w-4" />{t('media.convert')}</div>
+            <div className="mt-4 border border-dashed border-line p-4">
+              <div className="mb-4 flex items-center gap-2 text-[13px] text-primary"><IconFilm />{t('media.convert')}</div>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 {fields.map(([k, l, mn, mx, st]) => (
-                  <div key={k} className="space-y-1"><Label className="text-xs text-muted-foreground" htmlFor={`vid-${k}`}>{l}</Label>
+                  <div key={k} className="space-y-1.5"><Label className="orbit-label" htmlFor={`vid-${k}`}>{l}</Label>
                     <Input id={`vid-${k}`} type="number" min={mn} max={mx} step={st} value={vid[k]} onChange={(e) => setVid({ ...vid, [k]: Number(e.target.value) })} /></div>
                 ))}
               </div>
-              <div className="mt-3 flex gap-2">
+              <div className="mt-4 flex gap-2">
                 <Button onClick={makeFrames} disabled={!!busy} data-testid="make-frames">{t('media.makeFrames')}</Button>
-                {busy && 'step' in busy && busy.step === 'frames' && <Button variant="ghost" onClick={() => (cancel.current = true)}><X className="mr-1 h-4 w-4" />{t('common.stop')}</Button>}
+                {busy && 'step' in busy && busy.step === 'frames' && <Button variant="ghost" onClick={() => (cancel.current = true)}><IconX />{t('common.stop')}</Button>}
               </div>
             </div>
           )}
@@ -207,35 +207,40 @@ export function MediaPanel() {
 
         <Section title={t('media.toFan')}>
           <div className="grid gap-3 sm:grid-cols-[1fr_110px_130px]">
-            <div className="space-y-1"><Label className="text-xs text-muted-foreground" htmlFor="up-name">{t('media.nameOnFan')}</Label>
+            <div className="space-y-1.5"><Label className="orbit-label" htmlFor="up-name">{t('media.nameOnFan')}</Label>
               <Input id="up-name" data-testid="up-name" value={name} placeholder={t('media.fileName')} onChange={(e) => setName(e.target.value)} /></div>
-            <div className="space-y-1"><Label className="text-xs text-muted-foreground" htmlFor="up-slot">{t('media.showSlot')}</Label>
+            <div className="space-y-1.5"><Label className="orbit-label" htmlFor="up-slot">{t('media.showSlot')}</Label>
               <Input id="up-slot" type="number" min={1} max={255} value={slot} onChange={(e) => setSlot(Number(e.target.value) || 1)} /></div>
-            <div className="space-y-1"><Label className="text-xs text-muted-foreground" htmlFor="up-max">{t('common.maxFrames')}</Label>
+            <div className="space-y-1.5"><Label className="orbit-label" htmlFor="up-max">{t('common.maxFrames')}</Label>
               <Input id="up-max" type="number" min={0} value={maxFrames} onChange={(e) => setMaxFrames(Number(e.target.value) || 0)} /></div>
           </div>
-          <div className="mt-3 flex flex-wrap items-center gap-3">
-            <Button onClick={doUpload} disabled={!!busy || !fan || (picked?.video && !media)} data-testid="upload"><Upload className="mr-1.5 h-4 w-4" />{t('media.upload')}</Button>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <Button onClick={doUpload} disabled={!!busy || !fan || (picked?.video && !media)} data-testid="upload"><IconUpload />{t('media.upload')}</Button>
             {!fan && <span className="text-xs text-muted-foreground">{t('media.connectFirst')}</span>}
             {busy && <span className="text-xs text-muted-foreground" data-testid="busy">{busyText}</span>}
           </div>
-          {prog != null && <Progress value={prog} className="mt-3 h-1.5" />}
+          {prog != null && <Progress value={prog} className="mt-4" />}
         </Section>
 
         <PlacementBox />
       </div>
 
-      <div className="space-y-3 lg:sticky lg:top-4 lg:self-start">
+      <div className="min-w-0 space-y-5 lg:sticky lg:top-0 lg:self-start">
         <RoundView src={pv?.round} label={pvErr ? <span className="text-destructive">{pvErr}</span> :
           pv ? t('media.preview', { size: `${pv.width}×${pv.height}`, kb: (pv.jpeg_bytes / 1024).toFixed(1), q: pv.quality }) : t('media.previewLoading')} />
         {n > 1 && (
-          <div className="flex items-center gap-3 px-2">
-            <span className="text-xs text-muted-foreground">{t('media.frame')}</span>
-            <Slider value={[frame]} min={0} max={n - 1} step={1} onValueChange={([f]) => setFrame(f)} />
-            <span className="w-16 text-right font-mono text-xs">{frame + 1}/{n}</span>
+          <div className="flex items-center gap-4">
+            <span className="orbit-label">{t('media.frame')}</span>
+            <Slider value={[frame]} min={0} max={n - 1} step={1} aria-label={t('media.frame')} onValueChange={([f]) => setFrame(f)} />
+            <span className="orbit-value w-16 text-right text-xs">{frame + 1}/{n}</span>
           </div>
         )}
-        {pv?.layout && <img src={pv.layout} alt="" className="w-full rounded border border-border" title={t('media.layoutTitle')} />}
+        {pv?.layout && (
+          <figure className="space-y-2">
+            <img src={pv.layout} alt="" className="w-full border border-line" />
+            <figcaption className="text-xs text-muted-foreground">{t('media.layoutTitle')}</figcaption>
+          </figure>
+        )}
       </div>
     </div>
   );

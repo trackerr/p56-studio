@@ -1,32 +1,21 @@
-# React + TypeScript + Vite
+# P56 Studio UI
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+React + TypeScript + Vite, built into one self-contained file (`../src/index.html`) that the Tauri app
+and `p56-server` both serve.
 
-Currently, two official plugins are available:
-
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+pnpm install
+pnpm dev          # http://localhost:1420, with a demo fan when not running inside the app
+pnpm exec tsc -b  # type check
+pnpm run bundle   # → ../src/index.html (commit it with UI changes)
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+- `src/App.tsx`: shell (header, orbit rail / bottom bar, tabs)
+- `src/panels/`: one file per tab
+- `src/components/bits.tsx`: the design's own parts (`Orbit`, `Choice`, `Section`, …)
+- `src/components/icons.tsx`: the app's icons
+- `src/components/ui/`: Radix primitives with the app's styling
+- `src/lib/api.ts`: bridge to the Rust backend (Tauri, `p56-server`, or the in-browser demo fan)
+- `src/lib/i18n.tsx`: English and Dutch texts
+
+The design (tokens, components, layout) is described in [docs/DESIGN.md](../../docs/DESIGN.md).
