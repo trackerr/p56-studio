@@ -188,6 +188,22 @@ fn upload_reports_acknowledged_and_listed() {
     r.clean();
 }
 
+/// As the real P56 behaved: no 0E after the data (a 29 instead), no playlist unless asked.
+/// The upload must still count as acknowledged and listed, and the next one must work.
+#[test]
+fn upload_on_a_fan_that_answers_like_the_real_p56() {
+    let r = rig();
+    r.sim.modify(|s| s.quiet_upload = true);
+    let t = std::time::Instant::now();
+    let o = r.link.upload(r.id, &[r.jpeg()], "real1", Some(1)).unwrap();
+    assert!(o.acked && o.listed, "{o:?}");
+    let o = r.link.upload(r.id, &[r.jpeg(), r.jpeg()], "real2", None).unwrap();
+    assert!(o.acked && o.listed, "{o:?}");
+    assert!(t.elapsed() < Duration::from_secs(12), "no step waits for an answer that never comes: {:?}", t.elapsed());
+    r.wait_sim(|s| s.file_names() == vec!["real1.mp4".to_string(), "real2.mp4".to_string()]);
+    r.clean();
+}
+
 #[test]
 fn upload_refuses_an_incomplete_jpeg() {
     let r = rig();

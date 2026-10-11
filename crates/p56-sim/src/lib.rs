@@ -97,6 +97,9 @@ pub struct SimState {
     pub cast_bad: u64,
     /// Fault injection: take cast frames but never acknowledge them (a stalled fan).
     pub cast_mute: bool,
+    /// Behave like a real P56 seen on 2026-10-11: no 0E after the file data (a 29 instead) and
+    /// no playlist after storing a file unless it is asked for (1C).
+    pub quiet_upload: bool,
     pub formats: u32,
     pub resets: u32,
     pub heartbeats: u32,
@@ -139,6 +142,7 @@ impl SimState {
             cast_ok: 0,
             cast_bad: 0,
             cast_mute: false,
+            quiet_upload: false,
             formats: 0,
             resets: 0,
             heartbeats: 0,
@@ -653,7 +657,11 @@ fn finish_upload(sh: &Shared, out: &mut Out, up: Upload, ft: u8) -> bool {
         g.uploads += 1;
     }
     sh.changed.notify_all();
-    out.ready();
+    if sh.state.lock().unwrap().quiet_upload {
+        out.send(&[SOF, op::TRANS_DONE, op::TRANS_DONE, EOF]);
+    } else {
+        out.ready();
+    }
     ok
 }
 
@@ -1096,9 +1104,11 @@ fn handle(sh: &Shared, out: &mut Out, pkt: &[u8], ft: u8, just_uploaded: &mut bo
             out.ready();
             if *just_uploaded {
                 *just_uploaded = false;
-                out.send(&[SOF, op::TRANS_DONE, op::TRANS_DONE, EOF]);
-                out.send(&files(sh));
-                out.send(&status(sh));
+                if !sh.state.lock().unwrap().quiet_upload {
+                    out.send(&[SOF, op::TRANS_DONE, op::TRANS_DONE, EOF]);
+                    out.send(&files(sh));
+                    out.send(&status(sh));
+                }
             }
         }
         op::FILE_NAME => {

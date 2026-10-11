@@ -690,7 +690,11 @@ impl Link {
                 Some(Packet::Error(e)) => Err(Error::Fan(e)),
                 Some(_) => Ok(true),
                 None if gone() => Err(Error::NotConnected),
-                None => Ok(false),
+                None => {
+                    // nothing came: the next answer belongs to the next step, not to this one
+                    answers.set(answers.get() - 1);
+                    Ok(false)
+                }
             }
         };
         let step = |d: &[u8], ms: u64| -> Result<bool, Error> {
@@ -704,6 +708,7 @@ impl Link {
             return Err(Error::Fan(e));
         }
         let (head, records) = proto::upload_blob_with_audio(frames, audio);
+        let data_mark = self.packet_seq(id);
         let mut s = self.stream(id)?;
         let io = |e: std::io::Error| Error::Io(e.to_string());
         s.write_all(&head).map_err(io)?;
@@ -711,8 +716,10 @@ impl Link {
             s.write_all(chunk).map_err(io)?;
             thread::sleep(Duration::from_millis(2));
         }
-        // The fan acks the stored data; give it time for large animations.
-        let acked = expect(1000 + records.len() as u64 / 2000)?;
+        // The fan acks the stored data (0E, or 29 "stored" / 21 on firmware that does not send
+        // 0E here, as a real P56 does); give it time for large animations.
+        let acked = expect(1000 + records.len() as u64 / 2000)?
+            || self.wait_packet(id, data_mark, Duration::from_millis(500), |p| matches!(p, Packet::TransDone | Packet::TransContinue)).is_some();
         let commit = if frames.len() > 1 { proto::commit_with(frames.len() as u32) } else { proto::commit() };
         let r = step(&commit, 1000).and_then(|_| step(&commit, 1000));
         if let Err(e) = r {
@@ -732,7 +739,7 @@ impl Link {
             return Err(Error::Fan(e));
         }
         // The fan sends its playlist after storing a file; look for the name in it.
-        let listed = self.wait_listed(id, &name, Duration::from_secs(3));
+        let listed = self.wait_listed(id, &name, Duration::from_secs(6));
         if gone() {
             return Err(Error::NotConnected);
         }
@@ -758,8 +765,10 @@ impl Link {
             if Instant::now() >= deadline {
                 return false;
             }
+            // a real fan does not always send its playlist by itself: ask (as Holoscope's 1C poll)
             let s = self.packet_seq(id);
-            self.wait_packet(id, s, Duration::from_millis(200), |p| matches!(p, Packet::FileList(_)));
+            let _ = self.send_to(id, &proto::get_machine());
+            self.wait_packet(id, s, Duration::from_millis(700), |p| matches!(p, Packet::FileList(_)));
         }
     }
 
