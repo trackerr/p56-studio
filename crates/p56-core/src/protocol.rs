@@ -1,8 +1,8 @@
 //! Wire protocol of the Holoscope / P56 POV hologram fan.
 //!
 //! Every packet is `5A <opcode> <body…> F5`. Text-carrying packets end with an
-//! XOR checksum right before the `F5`. The upload header (tag, size) is
-//! little-endian u32; everything else is big-endian.
+//! XOR checksum right before the `F5`. The u32 fields of an uploaded file (duration,
+//! record lengths) are little-endian; everything else is big-endian.
 //!
 //! Sources: Holoscope.exe (Windows, Qt5) and Holoscope.apk (Android, Qt6,
 //! `DeviceInterface::*` / `MyTcpServer::ReadData`). See `PROTOCOL.md`.
@@ -19,12 +19,17 @@ pub const EOF: u8 = 0xF5;
 pub const CAST_FRAME_SIZE: usize = 0x5000;
 /// Largest JPEG that fits in a cast frame (`5A 28 … 55 F5`).
 pub const MAX_JPEG: usize = 0x4FFC;
+/// Largest JPEG per frame of an uploaded file (the limit of Holoscope's own encoder).
+pub const MAX_UPLOAD_JPEG: usize = 0xF000;
 /// Holoscope sends the cast frame in chunks of this size and waits for an ack after each.
 pub const CAST_CHUNK: usize = 0x3908;
 
-/// Upload file header: 1600 zero bytes before the JPEG frames.
-pub const UPLOAD_PADDING: usize = 1600;
-pub const UPLOAD_TAG_BASE: u32 = 4950;
+/// Audio in every frame record of an uploaded file: 1/20 s of 8-bit 32 kHz PCM. We send silence.
+pub const UPLOAD_PCM: usize = 1600;
+/// The fan plays uploaded files at 20 frames per second.
+pub const FRAME_MS: u32 = 50;
+/// Duration Holoscope gives a still picture: 5 s at 20 fps, minus one frame.
+pub const STILL_MS: u32 = 4950;
 pub const UPLOAD_CHUNK: usize = 1440;
 
 /// Fixed-size string fields in the name / Wi-Fi packets.
@@ -237,39 +242,45 @@ pub fn hotspot(ssid: &str, password: &str) -> Vec<u8> { fixed(op::HOTSPOT, &[ssi
 /// Let the fan join a router (68 bytes). It searches for it after this.
 pub fn router(ssid: &str, password: &str) -> Vec<u8> { fixed(op::ROUTER, &[ssid, password]) }
 
-/// Build the upload blob: `[tag u32le][size u32le][1600×00][frames…][00]`.
-/// Returns `(header_part, body_part)` — Holoscope writes the 4-byte tag separately.
-pub fn upload_blob(jpeg_frames: &[Vec<u8>], tag: u32) -> (Vec<u8>, Vec<u8>) {
-    let payload_len: usize = jpeg_frames.iter().map(|f| f.len()).sum::<usize>() + 1;
-    let size = (UPLOAD_PADDING + payload_len) as u32;
-    let part1 = tag.to_le_bytes().to_vec();
-    let mut part2 = Vec::with_capacity(4 + UPLOAD_PADDING + payload_len);
-    part2.extend_from_slice(&size.to_le_bytes());
-    part2.resize(4 + UPLOAD_PADDING, 0);
-    for f in jpeg_frames { part2.extend_from_slice(f); }
-    part2.push(0);
-    (part1, part2)
+/// Build an uploaded file the way Holoscope does (`fileprocess::picproces` / `videoprocess`
+/// in libappHoloscope): `[duration_ms u32le]`, then one record per frame (see [`upload_record`]).
+/// The duration is [`STILL_MS`] for one frame and `frames × 50 ms` for an animation.
+/// Returns `(header, records)`: Holoscope writes the 4-byte duration separately.
+pub fn upload_blob(jpeg_frames: &[Vec<u8>]) -> (Vec<u8>, Vec<u8>) {
+    let duration = if jpeg_frames.len() > 1 { FRAME_MS.saturating_mul(jpeg_frames.len() as u32) } else { STILL_MS };
+    let size: usize = jpeg_frames.iter().map(|f| 8 + UPLOAD_PCM + f.len()).sum();
+    let mut body = Vec::with_capacity(size);
+    for f in jpeg_frames { upload_record(&mut body, f); }
+    (duration.to_le_bytes().to_vec(), body)
 }
 
-/// Unique-enough upload tag, as Holoscope computes it.
-pub fn upload_tag(seq: u32) -> u32 {
-    let ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as u32)
-        .unwrap_or(0);
-    UPLOAD_TAG_BASE.wrapping_add(ms & 0xFFFF).wrapping_add(seq)
+/// One frame record: `[len u32le][1600 B PCM][JPEG][1–4 × 00]`. The JPEG is padded with at
+/// least one zero byte up to a multiple of 4; `len` counts everything after itself.
+pub fn upload_record(out: &mut Vec<u8>, jpeg: &[u8]) {
+    let padded = (jpeg.len() & !3) + 4;
+    out.extend_from_slice(&((UPLOAD_PCM + padded) as u32).to_le_bytes());
+    out.resize(out.len() + UPLOAD_PCM, 0);
+    out.extend_from_slice(jpeg);
+    out.resize(out.len() + padded - jpeg.len(), 0);
+}
+
+/// A complete JPEG: starts with SOI (`FF D8`) and ends with EOI (`FF D9`).
+pub fn jpeg_complete(jpeg: &[u8]) -> bool {
+    jpeg.len() >= 4 && jpeg.starts_with(&[0xFF, 0xD8]) && jpeg.ends_with(&[0xFF, 0xD9])
 }
 
 /// Wrap a JPEG into a 20480-byte live cast frame: `5A 28 | jpeg | 00… | 55 F5`.
-pub fn cast_frame(jpeg: &[u8]) -> Vec<u8> {
+/// The JPEG must be complete and at most [`MAX_JPEG`] bytes (it is never cut).
+pub fn cast_frame(jpeg: &[u8]) -> Option<Vec<u8>> {
+    if jpeg.len() > MAX_JPEG || !jpeg_complete(jpeg) { return None; }
     let mut f = vec![0u8; CAST_FRAME_SIZE];
-    let n = jpeg.len().min(MAX_JPEG);
+    let n = jpeg.len();
     f[0] = SOF;
     f[1] = op::CAST_FRAME;
     f[2..2 + n].copy_from_slice(&jpeg[..n]);
     f[CAST_FRAME_SIZE - 2] = 0x55;
     f[CAST_FRAME_SIZE - 1] = EOF;
-    f
+    Some(f)
 }
 
 // ---------------------------------------------------------------------------
@@ -678,9 +689,85 @@ mod tests {
 
     #[test]
     fn cast_frame_shape() {
-        let f = cast_frame(&[0xFF, 0xD8, 0xFF, 0xD9]);
+        let f = cast_frame(&[0xFF, 0xD8, 0xFF, 0xD9]).unwrap();
         assert_eq!(f.len(), CAST_FRAME_SIZE);
         assert_eq!(&f[..6], &[0x5A, 0x28, 0xFF, 0xD8, 0xFF, 0xD9]);
         assert_eq!(&f[CAST_FRAME_SIZE - 2..], &[0x55, 0xF5]);
+    }
+
+    #[test]
+    fn cast_frame_never_cuts_a_jpeg() {
+        let mut big = vec![0xFF, 0xD8];
+        big.resize(MAX_JPEG + 1 - 2, 0x11);
+        big.extend([0xFF, 0xD9]);
+        assert!(cast_frame(&big).is_none(), "too large: refused, not truncated");
+        assert!(cast_frame(&[0xFF, 0xD8, 0x00, 0x00]).is_none(), "no EOI");
+        big.truncate(MAX_JPEG - 2);
+        big.extend([0xFF, 0xD9]);
+        assert!(cast_frame(&big).is_some(), "exactly MAX_JPEG fits");
+    }
+
+    /// Golden bytes for an animation, written out by hand from Holoscope's
+    /// `fileprocess::videoprocess` (libappHoloscope 2.5.2 and 2.5.4): one duration, then one
+    /// record per frame with its own length, 1600 PCM bytes and padding.
+    #[test]
+    fn upload_blob_animation_golden() {
+        let j1 = vec![0xFF, 0xD8, 0xAA, 0xFF, 0xD9];
+        let j2 = vec![0xFF, 0xD8, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0xD9];
+        let (head, body) = upload_blob(&[j1.clone(), j2.clone()]);
+        assert_eq!(head, [0x64, 0, 0, 0], "2 frames × 50 ms");
+        let mut want = vec![0x48, 0x06, 0, 0]; // 1600 + 8
+        want.extend([0u8; 1600]);
+        want.extend(&j1);
+        want.extend([0, 0, 0]);
+        want.extend([0x4C, 0x06, 0, 0]); // 1600 + 12
+        want.extend([0u8; 1600]);
+        want.extend(&j2);
+        want.extend([0, 0, 0, 0]);
+        assert_eq!(body, want);
+    }
+
+    #[test]
+    fn upload_records_one_header_per_frame_aligned() {
+        let frames: Vec<Vec<u8>> = (0..7usize).map(|i| {
+            let mut j = vec![0xFF, 0xD8];
+            j.resize(2 + i * 3, 0x42);
+            j.extend([0xFF, 0xD9]);
+            j
+        }).collect();
+        let (head, body) = upload_blob(&frames);
+        assert_eq!(u32::from_le_bytes(head.try_into().unwrap()), 7 * FRAME_MS);
+        let mut at = 0;
+        for f in &frames {
+            let len = u32::from_le_bytes(body[at..at + 4].try_into().unwrap()) as usize;
+            assert_eq!(len % 4, 0, "records stay 4-byte aligned");
+            let rec = &body[at + 4..at + 4 + len];
+            assert!(rec[..UPLOAD_PCM].iter().all(|&b| b == 0), "1600 PCM bytes (silence)");
+            assert_eq!(&rec[UPLOAD_PCM..UPLOAD_PCM + f.len()], &f[..], "exactly one JPEG");
+            let pad = &rec[UPLOAD_PCM + f.len()..];
+            assert!((1..=4).contains(&pad.len()) && pad.iter().all(|&b| b == 0), "1–4 zero bytes of padding");
+            at += 4 + len;
+        }
+        assert_eq!(at, body.len());
+    }
+
+    /// A still picture must stay byte-for-byte what already works on real fans
+    /// (`[duration][1600 + padded JPEG][1600 × 00][JPEG 00 …]`, padded to 4).
+    #[test]
+    fn upload_blob_still_matches_hardware_proven_layout() {
+        for extra in 0..8 {
+            let mut j = vec![0xFF, 0xD8];
+            j.resize(2 + extra, 0x7E);
+            j.extend([0xFF, 0xD9]);
+            let (head, body) = upload_blob(&[j.clone()]);
+            assert_eq!(u32::from_le_bytes(head.try_into().unwrap()), STILL_MS);
+            let mut payload = j.clone();
+            payload.push(0);
+            while payload.len() % 4 != 0 { payload.push(0); }
+            let mut want = ((UPLOAD_PCM + payload.len()) as u32).to_le_bytes().to_vec();
+            want.extend(vec![0u8; UPLOAD_PCM]);
+            want.extend(&payload);
+            assert_eq!(body, want, "JPEG of {} bytes", j.len());
+        }
     }
 }

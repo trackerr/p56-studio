@@ -324,7 +324,10 @@ fn run(link: &Link, id: u32, ft: FanType, cmd: &Cmd) -> Result<(), String> {
             let frames = frames_from(file, &ft, &pl, *max_frames)?;
             let name = name.clone().unwrap_or_else(|| file.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or("upload".into()));
             println!("uploading {} frame(s) as {}…", frames.len(), p56_core::protocol::mp4_name(&name));
-            e(link.upload(id, &frames, &name, Some(*slot), 1))
+            let o = link.upload(id, &frames, &name, Some(*slot)).map_err(|e| e.to_string())?;
+            if !o.acked { eprintln!("warning: the fan did not acknowledge the data"); }
+            if !o.listed { eprintln!("warning: the file did not show up in the fan's playlist (yet)"); }
+            Ok(())
         }
         Cmd::Cast { .. } | Cmd::Preview { .. } | Cmd::Types => unreachable!(),
     }
@@ -335,18 +338,34 @@ fn load(file: &str) -> Result<image::RgbImage, String> {
     transcode::load_rgb(Path::new(file)).map_err(|e| format!("{file}: {e}"))
 }
 
-/// Image (incl. animated GIF) or video → fan JPEGs.
+/// Image (incl. animated GIF) or video → fan JPEGs at the fan's fixed 20 fps: a frame that
+/// should show longer is repeated, a faster video is thinned out, so it plays at its own speed.
+/// `max` limits the frames sent (0 = 1200, i.e. 60 s).
 fn frames_from(file: &Path, ft: &FanType, pl: &Placement, max: usize) -> Result<Vec<Vec<u8>>, String> {
-    if file.to_str() == Some("test") { return Ok(vec![transcode::encode(&transcode::test_card(), ft, pl).jpeg]); }
+    let max = if max == 0 { 1200 } else { max };
+    let step = p56_core::protocol::FRAME_MS as f64;
+    if file.to_str() == Some("test") { return Ok(vec![transcode::encode_upload(&transcode::test_card(), ft, pl).jpeg]); }
     let bytes = std::fs::read(file).map_err(|e| format!("{}: {e}", file.display()))?;
     if let Ok(frames) = transcode::decode_frames(&bytes, max) {
-        return Ok(frames.into_iter().map(|(f, _)| transcode::encode(&transcode::fit(f, 720), ft, pl).jpeg).collect());
+        let mut out = Vec::new();
+        for (f, ms) in frames {
+            let jpeg = transcode::encode_upload(&transcode::fit(f, 720), ft, pl).jpeg;
+            let n = ((ms as f64 / step).round() as usize).max(1);
+            for _ in 0..n { if out.len() < max { out.push(jpeg.clone()); } }
+        }
+        return Ok(out);
     }
     let mut v = p56_core::video::open(file, 720).map_err(|e| format!("{e} — install ffmpeg for video, or use a photo/GIF"))?;
+    let ratio = 1000.0 / step / v.fps.max(1.0); // fan frames per source frame
     let mut out = Vec::new();
+    let mut i = 0f64;
     while let Some(fr) = v.next_frame() {
-        out.push(transcode::encode(&fr, ft, pl).jpeg);
-        if max > 0 && out.len() >= max { break; }
+        let n = ((i + 1.0) * ratio).floor() as usize - (i * ratio).floor() as usize;
+        i += 1.0;
+        if n == 0 { continue; }
+        let jpeg = transcode::encode_upload(&fr, ft, pl).jpeg;
+        for _ in 0..n { if out.len() < max { out.push(jpeg.clone()); } }
+        if out.len() >= max { break; }
     }
     if out.is_empty() { return Err("no frames decoded".into()); }
     log::info!("{} frames at {:.1} fps", out.len(), v.fps);

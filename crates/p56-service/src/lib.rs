@@ -8,7 +8,7 @@
 pub mod text;
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -53,12 +53,41 @@ struct NameState {
     restore: Option<String>,
 }
 
+/// Longest animation uploaded: 60 s at the fan's 20 fps.
+const MAX_UPLOAD_FRAMES: usize = 1200;
+
+/// The fan plays uploaded files at a fixed 20 fps (one frame per 50 ms). Repeat every frame for
+/// its own display time, rounded to 50 ms steps and at least once, so animations keep their
+/// speed. Stops at `max` frames.
+fn at_fan_rate<T: Clone>(frames: Vec<(T, u32)>, max: usize) -> Vec<T> {
+    let step = p56_core::protocol::FRAME_MS;
+    let mut out = Vec::new();
+    for (f, ms) in frames {
+        let n = ((ms + step / 2) / step).max(1) as usize;
+        for _ in 0..n {
+            if out.len() >= max { return out; }
+            out.push(f.clone());
+        }
+    }
+    out
+}
+
+/// " (not confirmed by the fan)" when the fan did not acknowledge or list an upload.
+fn unconfirmed(o: p56_core::net::UploadOutcome) -> &'static str {
+    match (o.acked, o.listed) {
+        (true, true) => "",
+        (_, true) => " (listed, but the fan did not acknowledge the data)",
+        _ => " (sent, but not confirmed by the fan)",
+    }
+}
+
 pub struct Service {
     link: Mutex<Option<Link>>,
     /// Fan type chosen by the user; 0 = follow what the fan reports.
     fan_type: Mutex<u8>,
-    cast_running: Arc<AtomicBool>,
-    upload_seq: AtomicU32,
+    /// The current cast session. Every cast (live, or a timed one from `show`) takes a new number;
+    /// a loop only sends while its number is current, so starting or stopping one ends the other.
+    cast_session: Arc<AtomicU64>,
     media: Mutex<HashMap<u32, Media>>,
     next_media: AtomicU32,
     live: Mutex<LiveStats>,
@@ -269,8 +298,8 @@ impl Service {
             Err(e) => { log::warn!("media folder {}: {e}; ignored", d.display()); None }
         }).collect();
         Arc::new(Service {
-            link: Mutex::new(None), fan_type: Mutex::new(0), cast_running: Arc::new(AtomicBool::new(false)),
-            upload_seq: AtomicU32::new(0), media: Mutex::new(HashMap::new()), next_media: AtomicU32::new(0),
+            link: Mutex::new(None), fan_type: Mutex::new(0), cast_session: Arc::new(AtomicU64::new(0)),
+            media: Mutex::new(HashMap::new()), next_media: AtomicU32::new(0),
             live: Mutex::new(LiveStats::default()), last_activity: Mutex::new(None), shown: Mutex::new(HashMap::new()),
             names: Mutex::new(HashMap::new()), next_generation: AtomicU64::new(0), media_dirs, emit, defaults,
         })
@@ -442,7 +471,7 @@ impl Service {
     }
 
     pub fn stop_link(&self) {
-        self.cast_running.store(false, Ordering::SeqCst);
+        self.cast_session.fetch_add(1, Ordering::SeqCst);
         if let Some(l) = self.link.lock().unwrap().take() {
             l.shutdown();
             thread::sleep(Duration::from_millis(400));
@@ -596,7 +625,8 @@ impl Service {
             (Some(md.frames[frame.unwrap_or(0).min(md.frames.len() - 1)].0.clone()), md.frames.len())
         };
         let img = match src { None => transcode::test_card(), Some(b) => decode_source(&b)? };
-        let f = transcode::encode(&img, &ft, &placement.into());
+        // what an upload would send (the cast preview comes from the cast loop itself)
+        let f = transcode::encode_upload(&img, &ft, &placement.into());
         let round = transcode::preview_from_jpeg(&f.jpeg, &ft, 480).map_err(err)?;
         let (w, h) = f.layout.dimensions();
         Ok(json!({ "round": data_url("image/png", &png_bytes(&round)), "layout": data_url("image/jpeg", &f.jpeg),
@@ -611,32 +641,32 @@ impl Service {
         let pl: Placement = arg::<PlacementDto>(&a, "placement").unwrap_or_default().into();
         let l = self.link()?;
         let ft = self.fan_type_for(Some(id))?;
-        let seq = self.upload_seq.fetch_add(1, Ordering::SeqCst) + 1;
-        let (src, default_name): (Vec<Vec<u8>>, String) = if media == 0 { (vec![], "testcard".into()) } else {
+        let (src, default_name): (Vec<(Vec<u8>, u32)>, String) = if media == 0 { (vec![], "testcard".into()) } else {
             let m = self.media.lock().unwrap();
             let md = m.get(&media).ok_or("media no longer exists")?;
-            let mut v: Vec<Vec<u8>> = md.frames.iter().map(|(b, _)| b.clone()).collect();
+            let mut v = md.frames.clone();
             if max_frames > 0 { v.truncate(max_frames); }
             (v, md.name.rsplit_once('.').map(|(a, _)| a.to_string()).unwrap_or(md.name.clone()))
         };
         let name = arg::<String>(&a, "name").filter(|n| !n.trim().is_empty()).unwrap_or(default_name);
         let progress = |stage: &str, done: usize, total: usize| self.emit("progress", json!({ "stage": stage, "done": done, "total": total }));
         let frames: Vec<Vec<u8>> = if src.is_empty() {
-            vec![transcode::encode(&transcode::test_card(), &ft, &pl).jpeg]
+            vec![transcode::encode_upload(&transcode::test_card(), &ft, &pl).jpeg]
         } else {
             let total = src.len();
-            src.iter().enumerate().map(|(i, b)| {
+            let encoded = src.iter().enumerate().map(|(i, (b, delay))| {
                 if i % 5 == 0 { progress("transcoding", i, total); }
-                decode_source(b).map(|img| transcode::encode(&img, &ft, &pl).jpeg)
-            }).collect::<Result<_, _>>()?
+                decode_source(b).map(|img| (transcode::encode_upload(&img, &ft, &pl).jpeg, *delay))
+            }).collect::<Result<Vec<_>, _>>()?;
+            at_fan_rate(encoded, MAX_UPLOAD_FRAMES)
         };
         progress("sending", 0, frames.len());
         // a pending auto-delete of an earlier show_text/show_image with this name must not remove this file
         self.new_upload(&l, id, &p56_core::protocol::mp4_name(&name), false, None);
-        l.upload(id, &frames, &name, Some(slot), seq).map_err(err)?;
+        let outcome = l.upload(id, &frames, &name, Some(slot)).map_err(err)?;
         self.remember(&[id], &frames[0], &ft);
         progress("done", frames.len(), frames.len());
-        Ok(Value::from(format!("{} ({} frame(s))", p56_core::protocol::mp4_name(&name), frames.len())))
+        Ok(Value::from(format!("{} ({} frame(s)){}", p56_core::protocol::mp4_name(&name), frames.len(), unconfirmed(outcome))))
     }
 
     // ---- live cast -------------------------------------------------------------
@@ -663,7 +693,7 @@ impl Service {
         if source == "screen" && !cfg!(any(target_os = "windows", target_os = "macos")) {
             return Err("screen casting is not available on this platform; use the camera or a file".into());
         }
-        if self.cast_running.swap(true, Ordering::SeqCst) { return Err("a cast is already running".into()); }
+        let session = self.cast_session.fetch_add(1, Ordering::SeqCst) + 1;
         let me = self.clone();
         thread::spawn(move || {
             let period = Duration::from_secs_f64(1.0 / fps.clamp(0.5, 60.0));
@@ -672,7 +702,7 @@ impl Service {
             let test = transcode::encode(&transcode::test_card(), &ft, &pl).jpeg;
             #[cfg(any(target_os = "windows", target_os = "macos"))]
             let screen = if source == "screen" { xcap::Monitor::all().ok().and_then(|m| m.into_iter().find(|m| m.is_primary().unwrap_or(false))) } else { None };
-            while me.cast_running.load(Ordering::SeqCst) {
+            while me.cast_session.load(Ordering::SeqCst) == session {
                 let t = Instant::now();
                 let (jpeg, q, delay) = if let Some(m) = &media {
                     if m.is_empty() { break; }
@@ -710,8 +740,11 @@ impl Service {
                 let wait = if delay > 0 { Duration::from_millis(delay as u64) } else { period };
                 if let Some(rest) = wait.checked_sub(t.elapsed()) { thread::sleep(rest); }
             }
-            me.cast_running.store(false, Ordering::SeqCst);
-            me.emit("cast", json!({ "stopped": true }));
+            // Ended by itself (no source left): report it. A cast that was stopped or replaced
+            // stays quiet, so a late "stopped" never cancels the cast that replaced it.
+            if me.cast_session.compare_exchange(session, session + 1, Ordering::SeqCst, Ordering::SeqCst).is_ok() {
+                me.emit("cast", json!({ "stopped": true }));
+            }
         });
         Ok(())
     }
@@ -735,7 +768,7 @@ impl Service {
     }
 
     pub fn cast_stop(&self) {
-        self.cast_running.store(false, Ordering::SeqCst);
+        self.cast_session.fetch_add(1, Ordering::SeqCst);
         *self.live.lock().unwrap() = LiveStats::default();
     }
 
@@ -794,11 +827,13 @@ impl Service {
             let n = images.len();
             let period = Duration::from_millis(if n > 1 { frame_ms.clamp(20, 2000) } else { 200 });
             let fans: usize = groups.iter().map(|(_, g, _)| g.len()).sum();
+            // a timed cast is a session like any other: it ends the running one and is ended by the next
+            let session = self.cast_session.fetch_add(1, Ordering::SeqCst) + 1;
             let me = self.clone();
             thread::spawn(move || {
                 let end = Instant::now() + Duration::from_secs_f64(dur);
                 let mut i = 0;
-                while Instant::now() < end && !me.cast_running.load(Ordering::SeqCst) {
+                while Instant::now() < end && me.cast_session.load(Ordering::SeqCst) == session {
                     if let Ok(l) = me.link() {
                         for (_, gids, jpegs) in &groups { l.cast_to(gids, &jpegs[i % jpegs.len()]); }
                     }
@@ -810,7 +845,9 @@ impl Service {
         }
         for id in ids {
             let ft = match self.fan_type_for(Some(id)) { Ok(f) => f, Err(e) => { results.push(json!({ "id": id, "success": false, "error": e })); continue } };
-            let jpegs: Vec<Vec<u8>> = images.iter().map(|img| transcode::encode(img, &ft, &pl).jpeg).collect();
+            // every picture once, then repeated to the fan's fixed 20 fps so the animation keeps its speed
+            let encoded: Vec<(Vec<u8>, u32)> = images.iter().map(|img| (transcode::encode_upload(img, &ft, &pl).jpeg, frame_ms as u32)).collect();
+            let jpegs = at_fan_rate(encoded, MAX_UPLOAD_FRAMES);
             let name = p56_core::protocol::mp4_name(&r.name.clone().unwrap_or_else(|| format!("ha_{}", std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0))));
             // what plays now, by name: a slot number shifts when files are deleted
@@ -829,11 +866,10 @@ impl Service {
                     thread::sleep(Duration::from_millis(250));
                 }
             }
-            let seq = self.upload_seq.fetch_add(1, Ordering::SeqCst) + 1;
-            if let Err(e) = l.upload(id, &jpegs, &name, None, seq) {
-                results.push(json!({ "id": id, "success": false, "error": e.to_string() }));
-                continue;
-            }
+            let outcome = match l.upload(id, &jpegs, &name, None) {
+                Ok(o) => o,
+                Err(e) => { results.push(json!({ "id": id, "success": false, "error": e.to_string() })); continue; }
+            };
             // find the slot the fan gave the new file
             let deadline = Instant::now() + Duration::from_secs(6);
             let mut slot = 0u8;
@@ -856,7 +892,7 @@ impl Service {
                     me.expire(&l2, &key, generation);
                 });
             }
-            results.push(json!({ "id": id, "success": true, "slot": slot, "name": name, "frames": jpegs.len() }));
+            results.push(json!({ "id": id, "success": true, "slot": slot, "name": name, "frames": images.len(), "fan_frames": jpegs.len(), "acknowledged": outcome.acked }));
         }
         let ok = results.iter().any(|r| r["success"] == true);
         Ok(json!({ "success": ok, "mode": "upload", "results": results }))
@@ -871,6 +907,19 @@ pub fn fan_types() -> Value {
         Some(json!({ "id": id, "angles": angles, "leds": leds, "jpeg": jpeg,
             "support": format!("{:?}", FanType::support(id)).to_lowercase() }))
     }).collect::<Vec<_>>().into()
+}
+
+#[cfg(test)]
+mod fan_rate_tests {
+    use super::at_fan_rate;
+
+    #[test]
+    fn frames_are_repeated_to_20_fps() {
+        // 100 ms → 2 fan frames, 50 → 1, 20 → 1 (never dropped), 175 → 4 (rounded)
+        assert_eq!(at_fan_rate(vec![('a', 100), ('b', 50), ('c', 20), ('d', 175)], 100), vec!['a', 'a', 'b', 'c', 'd', 'd', 'd', 'd']);
+        assert_eq!(at_fan_rate(vec![('a', 0)], 100), vec!['a'], "a still picture stays one frame");
+        assert_eq!(at_fan_rate(vec![('a', 1000)], 5).len(), 5, "capped");
+    }
 }
 
 #[cfg(test)]

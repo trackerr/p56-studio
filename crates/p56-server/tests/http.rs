@@ -389,6 +389,35 @@ fn cast_reaches_only_the_selected_fan() {
     assert!(a.state().protocol_errors.is_empty() && b.state().protocol_errors.is_empty());
 }
 
+/// A timed cast from `show` is a cast session like any other: `cast_stop` ends it, and a new one
+/// replaces it instead of running next to it.
+#[test]
+fn timed_cast_stops_and_is_replaced() {
+    let s = start(false);
+    let pc = std::net::SocketAddr::from((Ipv4Addr::LOCALHOST, s.tcp));
+    let fan = p56_sim::Sim::start(p56_sim::SimConfig { name: "FAN".into(), udp_port: 0, pc: Some(pc), ..Default::default() }).unwrap();
+    s.wait("fan", |v| v["devices"].as_array().is_some_and(|d| d.len() == 1 && d[0]["status"].is_object()));
+    let rate = || {
+        let n = fan.state().cast_ok;
+        std::thread::sleep(Duration::from_millis(1500));
+        fan.state().cast_ok - n
+    };
+    let (code, v) = s.post("/api/show", json!({ "text": "ONE", "mode": "cast", "show_seconds": 60 }));
+    assert_eq!(code, 200, "{v}");
+    assert!(rate() > 0, "the timed cast sends frames");
+    s.call("cast_stop", json!({}));
+    std::thread::sleep(Duration::from_millis(600));
+    assert_eq!(rate(), 0, "cast_stop ends a timed cast");
+    // two timed casts in a row: only the second one sends (one frame per 200 ms, not two)
+    s.post("/api/show", json!({ "text": "A", "mode": "cast", "show_seconds": 60 }));
+    s.post("/api/show", json!({ "text": "B", "mode": "cast", "show_seconds": 60 }));
+    std::thread::sleep(Duration::from_millis(600));
+    let n = rate();
+    assert!((3..=10).contains(&n), "one session at ~5 frames/s, got {n} frames in 1.5 s");
+    s.call("cast_stop", json!({}));
+    assert!(fan.state().protocol_errors.is_empty(), "{:?}", fan.state().protocol_errors);
+}
+
 // ---- API token and media folders -------------------------------------------------------
 
 /// This machine's address on the network (no packet is sent), if it has one.

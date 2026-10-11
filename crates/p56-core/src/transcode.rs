@@ -11,7 +11,7 @@
 use image::{ImageBuffer, Rgb, RgbImage};
 use serde::{Deserialize, Serialize};
 
-use crate::protocol::MAX_JPEG;
+use crate::protocol::{MAX_JPEG, MAX_UPLOAD_JPEG};
 
 /// Geometry of one fan model, keyed by the `fan_type` the device reports.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -341,28 +341,40 @@ pub fn jpeg(img: &RgbImage, quality: u8) -> Vec<u8> {
 /// Result of transcoding one frame.
 #[derive(Debug, Clone)]
 pub struct Frame {
-    /// JPEG in fan layout, ≤ [`MAX_JPEG`] bytes.
+    /// Complete JPEG in fan layout, within the size limit it was encoded for.
     pub jpeg: Vec<u8>,
     /// The laid-out image (for previews / debugging).
     pub layout: RgbImage,
     pub quality: u8,
 }
 
-/// Full pipeline: any RGB image → fan-ready JPEG.
-pub fn encode(img: &RgbImage, ft: &FanType, pl: &Placement) -> Frame {
+/// Full pipeline: any RGB image → fan-ready JPEG for a live cast frame (≤ [`MAX_JPEG`]).
+pub fn encode(img: &RgbImage, ft: &FanType, pl: &Placement) -> Frame { encode_within(img, ft, pl, MAX_JPEG) }
+
+/// The same for a frame of an uploaded file, which may be larger (≤ [`MAX_UPLOAD_JPEG`]).
+pub fn encode_upload(img: &RgbImage, ft: &FanType, pl: &Placement) -> Frame { encode_within(img, ft, pl, MAX_UPLOAD_JPEG) }
+
+/// Encode at the best quality that fits `max` bytes. A JPEG is never cut short (that drops its
+/// `FF D9` end marker): the quality goes down instead, and as a last resort the picture is
+/// softened, which always compresses below any limit the fans use.
+fn encode_within(img: &RgbImage, ft: &FanType, pl: &Placement, max: usize) -> Frame {
     let bright = auto_brightness(img, ft);
     let mut polar = to_polar(&bright, ft, pl);
     radial_correction(&mut polar, ft);
     let lay = layout(&polar, ft);
-    let mut q = 80.0f64;
-    let mut data = jpeg(&lay, q as u8);
-    for _ in 0..11 {
-        if data.len() <= MAX_JPEG { break; }
-        q *= 0.9;
-        data = jpeg(&lay, q.max(5.0) as u8);
+    let mut q = 80u8;
+    let mut data = jpeg(&lay, q);
+    while data.len() > max && q > 1 {
+        q = ((q as f64 * 0.85) as u8).max(1);
+        data = jpeg(&lay, q);
     }
-    data.truncate(MAX_JPEG);
-    Frame { jpeg: data, layout: lay, quality: q as u8 }
+    let mut sigma = 1.5;
+    while data.len() > max && sigma < 64.0 {
+        data = jpeg(&image::imageops::blur(&lay, sigma), 1);
+        sigma *= 2.0;
+    }
+    debug_assert!(crate::protocol::jpeg_complete(&data));
+    Frame { jpeg: data, layout: lay, quality: q }
 }
 
 /// Render a polar image (angles × radius) back to a round picture of `size`×`size`,
@@ -468,6 +480,27 @@ mod tests {
         assert_eq!(f.layout.dimensions(), (688, 240));
         assert!(f.jpeg.len() <= MAX_JPEG);
         assert_eq!(&f.jpeg[..2], &[0xFF, 0xD8]);
+    }
+
+    /// Noise is the worst case for JPEG: the encoder must still deliver a complete file
+    /// (ending in FF D9) within the limit, never a truncated one.
+    #[test]
+    fn noisy_picture_stays_complete_within_limits() {
+        let mut seed = 0x1234_5678u32;
+        let noise = RgbImage::from_fn(720, 720, |_, _| {
+            seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5;
+            Rgb([seed as u8, (seed >> 8) as u8, (seed >> 16) as u8])
+        });
+        for &id in FanType::all() {
+            let ft = FanType::known(id).unwrap();
+            let cast = encode(&noise, &ft, &Placement::default());
+            assert!(cast.jpeg.len() <= MAX_JPEG, "type {id}: {} bytes", cast.jpeg.len());
+            assert!(crate::protocol::jpeg_complete(&cast.jpeg), "type {id}: cast JPEG cut short");
+            image::load_from_memory_with_format(&cast.jpeg, image::ImageFormat::Jpeg).expect("decodable");
+            let up = encode_upload(&noise, &ft, &Placement::default());
+            assert!(up.jpeg.len() <= MAX_UPLOAD_JPEG && crate::protocol::jpeg_complete(&up.jpeg), "type {id}: upload JPEG");
+            assert!(up.quality >= cast.quality, "the larger upload limit never lowers the quality");
+        }
     }
 
     #[test]

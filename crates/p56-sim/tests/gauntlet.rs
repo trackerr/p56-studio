@@ -152,9 +152,9 @@ fn names_hotspot_router() {
 fn upload_select_rename_delete() {
     let r = rig();
     let j = r.jpeg();
-    r.link.upload(r.id, &[j.clone()], "kat", Some(1), 1).unwrap();
+    r.link.upload(r.id, &[j.clone()], "kat", Some(1)).unwrap();
     r.wait_sim(|s| s.files.len() == 1 && s.files[0].name == "kat.mp4" && (s.files[0].width, s.files[0].height) == (688, 240));
-    r.link.upload(r.id, &[j.clone(), j.clone(), j], "hond.mp4", Some(2), 2).unwrap();
+    r.link.upload(r.id, &[j.clone(), j.clone(), j], "hond.mp4", Some(2)).unwrap();
     r.wait_sim(|s| s.files.len() == 2 && s.files[1].frames == 3 && s.current == 2);
     r.wait_dev(|d| d.files == vec![(1, "kat.mp4".to_string()), (2, "hond.mp4".to_string())]);
     r.link.select(r.id, 1).unwrap();
@@ -168,23 +168,105 @@ fn upload_select_rename_delete() {
 }
 
 #[test]
+fn upload_reports_acknowledged_and_listed() {
+    let r = rig();
+    let o = r.link.upload(r.id, &[r.jpeg()], "seen", Some(1)).unwrap();
+    assert!(o.acked && o.listed, "{o:?}");
+    r.clean();
+}
+
+#[test]
+fn upload_refuses_an_incomplete_jpeg() {
+    let r = rig();
+    let mut cut = r.jpeg();
+    cut.truncate(cut.len() - 10); // lost its FF D9
+    match r.link.upload(r.id, &[cut], "cut", None) {
+        Err(Error::Invalid(m)) => assert!(m.contains("complete JPEG"), "{m}"),
+        other => panic!("expected a refusal, got {other:?}"),
+    }
+    assert_eq!(r.sim.state().uploads, 0, "nothing was sent");
+    r.clean();
+}
+
+/// The format this project used before (one length, 1600 zero bytes, then all JPEGs back to
+/// back) is not what Holoscope sends for an animation; the simulator must flag it.
+#[test]
+fn concatenated_animation_format_is_a_protocol_error() {
+    use p56_core::protocol as proto;
+    let r = rig();
+    let j = r.jpeg();
+    r.link.send_to(r.id, &proto::on()).unwrap();
+    r.link.send_to(r.id, &proto::set_filename("old.mp4")).unwrap();
+    std::thread::sleep(Duration::from_millis(200));
+    let mut blob = 4950u32.to_le_bytes().to_vec();
+    blob.extend(((proto::UPLOAD_PCM + 2 * j.len() + 1) as u32).to_le_bytes());
+    blob.extend(vec![0u8; proto::UPLOAD_PCM]);
+    blob.extend(&j);
+    blob.extend(&j);
+    blob.push(0);
+    while blob.len() % 4 != 0 { blob.push(0); } // keep the old length field 4-byte aligned
+    let n = blob.len() - 8 - proto::UPLOAD_PCM - 2 * j.len();
+    blob[4..8].copy_from_slice(&((proto::UPLOAD_PCM + 2 * j.len() + n) as u32).to_le_bytes());
+    r.link.send_to(r.id, &blob).unwrap();
+    std::thread::sleep(Duration::from_millis(400));
+    r.link.send_to(r.id, &proto::commit()).unwrap();
+    r.wait_sim(|s| s.protocol_errors.iter().any(|e| e.contains("one record per frame")));
+    assert!(r.sim.state().files.is_empty(), "the file must not be stored");
+}
+
+#[test]
+fn animation_duration_and_records_match_holoscope() {
+    let r = rig();
+    let j = r.jpeg();
+    let o = r.link.upload(r.id, &[j.clone(), j.clone(), j.clone(), j], "anim", Some(1)).unwrap();
+    assert!(o.acked && o.listed, "{o:?}");
+    // the simulator checks the duration (4 × 50 ms) and every record; any mismatch is an error
+    r.wait_sim(|s| s.files.first().is_some_and(|f| f.frames == 4));
+    r.clean();
+}
+
+#[test]
+fn cast_without_acknowledgement_fails_fast_and_reconnects() {
+    let r = rig();
+    let j = r.jpeg();
+    assert_eq!(r.link.cast_to(&[r.id], &j), 1, "acknowledged frame counts");
+    r.sim.modify(|s| s.cast_mute = true);
+    let t = std::time::Instant::now();
+    assert_eq!(r.link.cast_to(&[r.id], &j), 0, "an unacknowledged frame is not counted as delivered");
+    assert!(t.elapsed() < Duration::from_secs(3), "gave up within the ack window, took {:?}", t.elapsed());
+    // after a few unacknowledged frames in a row the link drops the connection; the fan reconnects
+    let before = r.sim.state().connections;
+    for _ in 0..6 { r.link.cast_to(&r.link.ids(), &j); }
+    r.sim.modify(|s| s.cast_mute = false);
+    r.wait_sim(|s| s.connections > before && s.connected);
+    assert!(r.link.wait_connected(T));
+    let id = r.link.ids()[0];
+    let deadline = std::time::Instant::now() + T;
+    while r.link.cast_to(&[id], &j) != 1 {
+        assert!(std::time::Instant::now() < deadline, "cast never recovered after reconnecting");
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    r.clean();
+}
+
+#[test]
 fn upload_errors_from_fan() {
     let r = rig_with(|c| c.max_files = 2);
     let j = r.jpeg();
-    r.link.upload(r.id, &[j.clone()], "a", None, 1).unwrap();
-    match r.link.upload(r.id, &[j.clone()], "a", None, 2) {
+    r.link.upload(r.id, &[j.clone()], "a", None).unwrap();
+    match r.link.upload(r.id, &[j.clone()], "a", None) {
         Err(Error::Fan(FanError::DuplicateName)) => {}
         other => panic!("expected duplicate name, got {other:?}"),
     }
-    r.link.upload(r.id, &[j.clone()], "b", None, 3).unwrap();
-    match r.link.upload(r.id, &[j.clone()], "c", None, 4) {
+    r.link.upload(r.id, &[j.clone()], "b", None).unwrap();
+    match r.link.upload(r.id, &[j.clone()], "c", None) {
         Err(Error::Fan(FanError::TooManyFiles)) => {}
         other => panic!("expected too many files, got {other:?}"),
     }
     r.wait_dev(|d| d.last_error == Some(FanError::TooManyFiles));
     // still usable afterwards
     r.link.delete(r.id, 1).unwrap();
-    r.link.upload(r.id, &[j], "c", Some(2), 5).unwrap();
+    r.link.upload(r.id, &[j], "c", Some(2)).unwrap();
     r.wait_sim(|s| s.file_names() == vec!["b.mp4".to_string(), "c.mp4".to_string()]);
     r.clean();
 }
@@ -204,7 +286,7 @@ fn gif_animation_uploads_all_frames() {
     assert_eq!(frames.len(), 5);
     assert!(frames.iter().all(|(_, ms)| *ms == 80));
     let jpegs: Vec<_> = frames.iter().map(|(f, _)| transcode::encode(f, &FanType::P56, &Placement::default()).jpeg).collect();
-    r.link.upload(r.id, &jpegs, "anim.gif", Some(1), 1).unwrap();
+    r.link.upload(r.id, &jpegs, "anim.gif", Some(1)).unwrap();
     r.wait_sim(|s| s.files.first().is_some_and(|f| f.frames == 5 && f.name == "anim.gif.mp4"));
     r.clean();
 }
@@ -240,7 +322,7 @@ fn bluetooth_scan_connect_disconnect() {
 #[test]
 fn format_and_factory_reset() {
     let r = rig();
-    r.link.upload(r.id, &[r.jpeg()], "x", Some(1), 1).unwrap();
+    r.link.upload(r.id, &[r.jpeg()], "x", Some(1)).unwrap();
     r.link.brightness(r.id, 3).unwrap();
     r.link.device_name(r.id, "Anders").unwrap();
     r.link.factory_reset(r.id).unwrap();
@@ -297,7 +379,7 @@ fn fragmented_replies_are_parsed() {
     let r = rig_with(|c| c.fragment = true);
     for v in 1..=16 { r.link.brightness(r.id, v).unwrap(); }
     r.wait_dev(|d| d.status.as_ref().is_some_and(|s| s.brightness == 16));
-    r.link.upload(r.id, &[r.jpeg()], "frag", Some(1), 1).unwrap();
+    r.link.upload(r.id, &[r.jpeg()], "frag", Some(1)).unwrap();
     r.wait_dev(|d| d.files.len() == 1);
     r.link.refresh(r.id).unwrap();
     r.wait_dev(|d| d.info.is_some());
@@ -333,7 +415,7 @@ fn random_sequences_match_model() {
             3 => {
                 up += 1;
                 let name = format!("f{step}.mp4");
-                let res = r.link.upload(r.id, &[j.clone()], &name, None, up);
+                let res = r.link.upload(r.id, &[j.clone()], &name, None);
                 if files.len() >= 6 { assert!(matches!(res, Err(Error::Fan(FanError::TooManyFiles))), "{res:?}"); }
                 else { res.unwrap(); files.push(name); }
             }

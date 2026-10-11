@@ -10,7 +10,7 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::protocol::{self as proto, ColorMode, FanError, MachineInfo, Packet, Status, CAST_CHUNK, TCP_PORT, UDP_PORT, UPLOAD_CHUNK};
+use crate::protocol::{self as proto, ColorMode, FanError, MachineInfo, Packet, Status, CAST_CHUNK, MAX_UPLOAD_JPEG, TCP_PORT, UDP_PORT, UPLOAD_CHUNK};
 use crate::Error;
 
 /// Events emitted by the link, for UIs.
@@ -48,7 +48,27 @@ struct Conn {
     stream: TcpStream,
     dev: Device,
     inbox: Arc<(Mutex<Inbox>, Condvar)>,
+    /// One sender at a time per fan; other fans are never held up by this one.
+    tx: Arc<Mutex<()>>,
+    /// Cast frames in a row that this fan did not acknowledge.
+    cast_misses: u32,
 }
+
+/// What an upload achieved. An error is returned instead when the fan refused it or the
+/// connection dropped.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct UploadOutcome {
+    /// The fan acknowledged the file data.
+    pub acked: bool,
+    /// The file showed up in the fan's playlist afterwards.
+    pub listed: bool,
+}
+
+/// Unacknowledged cast frames in a row after which the connection is dropped (the fan
+/// reconnects by itself on the next broadcast).
+const CAST_MAX_MISSES: u32 = 5;
+/// How long a cast chunk may wait for the fan's acknowledgement.
+const CAST_ACK: Duration = Duration::from_millis(1500);
 
 struct Inner {
     conns: HashMap<u32, Conn>,
@@ -95,7 +115,6 @@ pub struct Link {
     /// Address shown to the user (first private IPv4, or the configured one).
     pub local_ip: Ipv4Addr,
     pub tcp_port: u16,
-    pub tx_lock: Arc<Mutex<()>>,
 }
 
 /// One IPv4 interface: (address, broadcast address).
@@ -147,7 +166,6 @@ impl Link {
             stop: Arc::new(AtomicBool::new(false)),
             local_ip: ip,
             tcp_port,
-            tx_lock: Arc::new(Mutex::new(())),
         };
         link.log(format!("TCP server on :{tcp_port} (advertising {ip})"));
         { let l = link.clone(); thread::spawn(move || l.accept_loop(listener)); }
@@ -230,7 +248,10 @@ impl Link {
                 let mut g = self.inner.lock().unwrap();
                 let id = g.next_id;
                 g.next_id += 1;
-                g.conns.insert(id, Conn { stream, dev: Device { id, ip: peer, last_seen: Some(Instant::now()), ..Default::default() }, inbox: inbox.clone() });
+                g.conns.insert(id, Conn {
+                    stream, dev: Device { id, ip: peer, last_seen: Some(Instant::now()), ..Default::default() },
+                    inbox: inbox.clone(), tx: Arc::new(Mutex::new(())), cast_misses: 0,
+                });
                 id
             };
             self.log(format!("fan #{id} connected from {}", peer.map(|p| p.to_string()).unwrap_or_default()));
@@ -293,10 +314,12 @@ impl Link {
             thread::sleep(Duration::from_secs(3));
             tick += 1;
             for id in self.ids() {
-                if let Ok(_g) = self.tx_lock.try_lock() {
+                // skip a fan that is busy (upload, cast frame); the next tick catches up
+                let Some(tx) = self.tx(id) else { continue };
+                if let Ok(_g) = tx.try_lock() {
                     let _ = self.send_to(id, &proto::heartbeat());
                     if tick % 5 == 0 { let _ = self.send_to(id, &proto::get_machine()); }
-                }
+                };
             }
         }
     }
@@ -339,6 +362,11 @@ impl Link {
 
     fn inbox(&self, id: u32) -> Option<Arc<(Mutex<Inbox>, Condvar)>> {
         self.inner.lock().unwrap().conns.get(&id).map(|c| c.inbox.clone())
+    }
+
+    /// The per-fan send lock.
+    fn tx(&self, id: u32) -> Option<Arc<Mutex<()>>> {
+        self.inner.lock().unwrap().conns.get(&id).map(|c| c.tx.clone())
     }
 
     fn stream(&self, id: u32) -> Result<TcpStream, Error> {
@@ -439,7 +467,8 @@ impl Link {
     }
 
     fn cmd(&self, id: u32, data: &[u8]) -> Result<(), Error> {
-        let _g = self.tx_lock.lock().unwrap();
+        let tx = self.tx(id).ok_or(Error::NotConnected)?;
+        let _g = tx.lock().unwrap();
         match self.send_ready(id, data, fresh_ack_window(600))? {
             Some(e) => Err(Error::Fan(e)),
             None => Ok(()),
@@ -477,14 +506,21 @@ impl Link {
     }
 
     /// Upload one or more fan-layout JPEG frames as a playlist entry and show it.
-    /// Mirrors the verified Holoscope / v25 sequence; fails if the fan reports an error.
-    pub fn upload(&self, id: u32, frames: &[Vec<u8>], name: &str, show_slot: Option<u8>, seq: u32) -> Result<(), Error> {
+    /// Mirrors the verified Holoscope / v25 sequence. Fails if a frame is not a complete JPEG
+    /// within [`MAX_UPLOAD_JPEG`], if the fan reports an error or if the connection drops;
+    /// otherwise reports whether the fan acknowledged the data and listed the file.
+    pub fn upload(&self, id: u32, frames: &[Vec<u8>], name: &str, show_slot: Option<u8>) -> Result<UploadOutcome, Error> {
         if frames.is_empty() { return Err(Error::Invalid("no frames".into())); }
+        if let Some(i) = frames.iter().position(|f| f.len() > MAX_UPLOAD_JPEG || !proto::jpeg_complete(f)) {
+            return Err(Error::Invalid(format!("frame {} is not a complete JPEG of at most {MAX_UPLOAD_JPEG} bytes", i + 1)));
+        }
         let name = proto::mp4_name(name);
-        let _g = self.tx_lock.lock().unwrap();
+        let tx = self.tx(id).ok_or(Error::NotConnected)?;
+        let _g = tx.lock().unwrap();
         // Let late answers to earlier commands arrive first, so they are not counted below.
         self.quiesce(id, Duration::from_millis(150), Duration::from_secs(2));
         let start = self.packet_seq(id);
+        let gone = || self.device(id).is_none();
         let fan_error = || -> Option<FanError> {
             match self.wait_packet(id, start, Duration::ZERO, |p| matches!(p, Packet::Error(_) | Packet::TransBreak)) {
                 Some(Packet::Error(e)) => Some(e),
@@ -493,31 +529,36 @@ impl Link {
             }
         };
         // Every step is answered by exactly one 0E or error code; count them so a late
-        // answer is never mistaken for the answer to a later step.
+        // answer is never mistaken for the answer to a later step. A missing answer is allowed
+        // (older firmware), a dropped connection is not. Returns whether the step was answered.
         let answers = std::cell::Cell::new(0usize);
         let is_answer = |p: &Packet| matches!(p, Packet::Ready | Packet::Error(_));
-        let expect = |ms: u64| -> Result<(), Error> {
+        let expect = |ms: u64| -> Result<bool, Error> {
             answers.set(answers.get() + 1);
             match self.wait_nth(id, start, answers.get(), Duration::from_millis(ms), is_answer) {
                 Some(Packet::Error(e)) => Err(Error::Fan(e)),
-                _ => Ok(()),
+                Some(_) => Ok(true),
+                None if gone() => Err(Error::NotConnected),
+                None => Ok(false),
             }
         };
-        let step = |d: &[u8], ms: u64| -> Result<(), Error> { self.send_to(id, d)?; expect(ms) };
+        let step = |d: &[u8], ms: u64| -> Result<bool, Error> { self.send_to(id, d)?; expect(ms) };
         step(&proto::on(), 1000)?;
-        // Never send the blob after the fan refused the name.
+        // Never send the file after the fan refused the name.
         step(&proto::set_filename(&name), 2000)?;
         if let Some(e) = fan_error() { return Err(Error::Fan(e)); }
-        let (p1, p2) = proto::upload_blob(frames, proto::upload_tag(seq));
+        let (head, records) = proto::upload_blob(frames);
         let mut s = self.stream(id)?;
-        s.write_all(&p1).map_err(|e| Error::Io(e.to_string()))?;
-        for chunk in p2.chunks(UPLOAD_CHUNK) {
-            s.write_all(chunk).map_err(|e| Error::Io(e.to_string()))?;
+        let io = |e: std::io::Error| Error::Io(e.to_string());
+        s.write_all(&head).map_err(io)?;
+        for chunk in records.chunks(UPLOAD_CHUNK) {
+            s.write_all(chunk).map_err(io)?;
             thread::sleep(Duration::from_millis(2));
         }
-        // The fan acks the stored blob; give it time for large videos.
-        expect(1000 + p2.len() as u64 / 2000)?;
-        let r = step(&proto::commit(), 1000).and_then(|_| step(&proto::commit(), 1000));
+        // The fan acks the stored data; give it time for large animations.
+        let acked = expect(1000 + records.len() as u64 / 2000)?;
+        let commit = if frames.len() > 1 { proto::commit_with(frames.len() as u32) } else { proto::commit() };
+        let r = step(&commit, 1000).and_then(|_| step(&commit, 1000));
         if let Err(e) = r {
             let _ = self.send_to(id, &proto::trans_cancel());
             return Err(e);
@@ -530,8 +571,27 @@ impl Link {
         step(&proto::on(), 600)?;
         if let Some(slot) = show_slot { step(&proto::select(slot), 1000)?; }
         if let Some(e) = fan_error() { return Err(Error::Fan(e)); }
-        self.log(format!("uploaded: {name}, {} frame(s), {} bytes", frames.len(), p2.len()));
-        Ok(())
+        // The fan sends its playlist after storing a file; look for the name in it.
+        let listed = self.wait_listed(id, &name, Duration::from_secs(3));
+        if gone() { return Err(Error::NotConnected); }
+        self.log(format!("uploaded: {name}, {} frame(s), {} bytes{}{}", frames.len(), records.len() + head.len(),
+            if acked { "" } else { ", not acknowledged" }, if listed { "" } else { ", not in the playlist (yet)" }));
+        Ok(UploadOutcome { acked, listed })
+    }
+
+    /// Wait until the playlist of fan `id` contains `name`.
+    fn wait_listed(&self, id: u32, name: &str, timeout: Duration) -> bool {
+        let deadline = Instant::now() + timeout;
+        loop {
+            match self.device(id) {
+                Some(d) if d.files.iter().any(|(_, n)| n == name) => return true,
+                None => return false,
+                _ => {}
+            }
+            if Instant::now() >= deadline { return false; }
+            let s = self.packet_seq(id);
+            self.wait_packet(id, s, Duration::from_millis(200), |p| matches!(p, Packet::FileList(_)));
+        }
     }
 
     /// Push one live frame (a fan-layout JPEG) to every connected fan.
@@ -541,25 +601,49 @@ impl Link {
     }
 
     /// Push one live frame (a fan-layout JPEG) to the fans in `ids` only (ids that are not
-    /// connected are skipped). Returns the number of fans that accepted it.
+    /// connected are skipped). Returns the number of fans that acknowledged it.
+    ///
+    /// Each chunk must be acknowledged within [`CAST_ACK`]; a fan that does not counts as failed
+    /// for this frame, and after [`CAST_MAX_MISSES`] such frames in a row its connection is
+    /// dropped so it reconnects. Fans are served in parallel, each under its own lock, so a slow
+    /// fan never holds up the others or their commands.
     pub fn cast_to(&self, ids: &[u32], jpeg: &[u8]) -> usize {
-        let frame = proto::cast_frame(jpeg);
-        let _g = self.tx_lock.lock().unwrap();
-        let mut ok = 0;
-        let mut done: Vec<u32> = Vec::with_capacity(ids.len());
-        for &id in ids {
-            if done.contains(&id) { continue; }
-            done.push(id);
-            let Ok(mut s) = self.stream(id) else { continue };
-            let mut good = true;
-            for chunk in frame.chunks(CAST_CHUNK) {
-                let (_, mark) = self.mark(id);
-                if s.write_all(chunk).is_err() { good = false; break; }
-                // Holoscope blocks here until the fan reacts.
-                self.wait_bytes(id, mark, Duration::from_millis(3500));
-            }
-            if good { ok += 1; }
+        let Some(frame) = proto::cast_frame(jpeg) else {
+            self.log(format!("cast frame refused: not a complete JPEG of at most {} bytes", proto::MAX_JPEG));
+            return 0;
+        };
+        let mut unique: Vec<u32> = Vec::with_capacity(ids.len());
+        for &id in ids { if !unique.contains(&id) { unique.push(id); } }
+        thread::scope(|sc| {
+            let jobs: Vec<_> = unique.iter().map(|&id| {
+                let frame = &frame;
+                sc.spawn(move || self.cast_one(id, frame))
+            }).collect();
+            jobs.into_iter().map(|j| j.join()).filter(|r| matches!(r, Ok(true))).count()
+        })
+    }
+
+    /// Send one cast frame to one fan and wait for its acknowledgements.
+    fn cast_one(&self, id: u32, frame: &[u8]) -> bool {
+        let (Some(tx), Ok(mut s)) = (self.tx(id), self.stream(id)) else { return false };
+        let _g = tx.lock().unwrap();
+        // Always send the whole frame, so the fan's stream never holds half a frame; after the
+        // first missing acknowledgement the rest is sent without waiting.
+        let mut acked = true;
+        for chunk in frame.chunks(CAST_CHUNK) {
+            let (_, mark) = self.mark(id);
+            if s.write_all(chunk).is_err() { acked = false; break; }
+            // Holoscope waits here until the fan reacts; so do we, but not for long.
+            if acked && !self.wait_bytes(id, mark, CAST_ACK) { acked = false; }
         }
-        ok
+        let mut g = self.inner.lock().unwrap();
+        let Some(c) = g.conns.get_mut(&id) else { return false };
+        c.cast_misses = if acked { 0 } else { c.cast_misses + 1 };
+        if c.cast_misses >= CAST_MAX_MISSES {
+            let _ = c.stream.shutdown(Shutdown::Both);
+            drop(g);
+            self.log(format!("fan #{id} did not acknowledge {CAST_MAX_MISSES} cast frames in a row; reconnecting"));
+        }
+        acked
     }
 }

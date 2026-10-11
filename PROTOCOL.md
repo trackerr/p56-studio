@@ -18,7 +18,7 @@ Everything below is implemented in `crates/p56-core` and emulated by
 
 ## 2. Frame format
 `5A <opcode> <body…> F5`. Text packets end with an **XOR** over the body before `F5`.
-Lengths are big-endian; the upload tag and size are little-endian u32. 4-byte packets
+Lengths are big-endian; the u32 fields of an uploaded file (duration, record lengths) are little-endian. 4-byte packets
 are sometimes padded to 5 (Holoscope.exe: `3E`, Holoscope.apk: `00`).
 
 ## 3. Commands app → fan
@@ -89,14 +89,31 @@ sets the fan's *hotspot*, not a router (that is `8B`). `83` takes a slot number,
 
 ## 5. File upload
 ```
-ON(01)→0E · NAME(84)→0E or 85 · [tag u32le][size u32le][1600×00][JPEG…][00]→0E
-· COMMIT(91)×2 · OFF(02) · ON(01) · SHOW(87 n)
+ON(01)→0E · NAME(84)→0E or 85 · FILE→0E · COMMIT(91)×2 · OFF(02) · ON(01) · SHOW(87 n)
+
+FILE   = [duration_ms u32le] RECORD × frames          (in pieces of 1440 B, 2 ms apart)
+RECORD = [len u32le][PCM 1600 B][JPEG][00 × 1–4]
+         len = 1600 + (jpeg_len & ~3) + 4             (everything after the length field)
 ```
-- After an `85` error on the name, **never** send the blob (the fan is then in command mode).
+- **One record per frame.** Each record carries 1/20 s of 8-bit 32 kHz PCM audio
+  (`32000 / fps` bytes, silence here) and exactly one complete JPEG (`FF D8 … FF D9`), padded
+  with at least one zero byte to a multiple of 4.
+- `duration_ms` = frames × 50 for an animation (the P56 plays files at 20 fps). A still
+  picture gets 4950 (5 s at 20 fps minus one frame, Holoscope's default).
+- `COMMIT` carries 1 for a still picture and the frame count for an animation (the value is a
+  setting in Holoscope; the frame count is what earlier hardware tests used).
+- Each JPEG of a file may be up to `0xF000` (61440) bytes; Holoscope lowers the quality
+  (q² per step from 0.95, at most 21 steps) and never cuts a JPEG short.
+- After an `85` error on the name, **never** send the file (the fan is then in command mode).
 - Every step is answered by exactly one `0E` or `85`; count them, so a late answer to a
   previous command can never be mistaken for the answer to the name.
-- `size` = 1600 + length(frames) + 1; the name must end in `.mp4`.
-- One JPEG = photo; several in a row = video/animation.
+- The name must end in `.mp4`.
+
+Verified in the machine code of Holoscope.apk 2.5.2 and 2.5.4 (`fileprocess::picproces`,
+`videoprocess`, `matToQbytes`, `setparam`, `transfinish` in libappHoloscope_arm64-v8a.so) and
+Holoscope.exe 1.1.8 (same record builder). A still picture in this layout is byte-for-byte what
+already worked on real fans; earlier versions of this project sent all JPEGs of an animation in
+one record, which no Holoscope version does.
 
 ## 6. Fan types and image format
 | type | angles × LEDs | fps | format | supported |
@@ -114,12 +131,15 @@ ON(01)→0E · NAME(84)→0E or 85 · [tag u32le][size u32le][1600×00][JPEG…]
 | 20–22, 24–26, 28, 32–34, 37 | various | 20 | JPEG, arm layout not verified | no |
 
 Transcode (identical for cast and upload): auto exposure, `warpPolar`, radial attenuation,
-sawtooth black in the centre, arm layout 0-3-2-1, JPEG q80 → ×0.9 until ≤ 20476 B.
+sawtooth black in the centre, arm layout 0-3-2-1, JPEG from q80, lowering the quality until it
+fits: ≤ 20476 B for a cast frame, ≤ 61440 B for a file. A JPEG is never truncated.
 The fourth parameter in Holoscope.apk (16000/7992/8000) is an audio sample rate: videos can contain sound.
 
 ## 7. Live cast
 Each frame = §6 → 20480 B: `5A 28 | JPEG | zeros | 55 F5`, in two chunks (14600 + 5880 B);
-after each chunk, wait until the fan responds.
+after each chunk, wait until the fan responds. P56 Studio waits at most 1.5 s per chunk, always
+sends the whole frame, counts an unanswered frame as not delivered and reconnects after five
+in a row.
 
 ## 8. Not implemented
 - **Firmware**: Holoscope.exe starts an update over a separate socket with a `.bin`; the APK

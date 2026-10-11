@@ -64,7 +64,7 @@ const tabs = [
   ['fan', 'tab.fan', 'tab.fan', FanPanel],
   ['playlist', 'tab.playlist', 'tabShort.playlist', PlaylistPanel],
   ['media', 'tab.media', 'tab.media', MediaPanel],
-  ['cast', 'tab.cast', 'tab.cast', CastPanel],
+  ['cast', 'tab.cast', 'tabShort.cast', CastPanel],
   ['network', 'tab.network', 'tabShort.network', NetworkPanel],
   ['app', 'tab.app', 'tab.app', AppPanel],
 ] as const;
@@ -83,10 +83,10 @@ function Shell() {
               className="order-last grid grid-cols-6 border-t border-border px-1 pb-[max(0.375rem,env(safe-area-inset-bottom))] pt-1 lg:order-first lg:flex lg:w-[208px] lg:shrink-0 lg:flex-col lg:gap-0.5 lg:border-t-0 lg:px-8 lg:pb-8 lg:pt-7">
               {tabs.map(([v, label, short]) => (
                 <TabsTrigger key={v} value={v} data-testid={`tab-${v}`}
-                  className="flex min-h-[52px] flex-col items-center justify-center gap-1.5 font-display text-[8px] uppercase tracking-[0.12em] text-muted-foreground hover:text-foreground data-[state=active]:text-primary lg:min-h-12 lg:flex-row lg:justify-start lg:gap-3.5 lg:text-[10px] lg:tracking-[0.16em]">
+                  className="flex min-h-[52px] min-w-0 flex-col items-center justify-center gap-1.5 font-display text-[8px] uppercase tracking-[0.12em] text-muted-foreground hover:text-foreground data-[state=active]:text-primary lg:min-h-12 lg:flex-row lg:justify-start lg:gap-3.5 lg:text-[10px] lg:tracking-[0.16em]">
                   <OrbitGlyph active={tab === v} />
                   <span className="hidden lg:inline">{t(label)}</span>
-                  <span className="lg:hidden">{t(short)}</span>
+                  <span className="w-full truncate px-0.5 text-center lg:hidden">{t(short)}</span>
                 </TabsTrigger>
               ))}
             </TabsList>

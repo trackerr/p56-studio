@@ -93,6 +93,8 @@ pub struct SimState {
     pub uploads: u32,
     pub cast_ok: u64,
     pub cast_bad: u64,
+    /// Fault injection: take cast frames but never acknowledge them (a stalled fan).
+    pub cast_mute: bool,
     pub formats: u32,
     pub resets: u32,
     pub heartbeats: u32,
@@ -114,7 +116,7 @@ impl SimState {
             ble_on: false, ble_devices: vec!["BT-Speaker".into(), "Phone".into()], ble_connected: None,
             device_name: cfg.name.clone(), hotspot: (format!("{}-AP", cfg.name), "12345678".into()), router: (String::new(), String::new()),
             files: Vec::new(), current: 0,
-            uploads: 0, cast_ok: 0, cast_bad: 0, formats: 0, resets: 0, heartbeats: 0, cancels: 0,
+            uploads: 0, cast_ok: 0, cast_bad: 0, cast_mute: false, formats: 0, resets: 0, heartbeats: 0, cancels: 0,
             commands: Vec::new(), protocol_errors: Vec::new(), last_cast: None,
         }
     }
@@ -302,8 +304,32 @@ fn connect_loop(sh: Arc<Shared>) {
 
 enum Mode {
     Commands,
-    /// Waiting for the upload blob after a valid `84` file name.
-    Upload { name: String },
+    /// Receiving a file after a valid `84` file name: `[duration u32le]`, then frame records.
+    Upload(Upload),
+}
+
+#[derive(Default)]
+struct Upload {
+    name: String,
+    duration: Option<u32>,
+    frames: Vec<Vec<u8>>,
+    problems: Vec<String>,
+}
+
+/// Check one frame record (`[len][1600 PCM][JPEG][1–4 × 00]`, `len` already removed) and
+/// return its JPEG, or what is wrong with it.
+fn frame_record(rec: &[u8]) -> Result<Vec<u8>, String> {
+    let area = &rec[proto::UPLOAD_PCM..];
+    let jpegs = jpegs_in(area);
+    if jpegs.len() != 1 { return Err(format!("record holds {} JPEGs; the fan expects one record per frame", jpegs.len())); }
+    let j = &jpegs[0];
+    if !area.starts_with(&[0xFF, 0xD8]) { return Err("JPEG does not start right after the 1600 PCM bytes".into()); }
+    let pad = &area[j.len()..];
+    if !(1..=4).contains(&pad.len()) || pad.iter().any(|&b| b != 0) || (j.len() & !3) + 4 != area.len() {
+        return Err(format!("JPEG of {} bytes needs 1–4 zero bytes up to a multiple of 4, got {}", j.len(), pad.len()));
+    }
+    if j.len() > proto::MAX_UPLOAD_JPEG { return Err(format!("JPEG of {} bytes is over the {} byte limit", j.len(), proto::MAX_UPLOAD_JPEG)); }
+    Ok(j.clone())
 }
 
 struct Out<'a> {
@@ -403,6 +429,40 @@ fn check_jpeg(jpeg: &[u8], fan_type: u8) -> Result<(u32, u32), String> {
     Ok((w, h))
 }
 
+/// A file has been received: check it like the firmware would, store it and acknowledge.
+/// Returns whether it was stored.
+fn finish_upload(sh: &Shared, out: &mut Out, up: Upload, ft: u8) -> bool {
+    let name = up.name;
+    let mut ok = up.problems.is_empty() && !up.frames.is_empty();
+    for p in &up.problems { sh.err(format!("upload {name}: {p}")); }
+    if up.frames.is_empty() && up.problems.is_empty() { sh.err(format!("upload {name}: no frames")); }
+    let n = up.frames.len() as u32;
+    match up.duration {
+        Some(0) | None => { sh.err(format!("upload {name}: no duration")); ok = false; }
+        Some(d) if n > 1 && d != n * proto::FRAME_MS => {
+            sh.err(format!("upload {name}: duration {d} ms, expected {} ms for {n} frames at 20 fps", n * proto::FRAME_MS));
+            ok = false;
+        }
+        _ => {}
+    }
+    let mut dims = (0, 0);
+    for (i, j) in up.frames.iter().enumerate() {
+        match check_jpeg(j, ft) {
+            Ok(d) => dims = d,
+            Err(e) => { sh.err(format!("upload {name} frame {}: {e}", i + 1)); ok = false; }
+        }
+    }
+    if ok {
+        let mut g = sh.state.lock().unwrap();
+        g.files.push(SimFile { name, frames: up.frames.len(), width: dims.0, height: dims.1, jpegs: up.frames });
+        g.current = g.files.len() as u8;
+        g.uploads += 1;
+    }
+    sh.changed.notify_all();
+    out.ready();
+    ok
+}
+
 fn session(sh: &Shared, stream: TcpStream) {
     let Ok(mut rd) = stream.try_clone() else { return };
     let mut out = Out { sh, s: stream };
@@ -422,49 +482,43 @@ fn session(sh: &Shared, stream: TcpStream) {
         let n = match rd.read(&mut tmp) {
             Ok(0) => return,
             Ok(n) => n,
-            Err(e) if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) => continue,
+            Err(e) if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) => {
+                // a pause after whole records: the file is complete
+                if let Mode::Upload(up) = &mut mode {
+                    if buf.is_empty() && !up.frames.is_empty() {
+                        just_uploaded = finish_upload(sh, &mut out, std::mem::take(up), ft);
+                        mode = Mode::Commands;
+                    }
+                }
+                continue;
+            }
             Err(_) => return,
         };
         buf.extend_from_slice(&tmp[..n]);
         loop {
-            if let Mode::Upload { name } = &mode {
-                if buf.len() < 8 { break; }
-                let size = u32::from_le_bytes([buf[4], buf[5], buf[6], buf[7]]) as usize;
-                if size > 64 * 1024 * 1024 {
-                    sh.err(format!("upload {name}: impossible size {size}"));
-                    buf.clear();
+            if let Mode::Upload(up) = &mut mode {
+                if up.duration.is_none() {
+                    if buf.len() < 4 { break; }
+                    up.duration = Some(u32::from_le_bytes([buf[0], buf[1], buf[2], buf[3]]));
+                    buf.drain(..4);
+                }
+                if buf.len() < 4 { break; }
+                let len = u32::from_le_bytes([buf[0], buf[1], buf[2], buf[3]]) as usize;
+                // Records are 4-byte aligned; a command (5A …) never is, so it ends the file.
+                if len % 4 != 0 || len < proto::UPLOAD_PCM + 8 || len > proto::UPLOAD_PCM + proto::MAX_UPLOAD_JPEG + 4 {
+                    if up.frames.is_empty() && up.problems.is_empty() {
+                        up.problems.push(format!("first frame record has an impossible length {len}"));
+                    }
+                    just_uploaded = finish_upload(sh, &mut out, std::mem::take(up), ft);
                     mode = Mode::Commands;
-                    break;
+                    continue;
                 }
-                if buf.len() < 8 + size { break; }
-                let blob: Vec<u8> = buf.drain(..8 + size).collect();
-                let content = &blob[8..];
-                let name = name.clone();
-                mode = Mode::Commands;
-                if content[..proto::UPLOAD_PADDING.min(content.len())].iter().any(|&b| b != 0) {
-                    sh.err(format!("upload {name}: the 1600 padding bytes are not all 0"));
+                if buf.len() < 4 + len { break; }
+                let rec: Vec<u8> = buf.drain(..4 + len).collect();
+                match frame_record(&rec[4..]) {
+                    Ok(j) => up.frames.push(j),
+                    Err(e) => up.problems.push(format!("frame {}: {e}", up.frames.len() + up.problems.len() + 1)),
                 }
-                let jpegs = jpegs_in(&content[proto::UPLOAD_PADDING.min(content.len())..]);
-                let mut dims = (0, 0);
-                let mut ok = !jpegs.is_empty();
-                if jpegs.is_empty() { sh.err(format!("upload {name}: no JPEG frames")); }
-                for (i, j) in jpegs.iter().enumerate() {
-                    match check_jpeg(j, ft) {
-                        Ok(d) => dims = d,
-                        Err(e) => { sh.err(format!("upload {name} frame {i}: {e}")); ok = false; }
-                    }
-                }
-                {
-                    let mut g = sh.state.lock().unwrap();
-                    if ok {
-                        g.files.push(SimFile { name: name.clone(), frames: jpegs.len(), width: dims.0, height: dims.1, jpegs });
-                        g.current = g.files.len() as u8;
-                        g.uploads += 1;
-                    }
-                }
-                sh.changed.notify_all();
-                just_uploaded = ok;
-                out.ready();
                 continue;
             }
             // command mode
@@ -493,7 +547,7 @@ fn session(sh: &Shared, stream: TcpStream) {
             };
             if buf[1] == op::CAST_FRAME && !cast_acked && buf.len() >= CAST_CHUNK {
                 cast_acked = true;
-                out.ready();
+                if !sh.state.lock().unwrap().cast_mute { out.ready(); }
             }
             if buf.len() < len { break; }
             let pkt: Vec<u8> = buf.drain(..len).collect();
@@ -670,7 +724,7 @@ fn handle(sh: &Shared, out: &mut Out, pkt: &[u8], ft: u8, just_uploaded: &mut bo
             if dup { out.send(&FanError::DuplicateName.to_packet()); return None; }
             if full { out.send(&FanError::TooManyFiles.to_packet()); return None; }
             out.ready();
-            return Some(Mode::Upload { name });
+            return Some(Mode::Upload(Upload { name, ..Default::default() }));
         }
         op::CAST_FRAME => {
             let good = pkt[n - 2] == 0x55 && pkt[n - 1] == EOF;
@@ -683,7 +737,7 @@ fn handle(sh: &Shared, out: &mut Out, pkt: &[u8], ft: u8, just_uploaded: &mut bo
                 Ok(()) => { let j = jp.into_iter().next().unwrap(); set(&|g| { g.cast_ok += 1; g.last_cast = Some((Instant::now(), j.clone())); }); }
                 Err(e) => { set(&|g| g.cast_bad += 1); sh.err(e); }
             }
-            out.ready();
+            if !sh.state.lock().unwrap().cast_mute { out.ready(); }
         }
         other => {
             sh.err(format!("unknown command {other:02x}: {:02x?}", &pkt[..pkt.len().min(16)]));
