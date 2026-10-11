@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { IconFilm, IconImage, IconRings, IconType, IconUpload, IconX } from '@/components/icons';
+import { IconFilm, IconImage, IconRings, IconRotate, IconType, IconUpload, IconX } from '@/components/icons';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -8,7 +8,7 @@ import { Progress } from '@/components/ui/progress';
 import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
 import { RoundView, Section, ValueSlider } from '@/components/bits';
-import { decodeVideo, invoke, onEvent, pickMedia, toBase64, type MediaInfo, type Picked, type Preview } from '@/lib/api';
+import { DEFAULT_PLACEMENT, decodeVideo, invoke, onEvent, pickMedia, toBase64, type MediaInfo, type Picked, type Preview } from '@/lib/api';
 import { useT, type Key, type TFunc } from '@/lib/i18n';
 import { useP56 } from '@/state';
 
@@ -16,10 +16,16 @@ export function PlacementBox() {
   const { placement: p, setPlacement } = useP56();
   const { t } = useT();
   return (
-    <Section title={t('media.placement')} aside={<Button size="sm" variant="ghost" onClick={() => setPlacement({ x: 0, y: 0, scale: 1, mirror: false })}>{t('common.reset')}</Button>}>
+    <Section title={t('media.placement')} aside={<Button size="sm" variant="ghost" onClick={() => setPlacement(DEFAULT_PLACEMENT)}>{t('common.reset')}</Button>}>
       <ValueSlider label={t('media.horizontal')} value={p.x} min={-0.5} max={0.5} step={0.01} format={(v) => v.toFixed(2)} onCommit={(x) => setPlacement({ ...p, x })} />
       <ValueSlider label={t('media.vertical')} value={p.y} min={-0.5} max={0.5} step={0.01} format={(v) => v.toFixed(2)} onCommit={(y) => setPlacement({ ...p, y })} />
       <ValueSlider label={t('media.scale')} value={p.scale} min={0.3} max={2} step={0.01} format={(v) => `${v.toFixed(2)}×`} onCommit={(scale) => setPlacement({ ...p, scale })} />
+      <div className="flex items-center justify-between gap-3">
+        <span>{t('media.rotate')}</span>
+        <Button size="sm" variant="secondary" data-testid="rotate" aria-label={t('media.rotateBy90')} onClick={() => setPlacement({ ...p, rotate: ((p.rotate ?? 0) + 90) % 360 })}>
+          <IconRotate />{p.rotate ?? 0}°
+        </Button>
+      </div>
       <div className="flex items-center justify-between gap-3">
         <Label htmlFor="sw-mirror">{t('media.mirror')}</Label>
         <Switch id="sw-mirror" checked={p.mirror} onCheckedChange={(mirror) => setPlacement({ ...p, mirror })} />
@@ -208,7 +214,7 @@ export function MediaPanel() {
         <Section title={t('media.toFan')}>
           <div className="grid gap-3 sm:grid-cols-[1fr_110px_130px]">
             <div className="space-y-1.5"><Label className="orbit-label" htmlFor="up-name">{t('media.nameOnFan')}</Label>
-              <Input id="up-name" data-testid="up-name" value={name} placeholder={t('media.fileName')} onChange={(e) => setName(e.target.value)} /></div>
+              <Input id="up-name" data-testid="up-name" maxLength={28} value={name} placeholder={t('media.fileName')} onChange={(e) => setName(e.target.value)} /></div>
             <div className="space-y-1.5"><Label className="orbit-label" htmlFor="up-slot">{t('media.showSlot')}</Label>
               <Input id="up-slot" type="number" min={1} max={255} value={slot} onChange={(e) => setSlot(Number(e.target.value) || 1)} /></div>
             <div className="space-y-1.5"><Label className="orbit-label" htmlFor="up-max">{t('common.maxFrames')}</Label>

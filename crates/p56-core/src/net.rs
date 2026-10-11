@@ -10,7 +10,9 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::protocol::{self as proto, ColorMode, FanError, MachineInfo, Packet, Status, CAST_CHUNK, MAX_UPLOAD_JPEG, TCP_PORT, UDP_PORT, UPLOAD_CHUNK};
+use crate::protocol::{
+    self as proto, Bluetooth, ColorMode, FanError, MachineInfo, Packet, Status, CAST_CHUNK, MAX_UPLOAD_JPEG, TCP_PORT, UDP_PORT, UPLOAD_CHUNK,
+};
 use crate::Error;
 
 /// Events emitted by the link, for UIs.
@@ -31,8 +33,8 @@ pub struct Device {
     pub info: Option<MachineInfo>,
     pub files: Vec<(u8, String)>,
     pub last_error: Option<FanError>,
-    /// Latest `8F` list per kind: (index, items).
-    pub lists: HashMap<u8, (u8, Vec<String>)>,
+    /// Latest `8F` report: Bluetooth state, speaker volume and scanned devices.
+    pub bluetooth: Option<Bluetooth>,
     pub last_seen: Option<Instant>,
 }
 
@@ -354,9 +356,7 @@ impl Link {
                             Packet::MachineInfo(i) => c.dev.info = Some(i.clone()),
                             Packet::FileList(f) => c.dev.files = f.clone(),
                             Packet::Error(e) => c.dev.last_error = Some(*e),
-                            Packet::List { kind, index, items } => {
-                                c.dev.lists.insert(*kind, (*index, items.clone()));
-                            }
+                            Packet::Bluetooth(b) => c.dev.bluetooth = Some(b.clone()),
                             _ => {}
                         }
                     }
@@ -665,11 +665,12 @@ impl Link {
         self.quiesce(id, Duration::from_millis(150), Duration::from_secs(2));
         let start = self.packet_seq(id);
         let gone = || self.device(id).is_none();
+        // Only an 85 error code fails an upload. A 22 is ignored, as Holoscope.apk does (its
+        // Windows version reads it as "firmware update finished").
         let fan_error = || -> Option<FanError> {
-            match self.wait_packet(id, start, Duration::ZERO, |p| matches!(p, Packet::Error(_) | Packet::TransBreak)) {
+            match self.wait_packet(id, start, Duration::ZERO, |p| matches!(p, Packet::Error(_))) {
                 Some(Packet::Error(e)) => Some(e),
-                Some(_) => Some(FanError::TransferFailed(0x22)),
-                None => None,
+                _ => None,
             }
         };
         // Every step is answered by exactly one 0E or error code; count them so a late

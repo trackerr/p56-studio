@@ -159,7 +159,7 @@ export function FanPanel() {
         <aside className="min-w-0 space-y-7">
           <div className="space-y-2" data-testid="fan-card">
             <h1 className="break-words font-display text-xl uppercase tracking-[0.06em] text-primary" data-testid="fan-name">{fan.name}</h1>
-            <div className="text-xs text-muted-foreground">{fan.ip} · {fan.mac || '—'} · {s ? t('common.typeId', { id: s.fan_type }) : '…'}{s?.fan_type === 8 ? ' · P56' : ''}</div>
+            <div className="text-xs text-muted-foreground">{fan.ip} · {fan.mac || '—'} · {s ? t('common.typeId', { id: s.fan_type }) : '…'}{fan.model ? ` · ${fan.model}` : ''}</div>
             <div className="flex flex-wrap gap-x-4 gap-y-1 pt-1 text-xs">
               <Status on={!!s?.power} testId="badge-power">{s ? (s.power ? t('fan.on') : t('fan.off')) : '…'}</Status>
               {s?.power && <Status on={s.playing}>{s.playing ? t('fan.playing') : t('fan.paused')}</Status>}
@@ -195,7 +195,7 @@ export function FanPanel() {
                 <Switch id={`sw-${key}`} data-testid={`sw-${key}`} checked={!!on} onCheckedChange={(c) => run(label, (i) => control(i, c ? a : b))} />
               </div>
             ))}
-            <ValueSlider id="sl-volume" label={t('fan.volume')} value={10} min={0} max={10} onCommit={(v) => run(t('fan.volume'), (i) => setValue(i, 'volume', v))} />
+            <ValueSlider id="sl-volume" label={t('fan.volume')} value={fan.ble?.volume ?? 10} min={0} max={10} onCommit={(v) => run(t('fan.volume'), (i) => setValue(i, 'volume', v))} />
             <p className="mt-1 text-xs text-muted-foreground">{t('fan.volumeHint')}</p>
           </Section>
 

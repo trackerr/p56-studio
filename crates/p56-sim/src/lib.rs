@@ -600,6 +600,18 @@ fn check_jpeg(jpeg: &[u8], fan_type: u8) -> Result<(u32, u32), String> {
 
 /// A file has been received: check it like the firmware would, store it and acknowledge.
 /// Returns whether it was stored.
+/// The fan's `8F` report: Bluetooth state, speaker volume and the scanned devices.
+fn bluetooth(sh: &Shared) -> Vec<u8> {
+    let g = sh.state.lock().unwrap();
+    proto::bluetooth_packet(&proto::Bluetooth {
+        on: g.ble_on,
+        connected: g.ble_on && g.ble_connected.is_some(),
+        connecting: false,
+        volume: g.volume,
+        devices: if g.ble_on { g.ble_devices.clone() } else { Vec::new() },
+    })
+}
+
 fn finish_upload(sh: &Shared, out: &mut Out, up: Upload, ft: u8) -> bool {
     let name = up.name;
     let mut ok = up.problems.is_empty() && !up.frames.is_empty();
@@ -770,7 +782,7 @@ impl Shared {
     fn info(&self) -> MachineInfo {
         let g = self.state.lock().unwrap();
         MachineInfo {
-            ip: self.cfg.ip.to_string(),
+            stitch: [0; 4],
             name: g.device_name.clone(),
             mac: self.cfg.mac.iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(":"),
             hotspot: g.hotspot.0.clone(),
@@ -906,30 +918,25 @@ fn handle(sh: &Shared, out: &mut Out, pkt: &[u8], ft: u8, just_uploaded: &mut bo
         }
         op::BLE_SCAN => {
             out.ready();
-            let (on, list, con) = {
-                let g = sh.state.lock().unwrap();
-                (g.ble_on, g.ble_devices.clone(), g.ble_connected)
-            };
-            out.send(&proto::list_packet(0x80 | if con.is_some() { 0x40 } else { 0 }, con.map(|c| c + 1).unwrap_or(0), if on { &list } else { &[] }));
+            out.send(&bluetooth(sh));
         }
         op::BLE_DISCONNECT => {
             set(&|g| g.ble_connected = None);
             out.ready();
-            let list = sh.state.lock().unwrap().ble_devices.clone();
-            out.send(&proto::list_packet(0x80, 0, &list));
+            out.send(&bluetooth(sh));
         }
         op::BLE_CONNECT => {
             if check_dup(pkt, "ble_connect") {
                 let i = pkt[2];
-                let (ok, list) = {
+                let ok = {
                     let g = sh.state.lock().unwrap();
-                    ((i as usize) < g.ble_devices.len() && g.ble_on, g.ble_devices.clone())
+                    (i as usize) < g.ble_devices.len() && g.ble_on
                 };
                 if ok {
                     set(&|g| g.ble_connected = Some(i));
                 }
                 out.ready();
-                out.send(&proto::list_packet(0x80 | if ok { 0x40 } else { 0 }, if ok { i + 1 } else { 0 }, &list));
+                out.send(&bluetooth(sh));
             }
         }
         op::GET_MACHINE => {
@@ -943,8 +950,10 @@ fn handle(sh: &Shared, out: &mut Out, pkt: &[u8], ft: u8, just_uploaded: &mut bo
             out.send(&status(sh));
         }
         op::SELECT_DEVICE => {
-            let d = pkt[2];
-            set(&|g| g.group_device = d);
+            if pkt[2] != op::SELECT_DEVICE {
+                sh.err(format!("select_device: expected 5A 23 23 F5, got byte 2 = {:02x}", pkt[2]));
+            }
+            set(&|g| g.group_device = 1);
             out.ready();
         }
         op::ANGLE_ALIGN_START | op::ANGLE_ALIGN_STOP => {
@@ -1015,6 +1024,8 @@ fn handle(sh: &Shared, out: &mut Out, pkt: &[u8], ft: u8, just_uploaded: &mut bo
                 set(&|g| g.volume = v.min(10));
                 out.ready();
                 out.send(&status(sh));
+                // the volume is only reported in the 8F packet (assumed: sent after a change)
+                out.send(&bluetooth(sh));
             }
         }
         op::ANGLE => {

@@ -37,7 +37,7 @@ are sometimes padded to 5 (Holoscope.exe: `3E`, Holoscope.apk: `00`).
 | 1A / 1B | Bluetooth on / off | `5A 1A 1A F5` / `5A 1B 1B F5` |
 | 1C | request machine info | `5A 1C 1C F5` → `8D` |
 | 1F / 20 | group master on / off | `5A 1F 1F F5` / `5A 20 20 F5` |
-| 23 | select device in group | `5A 23 n F5` |
+| 23 | select this fan in its group | `5A 23 23 F5`, sent to that fan (`stitchselectdevice`) |
 | 28 | live cast frame | `5A 28 <jpeg> 00… 55 F5`, always 20480 B |
 | 2A / 2B | group angle alignment start / stop | `5A 2A 2A F5` / `5A 2B 2B F5` |
 | 2C / 2D | colour: true colour / high brightness | `5A 2C 2C F5` / `5A 2D 2D F5` |
@@ -52,10 +52,18 @@ are sometimes padded to 5 (Holoscope.exe: `3E`, Holoscope.apk: `00`).
 | 8B | join a router | `5A 8B` + ssid[32] + pw[32] + xor + `F5` (68 B) |
 | 8E | Bluetooth: connect to entry i | `5A 8E i i F5` |
 | 90 | volume 0–10 | `5A 90 v v F5` |
-| 91 | finish upload | `5A 91 <u32 be> xor F5`; u32 = 1 for JPEG types, the frame count for binary types |
+| 91 | finish upload | `5A 91 <u32 be> xor F5`; see §5 |
+| 93 | group: delete a file by name on every fan | `5A 93` + name[32] + xor + `F5` (36 B; ".mp4" appended) — not implemented |
+| 94 | group: rename a file by name on every fan | `5A 94` + old[32] + new[32] + xor + `F5` (68 B; field order not fully verified) — not implemented |
+| 95 | group saved (Holoscope.exe) | `5A 95 01 01 F5` — not implemented |
+| 96 | place in a group picture | `5A 96 group width height x y xor F5` (9 B, xor over bytes 2–6) — not implemented |
+| 26 | unknown (Holoscope.exe, after a device-type setup) | `5A 26 26 F5` — not implemented |
 
-32-byte fields are zero padded; the xor for `89/8A/8B` covers byte 2 up to and including len−3.
-Names: ASCII (the firmware knows GB2312 and local 8-bit; ASCII is the same in both).
+32-byte fields are zero padded and hold at most 31 bytes of text (Holoscope keeps a terminating
+zero); the xor for `89/8A/8B` covers byte 2 up to and including len−3.
+Names: ASCII (the firmware knows GB2312 and local 8-bit; ASCII is the same in both). File names
+fit the 32-byte name fields with `.mp4` (Holoscope's own UI allows 12 bytes); P56 Studio keeps
+letters, digits, space and `-_.()` and at most 28 bytes before `.mp4`.
 **Correction to the first analysis:** `8A` was built as `len + ssid\0pw` — wrong; and `8A`
 sets the fan's *hotspot*, not a router (that is `8B`). `83` takes a slot number, not the old name.
 
@@ -63,13 +71,13 @@ sets the fan's *hotspot*, not a router (that is `8B`). `83` takes a slot number,
 | Op | Meaning | Layout |
 |---|---|---|
 | 0E | ready / received | `5A 0E 0E F5`, after every command and every upload block |
-| 21 / 22 | transfer: continue / aborted | `5A 21 21 F5` / `5A 22 22 F5` |
+| 21 / 22 | transfer: continue / (see note) | `5A 21 21 F5` / `5A 22 22 F5`. Holoscope.apk ignores `22`; Holoscope.exe reads it as "firmware update finished". P56 Studio ignores it during uploads. |
 | 29 | transfer stored (progress 100 %) | `5A 29 29 F5` |
 | 84 | playlist | `5A 84 <len16> "1 a.mp4/2 b.mp4" xor F5` (names at most 32 characters) |
 | 85 | error code | `5A 85 c c F5`: `06` name already exists, `0A` too many files, other: transfer failed |
 | 86 | status, 11 B | see below |
-| 8D | machine info, 126 B | ip@6 (4 B), name@14 (32), MAC@46 (6), hotspot@52 (32), router@84 (32), `F5`@125 |
-| 8F | list (group / Bluetooth) | `5A 8F kind idx <len16> "a/b/c" xor F5`; `kind` bit7 = Bluetooth |
+| 8D | machine info, 126 B | group picture width, height, x, y @6–9 (0 when not in a group; earlier read as an IP address), name@14 (32), MAC@46 (6), hotspot@52 (32), router@84 (32), `F5`@125 |
+| 8F | Bluetooth | `5A 8F flags volume <len16> "a/b/c" xor F5`: flags bit 7 on, bit 6 connected, bit 5 connecting; `volume` = speaker volume 0–10 (the only place the fan reports it); up to 8 device names |
 
 ### Status `86`
 `5A 86 flags slot brightness (colour<<4 | angle_hi) angle_lo group type extra F5`
@@ -84,6 +92,7 @@ sets the fan's *hotspot*, not a router (that is `8B`). `83` takes a slot number,
 | 1 (0x02) | group master |
 
 `brightness` 1–16, `colour` 1 = true colour / 2 = high brightness, `angle` 0–360 (180 = neutral),
+`group` = number of the group picture this fan belongs to (1–16, Holoscope ignores larger values),
 `type` = fan type (§6). **Correction:** byte 4 is the brightness and bytes 5–6 the configured angle
 (not "LEDs per arm" and "number of angles"); the flag bits are as above.
 
@@ -129,6 +138,9 @@ one record, which no Holoscope version does.
 | 6, 7, 12, 13, 15 | various | 12 | Holoscope.exe: raw polar JPEG; Holoscope.apk: binary | legacy format |
 | 16, 18, 23, 27, 29–31, 36 | various | 12–16 | binary (`hc32l`, `hs42l`, `hl20`, `hl18`) | no |
 | 20–22, 24–26, 28, 32–34, 37 | various | 20 | JPEG, arm layout not verified | no |
+
+Model names (Holoscope.exe): 1 HS65, 2 HS56, 3 HS80, 4 P50, 5 HD30, 6 P45, 7 P42, **8 P56**, 9 HS100,
+10 HS130, 11 P62, 12 HL20, 13 HL33, 14 PD45, 15 PD42.
 
 Transcode (identical for cast and upload): auto exposure, `warpPolar`, radial attenuation,
 sawtooth black in the centre, arm layout 0-3-2-1, JPEG from q80, lowering the quality until it

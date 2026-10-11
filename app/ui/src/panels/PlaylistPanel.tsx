@@ -69,7 +69,7 @@ export function PlaylistPanel() {
           <DialogHeader><DialogTitle>{t('playlist.renameTitle', { slot: edit?.slot ?? '' })}</DialogTitle></DialogHeader>
           <form onSubmit={(e) => { e.preventDefault(); if (edit) run(t('playlist.rename'), (i) => invoke('set_text', { id: i, what: 'rename', a: edit.name, slot: edit.slot })); setEdit(null); }}>
             <div className="flex items-center gap-2">
-              <Input autoFocus value={edit?.name ?? ''} maxLength={60} data-testid="rename-input" aria-label={t('playlist.rename')}
+              <Input autoFocus value={edit?.name ?? ''} maxLength={28} data-testid="rename-input" aria-label={t('playlist.rename')}
                 onChange={(e) => edit && setEdit({ ...edit, name: e.target.value })} />
               <span className="text-[13px] text-muted-foreground">.mp4</span>
             </div>

@@ -155,9 +155,9 @@ fn names_hotspot_router() {
     r.link.set_router(r.id, "HomeWifi", "pass word!").unwrap();
     r.wait_sim(|s| s.router == ("HomeWifi".into(), "pass word!".into()));
     r.wait_dev(|d| d.info.as_ref().is_some_and(|i| i.hotspot == "HoloNet" && i.router == "HomeWifi"));
-    // 32-byte fields: longer values are cut, not overflowing into the next field
+    // 32-byte fields: longer values are cut to 31 bytes (the field keeps its terminating zero)
     r.link.set_router(r.id, &"R".repeat(40), &"P".repeat(40)).unwrap();
-    r.wait_sim(|s| s.router == ("R".repeat(32), "P".repeat(32)));
+    r.wait_sim(|s| s.router == ("R".repeat(31), "P".repeat(31)));
     r.clean();
 }
 
@@ -342,12 +342,15 @@ fn bluetooth_scan_connect_disconnect() {
     r.link.ble(r.id, true).unwrap();
     r.wait_sim(|s| s.ble_on);
     r.link.ble_scan(r.id).unwrap();
-    r.wait_dev(|d| d.lists.get(&0x80).is_some_and(|(_, items)| items == &vec!["BT-Speaker".to_string(), "Phone".to_string()]));
+    r.wait_dev(|d| d.bluetooth.as_ref().is_some_and(|b| b.on && !b.connected && b.devices == vec!["BT-Speaker".to_string(), "Phone".to_string()]));
     r.link.ble_connect(r.id, 1).unwrap();
     r.wait_sim(|s| s.ble_connected == Some(1));
-    r.wait_dev(|d| d.lists.get(&0xC0).is_some_and(|(i, _)| *i == 2));
+    r.wait_dev(|d| d.bluetooth.as_ref().is_some_and(|b| b.connected));
+    r.link.volume(r.id, 6).unwrap();
+    r.wait_dev(|d| d.bluetooth.as_ref().is_some_and(|b| b.volume == 6));
     r.link.ble_disconnect(r.id).unwrap();
     r.wait_sim(|s| s.ble_connected.is_none());
+    r.wait_dev(|d| d.bluetooth.as_ref().is_some_and(|b| !b.connected));
     r.link.ble(r.id, false).unwrap();
     r.wait_sim(|s| !s.ble_on);
     r.clean();

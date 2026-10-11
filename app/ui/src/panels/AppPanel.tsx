@@ -45,7 +45,7 @@ export function AppPanel() {
             <SelectItem value="0">{t('app.auto')}</SelectItem>
             {fanTypes.map((ft) => (
               <SelectItem key={ft.id} value={String(ft.id)} disabled={ft.support === 'unsupported'}>
-                {t('common.typeId', { id: ft.id })} · {ft.angles}×{ft.leds}{ft.jpeg ? ` · JPEG ${ft.jpeg}` : ''}{ft.id === 8 ? ' · P56' : ''}{ft.support === 'unsupported' ? ` · ${t('app.unsupported')}` : ft.support === 'legacy' ? ` · ${t('app.legacy')}` : ''}
+                {t('common.typeId', { id: ft.id })} · {ft.angles}×{ft.leds}{ft.jpeg ? ` · JPEG ${ft.jpeg}` : ''}{ft.model ? ` · ${ft.model}` : ''}{ft.support === 'unsupported' ? ` · ${t('app.unsupported')}` : ft.support === 'legacy' ? ` · ${t('app.legacy')}` : ''}
               </SelectItem>
             ))}
           </SelectContent>

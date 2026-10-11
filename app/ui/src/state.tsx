@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { t } from '@/lib/i18n';
-import { invoke, onEvent, type Device, type FanTypeInfo, type MediaInfo, type Picked, type Placement } from '@/lib/api';
+import { DEFAULT_PLACEMENT, invoke, onEvent, type Device, type FanTypeInfo, type MediaInfo, type Picked, type Placement } from '@/lib/api';
 
 export type CurrentMedia = MediaInfo & { picked?: Picked };
 type Platform = { os: string; screen: boolean; version: string };
@@ -54,7 +54,7 @@ export function P56Provider({ children }: { children: ReactNode }) {
   const [log, setLog] = useState<string[]>([]);
   const [platform, setPlatform] = useState<Platform>({ os: '', screen: false, version: '' });
   const [fanTypes, setFanTypes] = useState<FanTypeInfo[]>([]);
-  const [placement, setPlacement] = useState<Placement>({ x: 0, y: 0, scale: 1, mirror: false });
+  const [placement, setPlacement] = useState<Placement>(DEFAULT_PLACEMENT);
   const [media, setMedia] = useState<CurrentMedia | null>(null);
   const [picked, setPicked] = useState<Picked | null>(null);
   const started = useRef(false);

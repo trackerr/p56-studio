@@ -173,6 +173,9 @@ enum Cmd {
         scale: f64,
         #[arg(long)]
         mirror: bool,
+        /// Turn the picture clockwise, in degrees (e.g. 90)
+        #[arg(long, default_value_t = 0)]
+        rotate: u16,
     },
     /// Live cast: photo, GIF, video or 'test'
     Cast {
@@ -190,6 +193,9 @@ enum Cmd {
         scale: f64,
         #[arg(long)]
         mirror: bool,
+        /// Turn the picture clockwise, in degrees (e.g. 90)
+        #[arg(long, default_value_t = 0)]
+        rotate: u16,
     },
     /// Transcode only: writes <prefix>_layout.png and <prefix>.jpg, no network
     Preview {
@@ -263,7 +269,7 @@ fn main() {
         vec![*ids.get(cli.fan.saturating_sub(1)).unwrap_or_else(|| die(format!("fan {} does not exist; there are {}", cli.fan, ids.len())))]
     };
     let mut failed = false;
-    if let Cmd::Cast { source, fps, seconds, x, y, scale, mirror } = &cli.cmd {
+    if let Cmd::Cast { source, fps, seconds, x, y, scale, mirror, rotate } = &cli.cmd {
         // One live stream to exactly the selected fans, encoded once per fan type.
         let mut groups: Vec<(FanType, Vec<u32>)> = Vec::new();
         for id in targets {
@@ -279,7 +285,7 @@ fn main() {
             }
         }
         if !groups.is_empty() {
-            let pl = Placement { x_offset: *x, y_offset: *y, scale: *scale, mirror: *mirror };
+            let pl = Placement { x_offset: *x, y_offset: *y, scale: *scale, mirror: *mirror, rotation: *rotate };
             if let Err(e) = cast_loop(&link, &groups, &pl, source, *fps, *seconds) {
                 eprintln!("error: {e}");
                 failed = true;
@@ -397,12 +403,24 @@ fn run(link: &Link, id: u32, ft: FanType, cmd: &Cmd) -> Result<(), String> {
             Ble::Scan => {
                 let seq = link.packet_seq(id);
                 e(link.ble_scan(id))?;
-                match link.wait_packet(id, seq, Duration::from_secs(8), |p| matches!(p, p56_core::Packet::List { kind, .. } if kind & 0x80 != 0)) {
-                    Some(p56_core::Packet::List { items, index, .. }) => {
-                        for (i, n) in items.iter().enumerate() {
-                            println!("  [{i}] {n}{}", if index as usize == i + 1 { "  (connected)" } else { "" });
+                match link.wait_packet(id, seq, Duration::from_secs(8), |p| matches!(p, p56_core::Packet::Bluetooth(_))) {
+                    Some(p56_core::Packet::Bluetooth(b)) => {
+                        println!(
+                            "  Bluetooth {}{}, volume {}",
+                            if b.on { "on" } else { "off" },
+                            if b.connected {
+                                ", connected"
+                            } else if b.connecting {
+                                ", connecting"
+                            } else {
+                                ""
+                            },
+                            b.volume
+                        );
+                        for (i, n) in b.devices.iter().enumerate() {
+                            println!("  [{i}] {n}");
                         }
-                        if items.is_empty() {
+                        if b.devices.is_empty() {
                             println!("  no devices found (is Bluetooth on? `p56 ble on`)");
                         }
                         Ok(())
@@ -419,13 +437,18 @@ fn run(link: &Link, id: u32, ft: FanType, cmd: &Cmd) -> Result<(), String> {
             let d = link.device(id).ok_or("fan gone")?;
             println!("fan #{} {}", d.id, d.ip.map(|i| i.to_string()).unwrap_or_default());
             if let Some(i) = &d.info {
-                println!("  name {}  mac {}  ip {}", i.name, i.mac, i.ip);
+                println!("  name {}  mac {}", i.name, i.mac);
+                if i.stitch != [0; 4] {
+                    let [w, h, x, y] = i.stitch;
+                    println!("  group picture {w}×{h}, this fan at column {x}, row {y}");
+                }
                 println!("  hotspot {}  router {}", i.hotspot, if i.router.is_empty() { "-" } else { &i.router });
             }
             if let Some(s) = &d.status {
                 println!(
-                    "  type {} ({:?})  on {}  playing {}  slot {}  repeat {}",
+                    "  type {}{} ({:?})  on {}  playing {}  slot {}  repeat {}",
                     s.fan_type,
+                    FanType::model(s.fan_type).map(|m| format!(" {m}")).unwrap_or_default(),
                     FanType::support(s.fan_type),
                     s.power,
                     s.playing,
@@ -457,8 +480,8 @@ fn run(link: &Link, id: u32, ft: FanType, cmd: &Cmd) -> Result<(), String> {
             }
             Ok(())
         }
-        Cmd::Upload { file, name, slot, max_frames, x, y, scale, mirror } => {
-            let pl = Placement { x_offset: *x, y_offset: *y, scale: *scale, mirror: *mirror };
+        Cmd::Upload { file, name, slot, max_frames, x, y, scale, mirror, rotate } => {
+            let pl = Placement { x_offset: *x, y_offset: *y, scale: *scale, mirror: *mirror, rotation: *rotate };
             let frames = frames_from(file, &ft, &pl, *max_frames)?;
             let name = name.clone().unwrap_or_else(|| file.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or("upload".into()));
             println!("uploading {} frame(s) as {}…", frames.len(), p56_core::protocol::mp4_name(&name));

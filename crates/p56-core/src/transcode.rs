@@ -67,6 +67,28 @@ impl FanType {
         FanType::known(id).unwrap_or(FanType { id: 1, angles: 960, radius: 192, arms: 4, gain: 1.5 })
     }
 
+    /// Model name of a fan type, as Holoscope.exe lists them.
+    pub fn model(id: u8) -> Option<&'static str> {
+        Some(match id {
+            1 => "HS65",
+            2 => "HS56",
+            3 => "HS80",
+            4 => "P50",
+            5 => "HD30",
+            6 => "P45",
+            7 => "P42",
+            8 => "P56",
+            9 => "HS100",
+            10 => "HS130",
+            11 => "P62",
+            12 => "HL20",
+            13 => "HL33",
+            14 => "PD45",
+            15 => "PD42",
+            _ => return None,
+        })
+    }
+
     pub fn support(id: u8) -> Support {
         match id {
             1 | 2 | 3 | 4 | 5 | 8 | 11 | 14 | 17 => Support::Jpeg,
@@ -149,11 +171,13 @@ pub struct Placement {
     pub scale: f64,
     /// Mirror horizontally before projecting (needed when the fan is viewed from the back).
     pub mirror: bool,
+    /// Turn the picture clockwise by this many degrees (Holoscope offers 90° steps).
+    pub rotation: u16,
 }
 
 impl Default for Placement {
     fn default() -> Self {
-        Placement { x_offset: 0.0, y_offset: 0.0, scale: 1.0, mirror: false }
+        Placement { x_offset: 0.0, y_offset: 0.0, scale: 1.0, mirror: false, rotation: 0 }
     }
 }
 
@@ -249,9 +273,11 @@ pub fn to_polar(img: &RgbImage, ft: &FanType, pl: &Placement) -> RgbImage {
     let max_r = ((short / 2.0).floor() + 0.5) * pl.scale.max(0.05);
     let k_angle = ft.angles as f64 / (2.0 * std::f64::consts::PI);
     let k_mag = ft.radius as f64 / max_r;
+    let turn = (pl.rotation % 360) as f64 * std::f64::consts::PI / 180.0;
     let mut out = RgbImage::new(ft.radius, ft.angles);
     for phi in 0..ft.angles {
-        let angle = phi as f64 / k_angle;
+        // sampling the source further back turns the picture clockwise
+        let angle = phi as f64 / k_angle - turn;
         let (s, c) = angle.sin_cos();
         for rho in 0..ft.radius {
             let mag = rho as f64 / k_mag;
@@ -553,6 +579,22 @@ mod tests {
             assert!(up.jpeg.len() <= MAX_UPLOAD_JPEG && crate::protocol::jpeg_complete(&up.jpeg), "type {id}: upload JPEG");
             assert!(up.quality >= cast.quality, "the larger upload limit never lowers the quality");
         }
+    }
+
+    /// The test card's white line points to 12 o'clock; turned 90° it must point to 3 o'clock
+    /// (polar row 0 samples the right-hand side of the picture).
+    #[test]
+    fn rotation_turns_the_picture_clockwise() {
+        let ft = FanType::P56;
+        let white_at_3 = |rotation: u16| {
+            let polar = to_polar(&test_card(), &ft, &Placement { rotation, ..Default::default() });
+            let p = polar.get_pixel(ft.radius / 2, 0);
+            p[0] > 200 && p[1] > 200 && p[2] > 200
+        };
+        assert!(!white_at_3(0));
+        assert!(white_at_3(90));
+        assert!(!white_at_3(180));
+        assert!(white_at_3(450), "full turns are ignored");
     }
 
     #[test]

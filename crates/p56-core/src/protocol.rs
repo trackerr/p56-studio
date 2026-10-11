@@ -214,9 +214,10 @@ pub fn volume(v: u8) -> Vec<u8> {
 pub fn ble_connect(i: u8) -> Vec<u8> {
     with_value(op::BLE_CONNECT, i)
 }
-/// Select one fan in a group (`5A 23 n F5`).
-pub fn select_device(n: u8) -> Vec<u8> {
-    vec![SOF, op::SELECT_DEVICE, n, EOF]
+/// Make this fan the selected one of a group: `5A 23 23 F5`, sent to that fan
+/// (Holoscope.apk `DeviceInterface::stitchselectdevice`).
+pub fn select_device() -> Vec<u8> {
+    simple(op::SELECT_DEVICE)
 }
 
 /// Display rotation in degrees, 0–360 (Holoscope's slider −180…180 + 180).
@@ -242,8 +243,9 @@ pub fn ascii(s: &str) -> String {
     s.chars().map(|c| if c.is_ascii() && !c.is_ascii_control() { c } else { '_' }).collect()
 }
 
-/// Longest file name stem sent to the fan, in bytes (the name is stored on its memory card).
-pub const MAX_NAME_STEM: usize = 60;
+/// Longest file name stem sent to the fan, in bytes, so that `<stem>.mp4` fits the 32-byte name
+/// fields Holoscope uses (its own UI allows only 12).
+pub const MAX_NAME_STEM: usize = 28;
 
 /// A safe file name for the fan, ending in `.mp4` (the firmware only lists `.mp4` names).
 /// Only letters, digits, space, `-`, `_`, `.`, `(` and `)` are kept, anything else becomes `_`
@@ -273,13 +275,14 @@ fn named(op: u8, body: &[u8]) -> Vec<u8> {
 }
 
 /// Fixed-layout packet: `5A op <fields…> xor F5`, every field `NAME_FIELD` bytes, zero padded.
+/// At most 31 bytes of text per field, so it always ends in a zero (as Holoscope limits it).
 fn fixed(op: u8, fields: &[&str]) -> Vec<u8> {
     let mut v = vec![0u8; 2 + fields.len() * NAME_FIELD + 2];
     v[0] = SOF;
     v[1] = op;
     for (i, f) in fields.iter().enumerate() {
         let b = ascii(f).into_bytes();
-        let n = b.len().min(NAME_FIELD);
+        let n = b.len().min(NAME_FIELD - 1);
         v[2 + i * NAME_FIELD..2 + i * NAME_FIELD + n].copy_from_slice(&b[..n]);
     }
     let end = v.len();
@@ -448,8 +451,9 @@ impl Status {
 /// `5A 8D` machine info, 126 bytes.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct MachineInfo {
-    /// Fan IP as it reports it (bytes 6–9).
-    pub ip: String,
+    /// Place in a group picture (bytes 6–9: width, height, x, y), all 0 when the fan is not in
+    /// one. (Earlier taken for an IP address; Holoscope.apk reads it as this layout.)
+    pub stitch: [u8; 4],
     /// Device name (bytes 14–45).
     pub name: String,
     pub mac: String,
@@ -467,7 +471,7 @@ impl MachineInfo {
             return None;
         }
         Some(MachineInfo {
-            ip: format!("{}.{}.{}.{}", pkt[6], pkt[7], pkt[8], pkt[9]),
+            stitch: [pkt[6], pkt[7], pkt[8], pkt[9]],
             name: cstr(&pkt[14..46]),
             mac: pkt[46..52].iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(":"),
             hotspot: cstr(&pkt[52..84]),
@@ -480,9 +484,7 @@ impl MachineInfo {
         r[0] = SOF;
         r[1] = op::MACHINE_INFO;
         r[125] = EOF;
-        for (i, p) in self.ip.split('.').take(4).enumerate() {
-            r[6 + i] = p.parse().unwrap_or(0);
-        }
+        r[6..10].copy_from_slice(&self.stitch);
         put_str(&mut r[14..46], &self.name);
         for (i, p) in self.mac.split(':').take(6).enumerate() {
             r[46 + i] = u8::from_str_radix(p, 16).unwrap_or(0);
@@ -546,12 +548,9 @@ pub enum Packet {
     /// Playlist as the fan reports it: `(slot, name)`, 1-based.
     FileList(Vec<(u8, String)>),
     Error(FanError),
-    /// `5A 8F kind index len16 "a/b/c" xor F5`: device or Bluetooth list.
-    List {
-        kind: u8,
-        index: u8,
-        items: Vec<String>,
-    },
+    /// `5A 8F flags volume len16 "a/b/c" xor F5`: Bluetooth state, speaker volume and the
+    /// devices found by the last scan.
+    Bluetooth(Bluetooth),
     /// Any other `5A xx … F5` packet.
     Other {
         op: u8,
@@ -604,11 +603,33 @@ pub fn filelist_packet(names: &[String]) -> Vec<u8> {
     v
 }
 
-/// List report packet (used by the simulator).
-pub fn list_packet(kind: u8, index: u8, items: &[String]) -> Vec<u8> {
-    let text = items.iter().map(|s| ascii(s)).collect::<Vec<_>>().join("/");
+/// What the fan reports in `5A 8F` (Holoscope.apk `MyTcpServer::ReadData`): byte 2 holds the
+/// Bluetooth state (bit 7 on, bit 6 connected, bit 5 connecting), byte 3 the speaker volume
+/// (0–10), then the names found by the last scan, `/`-separated (at most 8).
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct Bluetooth {
+    pub on: bool,
+    pub connected: bool,
+    pub connecting: bool,
+    pub volume: u8,
+    pub devices: Vec<String>,
+}
+
+impl Bluetooth {
+    pub fn from_header(flags: u8, volume: u8, devices: Vec<String>) -> Bluetooth {
+        let on = flags & 0x80 != 0;
+        Bluetooth { on, connected: on && flags & 0x40 != 0, connecting: on && flags & 0x20 != 0, volume, devices }
+    }
+    fn flags(&self) -> u8 {
+        (self.on as u8) << 7 | (self.connected as u8) << 6 | (self.connecting as u8) << 5
+    }
+}
+
+/// Bluetooth report packet (used by the simulator).
+pub fn bluetooth_packet(b: &Bluetooth) -> Vec<u8> {
+    let text = b.devices.iter().map(|s| ascii(s)).collect::<Vec<_>>().join("/");
     let t = text.as_bytes().get(..2000).unwrap_or(text.as_bytes());
-    let mut v = vec![SOF, op::LIST, kind, index, (t.len() >> 8) as u8, t.len() as u8];
+    let mut v = vec![SOF, op::LIST, b.flags(), b.volume, (t.len() >> 8) as u8, t.len() as u8];
     v.extend_from_slice(t);
     v.push(xorsum(&v[2..]));
     v.push(EOF);
@@ -638,7 +659,7 @@ pub fn parse_packet(pkt: &[u8]) -> Option<Packet> {
         op::ERROR => Packet::Error(FanError::from_code(body[0])),
         op::LIST if body.len() >= 4 => {
             let n = u16::from_be_bytes([body[2], body[3]]) as usize;
-            Packet::List { kind: body[0], index: body[1], items: split_items(&body[4..(4 + n).min(body.len())]) }
+            Packet::Bluetooth(Bluetooth::from_header(body[0], body[1], split_items(&body[4..(4 + n).min(body.len())])))
         }
         _ => Packet::Other { op, body: body.to_vec() },
     })
@@ -761,6 +782,12 @@ mod tests {
         assert_eq!(p[66], xorsum(&p[2..66]));
         assert_eq!(p[67], 0xF5);
         assert_eq!(router("x", "y")[1], 0x8B);
+        // 32 characters: cut to 31 so the field keeps its terminating zero
+        let long = hotspot(&"S".repeat(32), &"p".repeat(40));
+        assert_eq!(&long[2..33], "S".repeat(31).as_bytes());
+        assert_eq!(long[33], 0);
+        assert_eq!(&long[34..65], "p".repeat(31).as_bytes());
+        assert_eq!(long[65], 0);
         let n = device_name("Fan 1");
         assert_eq!(n.len(), 36);
         assert_eq!(n[34], xorsum(&n[2..34]));
@@ -826,7 +853,7 @@ mod tests {
 
     #[test]
     fn machine_info_roundtrip() {
-        let i = MachineInfo { ip: "192.168.4.1".into(), name: "P56".into(), mac: "02:e0:e0:e0:e0:f5".into(), hotspot: "HOLO-1".into(), router: "home".into() };
+        let i = MachineInfo { stitch: [2, 1, 1, 0], name: "P56".into(), mac: "02:e0:e0:e0:e0:f5".into(), hotspot: "HOLO-1".into(), router: "home".into() };
         let pkt = i.to_packet();
         let mut r = Reader::default();
         // feed byte by byte: MAC contains F5
@@ -843,8 +870,13 @@ mod tests {
         let mut r = Reader::default();
         let out = r.push(&filelist_packet(&names));
         assert_eq!(out, vec![Packet::FileList(vec![(1, "a.mp4".into()), (2, "b c.mp4".into())])]);
-        let out = r.push(&list_packet(0x80, 1, &["dev1".into(), "dev2".into()]));
-        assert_eq!(out, vec![Packet::List { kind: 0x80, index: 1, items: vec!["dev1".into(), "dev2".into()] }]);
+        let bt = Bluetooth { on: true, connected: true, connecting: false, volume: 7, devices: vec!["dev1".into(), "dev2".into()] };
+        let out = r.push(&bluetooth_packet(&bt));
+        assert_eq!(out, vec![Packet::Bluetooth(bt)]);
+        // as Holoscope reads it: 0x80 on, 0xC0 connected, 0xA0 connecting; byte 3 the volume
+        assert_eq!(Bluetooth::from_header(0xC0, 4, vec![]), Bluetooth { on: true, connected: true, volume: 4, ..Default::default() });
+        assert_eq!(Bluetooth::from_header(0xA0, 0, vec![]), Bluetooth { on: true, connecting: true, ..Default::default() });
+        assert_eq!(Bluetooth::from_header(0x40, 0, vec![]), Bluetooth::default(), "off: nothing else counts");
         let out = r.push(&FanError::DuplicateName.to_packet());
         assert_eq!(out, vec![Packet::Error(FanError::DuplicateName)]);
     }

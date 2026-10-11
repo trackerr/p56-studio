@@ -159,7 +159,10 @@ pub struct DeviceDto {
     pub status: Option<StatusDto>,
     pub files: Vec<(u8, String)>,
     pub last_error: Option<String>,
-    pub ble: Option<(u8, Vec<String>)>,
+    /// Bluetooth state, speaker volume and scanned devices, once the fan reported them.
+    pub ble: Option<p56_core::Bluetooth>,
+    /// Model name of the fan type (e.g. "P56").
+    pub model: Option<String>,
     pub support: String,
 }
 
@@ -173,18 +176,21 @@ pub struct PlacementDto {
     pub scale: f64,
     #[serde(default)]
     pub mirror: bool,
+    /// Clockwise, in degrees.
+    #[serde(default)]
+    pub rotate: u16,
 }
 fn one() -> f64 {
     1.0
 }
 impl Default for PlacementDto {
     fn default() -> Self {
-        PlacementDto { x: 0.0, y: 0.0, scale: 1.0, mirror: false }
+        PlacementDto { x: 0.0, y: 0.0, scale: 1.0, mirror: false, rotate: 0 }
     }
 }
 impl From<PlacementDto> for Placement {
     fn from(p: PlacementDto) -> Self {
-        Placement { x_offset: p.x, y_offset: p.y, scale: p.scale, mirror: p.mirror }
+        Placement { x_offset: p.x, y_offset: p.y, scale: p.scale, mirror: p.mirror, rotation: p.rotate }
     }
 }
 
@@ -590,7 +596,7 @@ impl Service {
                             Packet::MachineInfo(_) => "info",
                             Packet::FileList(_) => "files",
                             Packet::Error(_) => "error",
-                            Packet::List { .. } => "list",
+                            Packet::Bluetooth(_) => "list", // kept: Home Assistant refreshes on it
                             Packet::TransDone => "done",
                             _ => continue,
                         };
@@ -650,7 +656,8 @@ impl Service {
                     status,
                     files: d.files,
                     last_error: d.last_error.map(|e: FanError| e.to_string()),
-                    ble: d.lists.iter().find(|(k, _)| **k & 0x80 != 0).map(|(_, v)| v.clone()),
+                    model: d.status.as_ref().and_then(|s| FanType::model(s.fan_type)).map(str::to_string),
+                    ble: d.bluetooth,
                     support,
                 }
             })
@@ -1153,7 +1160,7 @@ pub fn fan_types() -> Value {
                 let (w, h) = f.jpeg_size();
                 format!("{w}×{h}")
             });
-            Some(json!({ "id": id, "angles": angles, "leds": leds, "jpeg": jpeg,
+            Some(json!({ "id": id, "model": FanType::model(id), "angles": angles, "leds": leds, "jpeg": jpeg,
             "support": format!("{:?}", FanType::support(id)).to_lowercase() }))
         })
         .collect::<Vec<_>>()
