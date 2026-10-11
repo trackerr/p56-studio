@@ -37,14 +37,27 @@ struct Cli {
 }
 
 #[derive(Clone, Copy, ValueEnum)]
-enum OnOff { On, Off }
-impl OnOff { fn b(self) -> bool { matches!(self, OnOff::On) } }
+enum OnOff {
+    On,
+    Off,
+}
+impl OnOff {
+    fn b(self) -> bool {
+        matches!(self, OnOff::On)
+    }
+}
 
 #[derive(Clone, Copy, ValueEnum)]
-enum Repeat { All, One }
+enum Repeat {
+    All,
+    One,
+}
 
 #[derive(Clone, Copy, ValueEnum)]
-enum Color { True, Bright }
+enum Color {
+    True,
+    Bright,
+}
 
 #[derive(Subcommand)]
 enum Ble {
@@ -53,7 +66,9 @@ enum Ble {
     /// Scan for Bluetooth devices and show the list
     Scan,
     /// Connect to device N from the list (0-based, as the fan reports it)
-    Connect { index: u8 },
+    Connect {
+        index: u8,
+    },
     Disconnect,
 }
 
@@ -66,68 +81,122 @@ enum Cmd {
     Play,
     Pause,
     /// Show slot N (1-based)
-    Select { slot: u8 },
+    Select {
+        slot: u8,
+    },
     /// Delete slot N
-    Delete { slot: u8 },
+    Delete {
+        slot: u8,
+    },
     /// Rename slot N (.mp4 is appended)
-    Rename { slot: u8, name: String },
+    Rename {
+        slot: u8,
+        name: String,
+    },
     /// Repeat the playlist (all) or the current file (one)
-    Repeat { mode: Repeat },
+    Repeat {
+        mode: Repeat,
+    },
     /// Brightness 1–16
-    Brightness { value: u8 },
+    Brightness {
+        value: u8,
+    },
     /// Rotate the image: −180…180 degrees
     #[command(allow_negative_numbers = true)]
-    Angle { degrees: i16 },
+    Angle {
+        degrees: i16,
+    },
     /// Colour mode: true (true colour) or bright (high brightness)
-    Color { mode: Color },
+    Color {
+        mode: Color,
+    },
     /// Breathing light on/off
-    Breath { state: OnOff },
+    Breath {
+        state: OnOff,
+    },
     /// Start playing automatically at power-on, on/off
-    Autostart { state: OnOff },
+    Autostart {
+        state: OnOff,
+    },
     /// Group master on/off
-    Master { state: OnOff },
+    Master {
+        state: OnOff,
+    },
     /// Volume 0–10 (only fans with a speaker)
-    Volume { value: u8 },
+    Volume {
+        value: u8,
+    },
     /// Set the device name
-    Name { name: String },
+    Name {
+        name: String,
+    },
     /// Change the name and password of the fan's own Wi-Fi network
-    Hotspot { ssid: String, password: String },
+    Hotspot {
+        ssid: String,
+        password: String,
+    },
     /// Make the fan join your router
-    Router { ssid: String, password: String },
+    Router {
+        ssid: String,
+        password: String,
+    },
     /// The fan's Bluetooth
     #[command(subcommand)]
     Ble(Ble),
     /// Format the memory card (erases all files!)
-    Format { #[arg(long)] yes: bool },
+    Format {
+        #[arg(long)]
+        yes: bool,
+    },
     /// Restore factory settings
-    Reset { #[arg(long)] yes: bool },
+    Reset {
+        #[arg(long)]
+        yes: bool,
+    },
     /// Show machine info, status and playlist
     Info,
     /// Upload a photo, GIF or video as a playlist entry and show it
     Upload {
         file: PathBuf,
-        #[arg(long)] name: Option<String>,
-        #[arg(long, default_value_t = 1)] slot: u8,
+        #[arg(long)]
+        name: Option<String>,
+        #[arg(long, default_value_t = 1)]
+        slot: u8,
         /// Video/GIF: maximum number of frames (0 = all)
-        #[arg(long, default_value_t = 0)] max_frames: usize,
-        #[arg(long, default_value_t = 0.0, allow_negative_numbers = true)] x: f64,
-        #[arg(long, default_value_t = 0.0, allow_negative_numbers = true)] y: f64,
-        #[arg(long, default_value_t = 1.0)] scale: f64,
-        #[arg(long)] mirror: bool,
+        #[arg(long, default_value_t = 0)]
+        max_frames: usize,
+        #[arg(long, default_value_t = 0.0, allow_negative_numbers = true)]
+        x: f64,
+        #[arg(long, default_value_t = 0.0, allow_negative_numbers = true)]
+        y: f64,
+        #[arg(long, default_value_t = 1.0)]
+        scale: f64,
+        #[arg(long)]
+        mirror: bool,
     },
     /// Live cast: photo, GIF, video or 'test'
     Cast {
         source: String,
-        #[arg(long, default_value_t = 15.0)] fps: f64,
+        #[arg(long, default_value_t = 15.0)]
+        fps: f64,
         /// Stop after this many seconds (0 = keep going)
-        #[arg(long, default_value_t = 0.0)] seconds: f64,
-        #[arg(long, default_value_t = 0.0, allow_negative_numbers = true)] x: f64,
-        #[arg(long, default_value_t = 0.0, allow_negative_numbers = true)] y: f64,
-        #[arg(long, default_value_t = 1.0)] scale: f64,
-        #[arg(long)] mirror: bool,
+        #[arg(long, default_value_t = 0.0)]
+        seconds: f64,
+        #[arg(long, default_value_t = 0.0, allow_negative_numbers = true)]
+        x: f64,
+        #[arg(long, default_value_t = 0.0, allow_negative_numbers = true)]
+        y: f64,
+        #[arg(long, default_value_t = 1.0)]
+        scale: f64,
+        #[arg(long)]
+        mirror: bool,
     },
     /// Transcode only: writes <prefix>_layout.png and <prefix>.jpg, no network
-    Preview { file: String, #[arg(default_value = "preview")] prefix: String },
+    Preview {
+        file: String,
+        #[arg(default_value = "preview")]
+        prefix: String,
+    },
     /// List known fan types
     Types,
 }
@@ -146,7 +215,12 @@ fn main() {
             for id in 1..=40u8 {
                 let s = FanType::support(id);
                 if let Some((a, l, fps)) = FanType::apk_geometry(id).or(FanType::known(id).map(|f| (f.angles, f.radius, 20))) {
-                    let jpeg = FanType::known(id).map(|f| { let (w, h) = f.jpeg_size(); format!("{w}×{h}") }).unwrap_or("-".into());
+                    let jpeg = FanType::known(id)
+                        .map(|f| {
+                            let (w, h) = f.jpeg_size();
+                            format!("{w}×{h}")
+                        })
+                        .unwrap_or("-".into());
                     println!("type {id:>2}: {a}×{l}  {fps} fps  JPEG {jpeg:<9} {s:?}");
                 }
             }
@@ -168,11 +242,13 @@ fn main() {
 
     let cfg = Config { local_ip: cli.ip, tcp_port: cli.port, targets: cli.target.clone(), ..Default::default() };
     let (link, rx) = Link::start(cfg).unwrap_or_else(|e| die(e));
-    std::thread::spawn(move || for ev in rx {
-        match ev {
-            Event::Packet { id, packet } => log::debug!("#{id} <- {packet:?}"),
-            Event::Log(_) => {}
-            other => log::info!("{other:?}"),
+    std::thread::spawn(move || {
+        for ev in rx {
+            match ev {
+                Event::Packet { id, packet } => log::debug!("#{id} <- {packet:?}"),
+                Event::Log(_) => {}
+                other => log::info!("{other:?}"),
+            }
         }
     });
     if !link.wait_connected(Duration::from_secs(cli.wait)) {
@@ -181,7 +257,9 @@ fn main() {
     // give other fans and the first status a moment
     std::thread::sleep(Duration::from_millis(if cli.all { 1500 } else { 400 }));
     let ids = link.ids();
-    let targets: Vec<u32> = if cli.all { ids.clone() } else {
+    let targets: Vec<u32> = if cli.all {
+        ids.clone()
+    } else {
         vec![*ids.get(cli.fan.saturating_sub(1)).unwrap_or_else(|| die(format!("fan {} does not exist; there are {}", cli.fan, ids.len())))]
     };
     let mut failed = false;
@@ -194,12 +272,18 @@ fn main() {
                     Some((_, ids)) => ids.push(id),
                     None => groups.push((ft, vec![id])),
                 },
-                Err(e) => { eprintln!("fan #{id}: error: {e}"); failed = true; }
+                Err(e) => {
+                    eprintln!("fan #{id}: error: {e}");
+                    failed = true;
+                }
             }
         }
         if !groups.is_empty() {
             let pl = Placement { x_offset: *x, y_offset: *y, scale: *scale, mirror: *mirror };
-            if let Err(e) = cast_loop(&link, &groups, &pl, source, *fps, *seconds) { eprintln!("error: {e}"); failed = true; }
+            if let Err(e) = cast_loop(&link, &groups, &pl, source, *fps, *seconds) {
+                eprintln!("error: {e}");
+                failed = true;
+            }
         }
     } else {
         let needs_type = matches!(cli.cmd, Cmd::Upload { .. });
@@ -207,17 +291,26 @@ fn main() {
             let ft = if needs_type {
                 match fan_type(&link, id, cli.fan_type) {
                     Ok(ft) => ft,
-                    Err(e) => { eprintln!("fan #{id}: error: {e}"); failed = true; continue }
+                    Err(e) => {
+                        eprintln!("fan #{id}: error: {e}");
+                        failed = true;
+                        continue;
+                    }
                 }
             } else {
                 FanType::P56
             };
-            if let Err(e) = run(&link, id, ft, &cli.cmd) { eprintln!("fan #{id}: error: {e}"); failed = true; }
+            if let Err(e) = run(&link, id, ft, &cli.cmd) {
+                eprintln!("fan #{id}: error: {e}");
+                failed = true;
+            }
         }
     }
     std::thread::sleep(Duration::from_millis(300));
     link.shutdown();
-    if failed { std::process::exit(1); }
+    if failed {
+        std::process::exit(1);
+    }
 }
 
 /// Validate a fan type id before using its geometry: unknown and unsupported types are an
@@ -232,7 +325,9 @@ fn usable_type(id: u8, source: &str) -> Result<FanType, String> {
 
 /// Fan type to transcode for: `--type`, else what the fan reports, else 8.
 fn fan_type(link: &Link, id: u32, forced: Option<u8>) -> Result<FanType, String> {
-    if let Some(t) = forced { return usable_type(t, "--type"); }
+    if let Some(t) = forced {
+        return usable_type(t, "--type");
+    }
     let deadline = Instant::now() + Duration::from_secs(2);
     while Instant::now() < deadline {
         if let Some(t) = link.device(id).and_then(|d| d.status).map(|s| s.fan_type).filter(|t| *t != 0) {
@@ -255,24 +350,38 @@ fn run(link: &Link, id: u32, ft: FanType, cmd: &Cmd) -> Result<(), String> {
         Cmd::Rename { slot, name } => e(link.rename(id, *slot, name)),
         Cmd::Repeat { mode } => e(link.repeat(id, matches!(mode, Repeat::All))),
         Cmd::Brightness { value } => {
-            if !(1..=16).contains(value) { return Err("brightness must be 1–16".into()); }
+            if !(1..=16).contains(value) {
+                return Err("brightness must be 1–16".into());
+            }
             e(link.brightness(id, *value))
         }
         Cmd::Angle { degrees } => {
-            if !(-180..=180).contains(degrees) { return Err("angle must be −180…180".into()); }
+            if !(-180..=180).contains(degrees) {
+                return Err("angle must be −180…180".into());
+            }
             e(link.angle(id, (*degrees + 180) as u16))
         }
-        Cmd::Color { mode } => e(link.color_mode(id, match mode { Color::True => ColorMode::True, Color::Bright => ColorMode::Bright })),
+        Cmd::Color { mode } => e(link.color_mode(
+            id,
+            match mode {
+                Color::True => ColorMode::True,
+                Color::Bright => ColorMode::Bright,
+            },
+        )),
         Cmd::Breath { state } => e(link.breath(id, state.b())),
         Cmd::Autostart { state } => e(link.autostart(id, state.b())),
         Cmd::Master { state } => e(link.master(id, state.b())),
         Cmd::Volume { value } => {
-            if *value > 10 { return Err("volume must be 0–10".into()); }
+            if *value > 10 {
+                return Err("volume must be 0–10".into());
+            }
             e(link.volume(id, *value))
         }
         Cmd::Name { name } => e(link.device_name(id, name)),
         Cmd::Hotspot { ssid, password } => {
-            if password.len() < 8 { return Err("Wi-Fi password must be at least 8 characters".into()); }
+            if password.len() < 8 {
+                return Err("Wi-Fi password must be at least 8 characters".into());
+            }
             println!("note: after this the fan is only reachable via Wi-Fi {ssid:?} with the new password");
             e(link.set_hotspot(id, ssid, password))
         }
@@ -290,8 +399,12 @@ fn run(link: &Link, id: u32, ft: FanType, cmd: &Cmd) -> Result<(), String> {
                 e(link.ble_scan(id))?;
                 match link.wait_packet(id, seq, Duration::from_secs(8), |p| matches!(p, p56_core::Packet::List { kind, .. } if kind & 0x80 != 0)) {
                     Some(p56_core::Packet::List { items, index, .. }) => {
-                        for (i, n) in items.iter().enumerate() { println!("  [{i}] {n}{}", if index as usize == i + 1 { "  (connected)" } else { "" }); }
-                        if items.is_empty() { println!("  no devices found (is Bluetooth on? `p56 ble on`)"); }
+                        for (i, n) in items.iter().enumerate() {
+                            println!("  [{i}] {n}{}", if index as usize == i + 1 { "  (connected)" } else { "" });
+                        }
+                        if items.is_empty() {
+                            println!("  no devices found (is Bluetooth on? `p56 ble on`)");
+                        }
                         Ok(())
                     }
                     _ => Err("no Bluetooth list received".into()),
@@ -310,13 +423,38 @@ fn run(link: &Link, id: u32, ft: FanType, cmd: &Cmd) -> Result<(), String> {
                 println!("  hotspot {}  router {}", i.hotspot, if i.router.is_empty() { "-" } else { &i.router });
             }
             if let Some(s) = &d.status {
-                println!("  type {} ({:?})  on {}  playing {}  slot {}  repeat {}", s.fan_type, FanType::support(s.fan_type), s.power, s.playing, s.play_index, if s.repeat_all { "all" } else { "one" });
-                println!("  brightness {}/16  angle {}°  colour {}  breathing {}  autostart {}  master {}", s.brightness, s.angle as i32 - 180,
-                    match s.color_mode { 1 => "true color", 2 => "high brightness", _ => "?" }, s.breath, s.autostart, s.master);
+                println!(
+                    "  type {} ({:?})  on {}  playing {}  slot {}  repeat {}",
+                    s.fan_type,
+                    FanType::support(s.fan_type),
+                    s.power,
+                    s.playing,
+                    s.play_index,
+                    if s.repeat_all { "all" } else { "one" }
+                );
+                println!(
+                    "  brightness {}/16  angle {}°  colour {}  breathing {}  autostart {}  master {}",
+                    s.brightness,
+                    s.angle as i32 - 180,
+                    match s.color_mode {
+                        1 => "true color",
+                        2 => "high brightness",
+                        _ => "?",
+                    },
+                    s.breath,
+                    s.autostart,
+                    s.master
+                );
             }
-            if d.files.is_empty() { println!("  playlist empty"); }
-            for (n, f) in &d.files { println!("  [{n}] {f}"); }
-            if let Some(err) = d.last_error { println!("  last error from the fan: {err}"); }
+            if d.files.is_empty() {
+                println!("  playlist empty");
+            }
+            for (n, f) in &d.files {
+                println!("  [{n}] {f}");
+            }
+            if let Some(err) = d.last_error {
+                println!("  last error from the fan: {err}");
+            }
             Ok(())
         }
         Cmd::Upload { file, name, slot, max_frames, x, y, scale, mirror } => {
@@ -325,8 +463,12 @@ fn run(link: &Link, id: u32, ft: FanType, cmd: &Cmd) -> Result<(), String> {
             let name = name.clone().unwrap_or_else(|| file.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or("upload".into()));
             println!("uploading {} frame(s) as {}…", frames.len(), p56_core::protocol::mp4_name(&name));
             let o = link.upload(id, &frames, &name, Some(*slot)).map_err(|e| e.to_string())?;
-            if !o.acked { eprintln!("warning: the fan did not acknowledge the data"); }
-            if !o.listed { eprintln!("warning: the file did not show up in the fan's playlist (yet)"); }
+            if !o.acked {
+                eprintln!("warning: the fan did not acknowledge the data");
+            }
+            if !o.listed {
+                eprintln!("warning: the file did not show up in the fan's playlist (yet)");
+            }
             Ok(())
         }
         Cmd::Cast { .. } | Cmd::Preview { .. } | Cmd::Types => unreachable!(),
@@ -334,7 +476,9 @@ fn run(link: &Link, id: u32, ft: FanType, cmd: &Cmd) -> Result<(), String> {
 }
 
 fn load(file: &str) -> Result<image::RgbImage, String> {
-    if file == "test" { return Ok(transcode::test_card()); }
+    if file == "test" {
+        return Ok(transcode::test_card());
+    }
     transcode::load_rgb(Path::new(file)).map_err(|e| format!("{file}: {e}"))
 }
 
@@ -344,14 +488,20 @@ fn load(file: &str) -> Result<image::RgbImage, String> {
 fn frames_from(file: &Path, ft: &FanType, pl: &Placement, max: usize) -> Result<Vec<Vec<u8>>, String> {
     let max = if max == 0 { 1200 } else { max };
     let step = p56_core::protocol::FRAME_MS as f64;
-    if file.to_str() == Some("test") { return Ok(vec![transcode::encode_upload(&transcode::test_card(), ft, pl).jpeg]); }
+    if file.to_str() == Some("test") {
+        return Ok(vec![transcode::encode_upload(&transcode::test_card(), ft, pl).jpeg]);
+    }
     let bytes = std::fs::read(file).map_err(|e| format!("{}: {e}", file.display()))?;
     if let Ok(frames) = transcode::decode_frames(&bytes, max) {
         let mut out = Vec::new();
         for (f, ms) in frames {
             let jpeg = transcode::encode_upload(&transcode::fit(f, 720), ft, pl).jpeg;
             let n = ((ms as f64 / step).round() as usize).max(1);
-            for _ in 0..n { if out.len() < max { out.push(jpeg.clone()); } }
+            for _ in 0..n {
+                if out.len() < max {
+                    out.push(jpeg.clone());
+                }
+            }
         }
         return Ok(out);
     }
@@ -362,12 +512,22 @@ fn frames_from(file: &Path, ft: &FanType, pl: &Placement, max: usize) -> Result<
     while let Some(fr) = v.next_frame() {
         let n = ((i + 1.0) * ratio).floor() as usize - (i * ratio).floor() as usize;
         i += 1.0;
-        if n == 0 { continue; }
+        if n == 0 {
+            continue;
+        }
         let jpeg = transcode::encode_upload(&fr, ft, pl).jpeg;
-        for _ in 0..n { if out.len() < max { out.push(jpeg.clone()); } }
-        if out.len() >= max { break; }
+        for _ in 0..n {
+            if out.len() < max {
+                out.push(jpeg.clone());
+            }
+        }
+        if out.len() >= max {
+            break;
+        }
     }
-    if out.is_empty() { return Err("no frames decoded".into()); }
+    if out.is_empty() {
+        return Err("no frames decoded".into());
+    }
     log::info!("{} frames at {:.1} fps", out.len(), v.fps);
     Ok(out)
 }
@@ -393,25 +553,38 @@ fn cast_loop(link: &Link, groups: &[(FanType, Vec<u32>)], pl: &Placement, source
     let mut n = 0u64;
     let mut i = 0usize;
     loop {
-        if seconds > 0.0 && started.elapsed().as_secs_f64() >= seconds { break; }
+        if seconds > 0.0 && started.elapsed().as_secs_f64() >= seconds {
+            break;
+        }
         let t = Instant::now();
         let (jpegs, delay) = match &mut video {
             Some(v) => match v.next_frame() {
                 Some(f) => (encode(&f), 0),
-                None => { video = Some(p56_core::video::open(Path::new(source), 720).map_err(|e| e.to_string())?); continue; }
+                None => {
+                    video = Some(p56_core::video::open(Path::new(source), 720).map_err(|e| e.to_string())?);
+                    continue;
+                }
             },
-            None => { let f = frames[i % frames.len()].clone(); i += 1; f }
+            None => {
+                let f = frames[i % frames.len()].clone();
+                i += 1;
+                f
+            }
         };
         let sent: usize = groups.iter().zip(&jpegs).map(|((_, ids), jpeg)| link.cast_to(ids, jpeg)).sum();
         if sent > 0 {
             n += 1;
-            if n % 50 == 0 { log::info!("{n} frames cast"); }
+            if n.is_multiple_of(50) {
+                log::info!("{n} frames cast");
+            }
         } else if groups.iter().flat_map(|(_, ids)| ids).all(|id| link.device(*id).is_none()) {
             log::warn!("the selected fan(s) are no longer connected");
             std::thread::sleep(Duration::from_secs(1));
         }
         let wait = if delay > 0 { Duration::from_millis(delay as u64) } else { period };
-        if let Some(rest) = wait.checked_sub(t.elapsed()) { std::thread::sleep(rest); }
+        if let Some(rest) = wait.checked_sub(t.elapsed()) {
+            std::thread::sleep(rest);
+        }
     }
     println!("{n} frames cast");
     Ok(())

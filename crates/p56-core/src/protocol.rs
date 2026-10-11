@@ -111,55 +111,113 @@ fn with_value(op: u8, v: u8) -> Vec<u8> {
     vec![SOF, op, v, v, EOF]
 }
 
-pub fn on() -> Vec<u8> { simple(op::ON) }
-pub fn off() -> Vec<u8> { simple(op::OFF) }
-pub fn pause() -> Vec<u8> { simple(op::PAUSE) }
-pub fn play() -> Vec<u8> { simple(op::PLAY) }
-pub fn repeat_all() -> Vec<u8> { simple(op::REPEAT_ALL) }
-pub fn repeat_one() -> Vec<u8> { simple(op::REPEAT_ONE) }
-pub fn format_card() -> Vec<u8> { simple(op::FORMAT_CARD) }
-pub fn factory_reset() -> Vec<u8> { simple(op::FACTORY_RESET) }
-pub fn breath(on: bool) -> Vec<u8> { simple(if on { op::BREATH_ON } else { op::BREATH_OFF }) }
-pub fn autostart(on: bool) -> Vec<u8> { simple(if on { op::AUTOSTART_ON } else { op::AUTOSTART_OFF }) }
-pub fn trans_cancel() -> Vec<u8> { simple(op::TRANS_CANCEL) }
-pub fn ble_scan() -> Vec<u8> { simple(op::BLE_SCAN) }
-pub fn ble_disconnect() -> Vec<u8> { simple(op::BLE_DISCONNECT) }
-pub fn ble(on: bool) -> Vec<u8> { simple(if on { op::BLE_ON } else { op::BLE_OFF }) }
-pub fn get_machine() -> Vec<u8> { simple(op::GET_MACHINE) }
-pub fn master(on: bool) -> Vec<u8> { simple(if on { op::MASTER_ON } else { op::MASTER_OFF }) }
-pub fn angle_align(start: bool) -> Vec<u8> { simple(if start { op::ANGLE_ALIGN_START } else { op::ANGLE_ALIGN_STOP }) }
+pub fn on() -> Vec<u8> {
+    simple(op::ON)
+}
+pub fn off() -> Vec<u8> {
+    simple(op::OFF)
+}
+pub fn pause() -> Vec<u8> {
+    simple(op::PAUSE)
+}
+pub fn play() -> Vec<u8> {
+    simple(op::PLAY)
+}
+pub fn repeat_all() -> Vec<u8> {
+    simple(op::REPEAT_ALL)
+}
+pub fn repeat_one() -> Vec<u8> {
+    simple(op::REPEAT_ONE)
+}
+pub fn format_card() -> Vec<u8> {
+    simple(op::FORMAT_CARD)
+}
+pub fn factory_reset() -> Vec<u8> {
+    simple(op::FACTORY_RESET)
+}
+pub fn breath(on: bool) -> Vec<u8> {
+    simple(if on { op::BREATH_ON } else { op::BREATH_OFF })
+}
+pub fn autostart(on: bool) -> Vec<u8> {
+    simple(if on { op::AUTOSTART_ON } else { op::AUTOSTART_OFF })
+}
+pub fn trans_cancel() -> Vec<u8> {
+    simple(op::TRANS_CANCEL)
+}
+pub fn ble_scan() -> Vec<u8> {
+    simple(op::BLE_SCAN)
+}
+pub fn ble_disconnect() -> Vec<u8> {
+    simple(op::BLE_DISCONNECT)
+}
+pub fn ble(on: bool) -> Vec<u8> {
+    simple(if on { op::BLE_ON } else { op::BLE_OFF })
+}
+pub fn get_machine() -> Vec<u8> {
+    simple(op::GET_MACHINE)
+}
+pub fn master(on: bool) -> Vec<u8> {
+    simple(if on { op::MASTER_ON } else { op::MASTER_OFF })
+}
+pub fn angle_align(start: bool) -> Vec<u8> {
+    simple(if start { op::ANGLE_ALIGN_START } else { op::ANGLE_ALIGN_STOP })
+}
 
 /// Colour mode: true colour (`5A 2C`) or high brightness (`5A 2D`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum ColorMode { True, Bright }
+pub enum ColorMode {
+    True,
+    Bright,
+}
 
 impl ColorMode {
     /// Value as the status packet reports it (1 = true colour, 2 = high brightness).
     pub fn from_status(v: u8) -> Option<ColorMode> {
-        match v { 1 => Some(ColorMode::True), 2 => Some(ColorMode::Bright), _ => None }
+        match v {
+            1 => Some(ColorMode::True),
+            2 => Some(ColorMode::Bright),
+            _ => None,
+        }
     }
 }
 
 pub fn color_mode(m: ColorMode) -> Vec<u8> {
-    simple(match m { ColorMode::True => op::COLOR_TRUE, ColorMode::Bright => op::COLOR_BRIGHT })
+    simple(match m {
+        ColorMode::True => op::COLOR_TRUE,
+        ColorMode::Bright => op::COLOR_BRIGHT,
+    })
 }
 
 /// `5A 0D 0D F5 3E` — Holoscope.exe appends a trailing 0x3E byte.
-pub fn heartbeat() -> Vec<u8> { vec![SOF, op::HEARTBEAT, op::HEARTBEAT, EOF, 0x3E] }
+pub fn heartbeat() -> Vec<u8> {
+    vec![SOF, op::HEARTBEAT, op::HEARTBEAT, EOF, 0x3E]
+}
 
 /// Select / show slot `n` (1-based).
-pub fn select(n: u8) -> Vec<u8> { with_value(op::SELECT, n) }
+pub fn select(n: u8) -> Vec<u8> {
+    with_value(op::SELECT, n)
+}
 /// Delete slot `n` (1-based).
-pub fn delete(n: u8) -> Vec<u8> { with_value(op::DELETE, n) }
+pub fn delete(n: u8) -> Vec<u8> {
+    with_value(op::DELETE, n)
+}
 /// Brightness 1–16.
-pub fn brightness(v: u8) -> Vec<u8> { with_value(op::BRIGHTNESS, v.clamp(1, 16)) }
+pub fn brightness(v: u8) -> Vec<u8> {
+    with_value(op::BRIGHTNESS, v.clamp(1, 16))
+}
 /// Volume 0–10.
-pub fn volume(v: u8) -> Vec<u8> { with_value(op::VOLUME, v.min(10)) }
+pub fn volume(v: u8) -> Vec<u8> {
+    with_value(op::VOLUME, v.min(10))
+}
 /// Connect the fan's Bluetooth to entry `i` of its scan list.
-pub fn ble_connect(i: u8) -> Vec<u8> { with_value(op::BLE_CONNECT, i) }
+pub fn ble_connect(i: u8) -> Vec<u8> {
+    with_value(op::BLE_CONNECT, i)
+}
 /// Select one fan in a group (`5A 23 n F5`).
-pub fn select_device(n: u8) -> Vec<u8> { vec![SOF, op::SELECT_DEVICE, n, EOF] }
+pub fn select_device(n: u8) -> Vec<u8> {
+    vec![SOF, op::SELECT_DEVICE, n, EOF]
+}
 
 /// Display rotation in degrees, 0–360 (Holoscope's slider −180…180 + 180).
 pub fn angle(deg: u16) -> Vec<u8> {
@@ -174,7 +232,9 @@ pub fn commit_with(frames: u32) -> Vec<u8> {
     let b = frames.to_be_bytes();
     vec![SOF, op::COMMIT, b[0], b[1], b[2], b[3], xorsum(&b), EOF]
 }
-pub fn commit() -> Vec<u8> { commit_with(1) }
+pub fn commit() -> Vec<u8> {
+    commit_with(1)
+}
 
 /// Names the fan stores are ASCII; anything else becomes `_` so both of the
 /// firmware's charsets (GB2312 / local 8-bit) see the same bytes.
@@ -186,7 +246,11 @@ pub fn ascii(s: &str) -> String {
 pub fn mp4_name(name: &str) -> String {
     let n = ascii(name.trim());
     let n = if n.is_empty() { "upload".to_string() } else { n };
-    if n.to_ascii_lowercase().ends_with(".mp4") { n } else { format!("{n}.mp4") }
+    if n.to_ascii_lowercase().ends_with(".mp4") {
+        n
+    } else {
+        format!("{n}.mp4")
+    }
 }
 
 /// `5A op len <bytes> xor F5`, xor over `len` and the bytes.
@@ -219,7 +283,9 @@ fn fixed(op: u8, fields: &[&str]) -> Vec<u8> {
 }
 
 /// Announce the name of the file about to be uploaded (`.mp4` is appended if missing).
-pub fn set_filename(name: &str) -> Vec<u8> { named(op::FILE_NAME, mp4_name(name).as_bytes()) }
+pub fn set_filename(name: &str) -> Vec<u8> {
+    named(op::FILE_NAME, mp4_name(name).as_bytes())
+}
 
 /// Rename slot `slot` (1-based): `5A 83 slot len name.mp4 xor F5`.
 pub fn rename(slot: u8, new_name: &str) -> Vec<u8> {
@@ -233,14 +299,20 @@ pub fn rename(slot: u8, new_name: &str) -> Vec<u8> {
 }
 
 /// Fan name shown in Holoscope (36 bytes).
-pub fn device_name(name: &str) -> Vec<u8> { fixed(op::DEVICE_NAME, &[name]) }
+pub fn device_name(name: &str) -> Vec<u8> {
+    fixed(op::DEVICE_NAME, &[name])
+}
 
 /// Name and password of the fan's own Wi-Fi hotspot (68 bytes). After this the
 /// default hotspot name/password no longer work.
-pub fn hotspot(ssid: &str, password: &str) -> Vec<u8> { fixed(op::HOTSPOT, &[ssid, password]) }
+pub fn hotspot(ssid: &str, password: &str) -> Vec<u8> {
+    fixed(op::HOTSPOT, &[ssid, password])
+}
 
 /// Let the fan join a router (68 bytes). It searches for it after this.
-pub fn router(ssid: &str, password: &str) -> Vec<u8> { fixed(op::ROUTER, &[ssid, password]) }
+pub fn router(ssid: &str, password: &str) -> Vec<u8> {
+    fixed(op::ROUTER, &[ssid, password])
+}
 
 /// Build an uploaded file the way Holoscope does (`fileprocess::picproces` / `videoprocess`
 /// in libappHoloscope): `[duration_ms u32le]`, then one record per frame (see [`upload_record`]).
@@ -250,7 +322,9 @@ pub fn upload_blob(jpeg_frames: &[Vec<u8>]) -> (Vec<u8>, Vec<u8>) {
     let duration = if jpeg_frames.len() > 1 { FRAME_MS.saturating_mul(jpeg_frames.len() as u32) } else { STILL_MS };
     let size: usize = jpeg_frames.iter().map(|f| 8 + UPLOAD_PCM + f.len()).sum();
     let mut body = Vec::with_capacity(size);
-    for f in jpeg_frames { upload_record(&mut body, f); }
+    for f in jpeg_frames {
+        upload_record(&mut body, f);
+    }
     (duration.to_le_bytes().to_vec(), body)
 }
 
@@ -272,7 +346,9 @@ pub fn jpeg_complete(jpeg: &[u8]) -> bool {
 /// Wrap a JPEG into a 20480-byte live cast frame: `5A 28 | jpeg | 00… | 55 F5`.
 /// The JPEG must be complete and at most [`MAX_JPEG`] bytes (it is never cut).
 pub fn cast_frame(jpeg: &[u8]) -> Option<Vec<u8>> {
-    if jpeg.len() > MAX_JPEG || !jpeg_complete(jpeg) { return None; }
+    if jpeg.len() > MAX_JPEG || !jpeg_complete(jpeg) {
+        return None;
+    }
     let mut f = vec![0u8; CAST_FRAME_SIZE];
     let n = jpeg.len();
     f[0] = SOF;
@@ -315,7 +391,9 @@ pub struct Status {
 
 impl Status {
     pub fn parse(body: &[u8]) -> Option<Status> {
-        if body.len() < 8 { return None; }
+        if body.len() < 8 {
+            return None;
+        }
         let f = body[0];
         Some(Status {
             flags: f,
@@ -338,15 +416,26 @@ impl Status {
     /// Inverse of [`Status::parse`], used by the simulator.
     pub fn to_packet(&self) -> Vec<u8> {
         let mut f = 0u8;
-        if self.power { f |= 0x40 }
-        if self.autostart { f |= 0x20 }
-        if self.breath { f |= 0x10 }
-        if self.playing { f |= 0x08 }
-        if self.repeat_all { f |= 0x04 }
-        if self.master { f |= 0x02 }
+        if self.power {
+            f |= 0x40
+        }
+        if self.autostart {
+            f |= 0x20
+        }
+        if self.breath {
+            f |= 0x10
+        }
+        if self.playing {
+            f |= 0x08
+        }
+        if self.repeat_all {
+            f |= 0x04
+        }
+        if self.master {
+            f |= 0x02
+        }
         let a = self.angle.min(0x0FFF);
-        vec![SOF, op::STATUS, f, self.play_index, self.brightness, (self.color_mode << 4) | (a >> 8) as u8,
-             a as u8, self.group, self.fan_type, self.extra, EOF]
+        vec![SOF, op::STATUS, f, self.play_index, self.brightness, (self.color_mode << 4) | (a >> 8) as u8, a as u8, self.group, self.fan_type, self.extra, EOF]
     }
 }
 
@@ -368,7 +457,9 @@ pub const MACHINE_INFO_LEN: usize = 126;
 
 impl MachineInfo {
     pub fn parse(pkt: &[u8]) -> Option<MachineInfo> {
-        if pkt.len() < 116 { return None; }
+        if pkt.len() < 116 {
+            return None;
+        }
         Some(MachineInfo {
             ip: format!("{}.{}.{}.{}", pkt[6], pkt[7], pkt[8], pkt[9]),
             name: cstr(&pkt[14..46]),
@@ -383,9 +474,13 @@ impl MachineInfo {
         r[0] = SOF;
         r[1] = op::MACHINE_INFO;
         r[125] = EOF;
-        for (i, p) in self.ip.split('.').take(4).enumerate() { r[6 + i] = p.parse().unwrap_or(0); }
+        for (i, p) in self.ip.split('.').take(4).enumerate() {
+            r[6 + i] = p.parse().unwrap_or(0);
+        }
         put_str(&mut r[14..46], &self.name);
-        for (i, p) in self.mac.split(':').take(6).enumerate() { r[46 + i] = u8::from_str_radix(p, 16).unwrap_or(0); }
+        for (i, p) in self.mac.split(':').take(6).enumerate() {
+            r[46 + i] = u8::from_str_radix(p, 16).unwrap_or(0);
+        }
         put_str(&mut r[52..84], &self.hotspot);
         put_str(&mut r[84..116], &self.router);
         r
@@ -405,12 +500,22 @@ pub enum FanError {
 
 impl FanError {
     pub fn from_code(c: u8) -> FanError {
-        match c { 0x06 => FanError::DuplicateName, 0x0A => FanError::TooManyFiles, c => FanError::TransferFailed(c) }
+        match c {
+            0x06 => FanError::DuplicateName,
+            0x0A => FanError::TooManyFiles,
+            c => FanError::TransferFailed(c),
+        }
     }
     pub fn code(&self) -> u8 {
-        match self { FanError::DuplicateName => 0x06, FanError::TooManyFiles => 0x0A, FanError::TransferFailed(c) => *c }
+        match self {
+            FanError::DuplicateName => 0x06,
+            FanError::TooManyFiles => 0x0A,
+            FanError::TransferFailed(c) => *c,
+        }
     }
-    pub fn to_packet(&self) -> Vec<u8> { vec![SOF, op::ERROR, self.code(), self.code(), EOF] }
+    pub fn to_packet(&self) -> Vec<u8> {
+        vec![SOF, op::ERROR, self.code(), self.code(), EOF]
+    }
 }
 
 impl std::fmt::Display for FanError {
@@ -436,9 +541,16 @@ pub enum Packet {
     FileList(Vec<(u8, String)>),
     Error(FanError),
     /// `5A 8F kind index len16 "a/b/c" xor F5`: device or Bluetooth list.
-    List { kind: u8, index: u8, items: Vec<String> },
+    List {
+        kind: u8,
+        index: u8,
+        items: Vec<String>,
+    },
     /// Any other `5A xx … F5` packet.
-    Other { op: u8, body: Vec<u8> },
+    Other {
+        op: u8,
+        body: Vec<u8>,
+    },
 }
 
 fn cstr(b: &[u8]) -> String {
@@ -453,13 +565,14 @@ fn put_str(dst: &mut [u8], s: &str) {
 }
 
 fn split_items(text: &[u8]) -> Vec<String> {
-    String::from_utf8_lossy(text).split('/').map(|t| t.trim_matches(|c: char| c == '\0' || c.is_whitespace()).to_string())
-        .filter(|t| !t.is_empty()).collect()
+    String::from_utf8_lossy(text).split('/').map(|t| t.trim_matches(|c: char| c == '\0' || c.is_whitespace()).to_string()).filter(|t| !t.is_empty()).collect()
 }
 
 pub fn parse_filelist(body: &[u8]) -> Vec<(u8, String)> {
     // body = <len16 be> <"1 a.mp4/2 b.mp4" or "a.mp4/b.mp4"> <xor>
-    if body.len() < 2 { return vec![]; }
+    if body.len() < 2 {
+        return vec![];
+    }
     let n = u16::from_be_bytes([body[0], body[1]]) as usize;
     let mut out = Vec::new();
     let mut next = 1u8;
@@ -497,7 +610,9 @@ pub fn list_packet(kind: u8, index: u8, items: &[String]) -> Vec<u8> {
 }
 
 pub fn parse_packet(pkt: &[u8]) -> Option<Packet> {
-    if pkt.len() < 4 || pkt[0] != SOF || *pkt.last()? != EOF { return None; }
+    if pkt.len() < 4 || pkt[0] != SOF || *pkt.last()? != EOF {
+        return None;
+    }
     let op = pkt[1];
     let body = &pkt[2..pkt.len() - 1];
     Some(match op {
@@ -505,8 +620,14 @@ pub fn parse_packet(pkt: &[u8]) -> Option<Packet> {
         op::TRANS_CONTINUE => Packet::TransContinue,
         op::TRANS_BREAK => Packet::TransBreak,
         op::TRANS_DONE => Packet::TransDone,
-        op::STATUS => match Status::parse(body) { Some(s) => Packet::Status(s), None => Packet::Other { op, body: body.to_vec() } },
-        op::MACHINE_INFO => match MachineInfo::parse(pkt) { Some(i) => Packet::MachineInfo(i), None => Packet::Other { op, body: body.to_vec() } },
+        op::STATUS => match Status::parse(body) {
+            Some(s) => Packet::Status(s),
+            None => Packet::Other { op, body: body.to_vec() },
+        },
+        op::MACHINE_INFO => match MachineInfo::parse(pkt) {
+            Some(i) => Packet::MachineInfo(i),
+            None => Packet::Other { op, body: body.to_vec() },
+        },
         op::FILE_NAME => Packet::FileList(parse_filelist(body)),
         op::ERROR => Packet::Error(FanError::from_code(body[0])),
         op::LIST if body.len() >= 4 => {
@@ -528,11 +649,15 @@ fn framed_len(buf: &[u8]) -> Result<Option<usize>, ()> {
         Some(&op::ERROR) => need(5),
         Some(&(op::READY | op::TRANS_CONTINUE | op::TRANS_BREAK | op::TRANS_DONE)) => need(4),
         Some(&op::FILE_NAME) => {
-            if buf.len() < 4 { return Ok(None); }
+            if buf.len() < 4 {
+                return Ok(None);
+            }
             need(4 + u16::from_be_bytes([buf[2], buf[3]]) as usize + 2)
         }
         Some(&op::LIST) => {
-            if buf.len() < 6 { return Ok(None); }
+            if buf.len() < 6 {
+                return Ok(None);
+            }
             need(6 + u16::from_be_bytes([buf[4], buf[5]]) as usize + 2)
         }
         _ => Err(()),
@@ -554,13 +679,20 @@ impl Reader {
                 self.buf.clear();
                 break;
             };
-            if start > 0 { self.buf.drain(..start); }
+            if start > 0 {
+                self.buf.drain(..start);
+            }
             let len = match framed_len(&self.buf) {
                 Ok(Some(n)) => n,
                 Ok(None) => break,
                 Err(()) => match self.buf.iter().skip(2).position(|&b| b == EOF) {
                     Some(p) => p + 3,
-                    None => { if self.buf.len() > 4096 { self.buf.clear(); } break; }
+                    None => {
+                        if self.buf.len() > 4096 {
+                            self.buf.clear();
+                        }
+                        break;
+                    }
                 },
             };
             if self.buf[len - 1] != EOF {
@@ -569,9 +701,13 @@ impl Reader {
                 continue;
             }
             let pkt: Vec<u8> = self.buf.drain(..len).collect();
-            if let Some(p) = parse_packet(&pkt) { out.push(p); }
+            if let Some(p) = parse_packet(&pkt) {
+                out.push(p);
+            }
             // The fan pads 4-byte packets to 5 bytes (like Holoscope's heartbeat 3E).
-            if pkt.len() == 4 && self.buf.first().is_some_and(|&b| b != SOF) { self.buf.remove(0); }
+            if pkt.len() == 4 && self.buf.first().is_some_and(|&b| b != SOF) {
+                self.buf.remove(0);
+            }
         }
         out
     }
@@ -634,8 +770,22 @@ mod tests {
 
     #[test]
     fn status_roundtrip() {
-        let s = Status { power: true, playing: true, repeat_all: true, breath: false, autostart: true, master: false,
-            play_index: 2, brightness: 12, color_mode: 2, angle: 270, group: 1, fan_type: 8, extra: 0, flags: 0 };
+        let s = Status {
+            power: true,
+            playing: true,
+            repeat_all: true,
+            breath: false,
+            autostart: true,
+            master: false,
+            play_index: 2,
+            brightness: 12,
+            color_mode: 2,
+            angle: 270,
+            group: 1,
+            fan_type: 8,
+            extra: 0,
+            flags: 0,
+        };
         let pkt = s.to_packet();
         assert_eq!(pkt.len(), 11);
         let Some(Packet::Status(p)) = parse_packet(&pkt) else { panic!() };
@@ -662,7 +812,9 @@ mod tests {
         let mut r = Reader::default();
         // feed byte by byte: MAC contains F5
         let mut out = vec![];
-        for b in &pkt { out.extend(r.push(&[*b])); }
+        for b in &pkt {
+            out.extend(r.push(&[*b]));
+        }
         assert_eq!(out, vec![Packet::MachineInfo(i)]);
     }
 
@@ -729,12 +881,14 @@ mod tests {
 
     #[test]
     fn upload_records_one_header_per_frame_aligned() {
-        let frames: Vec<Vec<u8>> = (0..7usize).map(|i| {
-            let mut j = vec![0xFF, 0xD8];
-            j.resize(2 + i * 3, 0x42);
-            j.extend([0xFF, 0xD9]);
-            j
-        }).collect();
+        let frames: Vec<Vec<u8>> = (0..7usize)
+            .map(|i| {
+                let mut j = vec![0xFF, 0xD8];
+                j.resize(2 + i * 3, 0x42);
+                j.extend([0xFF, 0xD9]);
+                j
+            })
+            .collect();
         let (head, body) = upload_blob(&frames);
         assert_eq!(u32::from_le_bytes(head.try_into().unwrap()), 7 * FRAME_MS);
         let mut at = 0;
@@ -763,7 +917,9 @@ mod tests {
             assert_eq!(u32::from_le_bytes(head.try_into().unwrap()), STILL_MS);
             let mut payload = j.clone();
             payload.push(0);
-            while payload.len() % 4 != 0 { payload.push(0); }
+            while payload.len() % 4 != 0 {
+                payload.push(0);
+            }
             let mut want = ((UPLOAD_PCM + payload.len()) as u32).to_le_bytes().to_vec();
             want.extend(vec![0u8; UPLOAD_PCM]);
             want.extend(&payload);

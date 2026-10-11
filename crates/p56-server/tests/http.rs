@@ -8,21 +8,44 @@ use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
-fn free_tcp() -> u16 { TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap().local_addr().unwrap().port() }
-fn free_udp() -> u16 { UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap().local_addr().unwrap().port() }
+fn free_tcp() -> u16 {
+    TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap().local_addr().unwrap().port()
+}
+fn free_udp() -> u16 {
+    UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap().local_addr().unwrap().port()
+}
 
-struct Srv { child: Child, base: String, http: u16, tcp: u16 }
-impl Drop for Srv { fn drop(&mut self) { let _ = self.child.kill(); } }
+struct Srv {
+    child: Child,
+    base: String,
+    http: u16,
+    tcp: u16,
+}
+impl Drop for Srv {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+    }
+}
 
-fn start(simulate: bool) -> Srv { start_with(simulate, &[]) }
+fn start(simulate: bool) -> Srv {
+    start_with(simulate, &[])
+}
 
 fn start_with(simulate: bool, extra: &[&str]) -> Srv {
     let (http, tcp) = (free_tcp(), free_tcp());
     let mut args = vec!["--http-port".to_string(), http.to_string(), "--tcp-port".into(), tcp.to_string()];
-    if simulate { args.extend(["--simulate".into(), "--sim-udp-port".into(), free_udp().to_string()]); }
+    if simulate {
+        args.extend(["--simulate".into(), "--sim-udp-port".into(), free_udp().to_string()]);
+    }
     args.extend(extra.iter().map(|s| s.to_string()));
-    let child = Command::new(env!("CARGO_BIN_EXE_p56-server")).args(&args).env("RUST_LOG", "warn").env_remove("P56_API_TOKEN")
-        .stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap();
+    let child = Command::new(env!("CARGO_BIN_EXE_p56-server"))
+        .args(&args)
+        .env("RUST_LOG", "warn")
+        .env_remove("P56_API_TOKEN")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
     let base = format!("http://127.0.0.1:{http}");
     let deadline = Instant::now() + Duration::from_secs(10);
     while ureq::get(&format!("{base}/api/ping")).call().is_err() {
@@ -33,7 +56,9 @@ fn start_with(simulate: bool, extra: &[&str]) -> Srv {
 }
 
 impl Srv {
-    fn get(&self, p: &str) -> Value { ureq::get(&format!("{}{p}", self.base)).call().unwrap().into_json().unwrap() }
+    fn get(&self, p: &str) -> Value {
+        ureq::get(&format!("{}{p}", self.base)).call().unwrap().into_json().unwrap()
+    }
     fn post(&self, p: &str, body: Value) -> (u16, Value) {
         match ureq::post(&format!("{}{p}", self.base)).send_json(body) {
             Ok(r) => (r.status(), r.into_json().unwrap_or(Value::Null)),
@@ -50,7 +75,9 @@ impl Srv {
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {
             let s = self.get("/api/state");
-            if pred(&s) { return s; }
+            if pred(&s) {
+                return s;
+            }
             assert!(Instant::now() < deadline, "{what}: {s}");
             std::thread::sleep(Duration::from_millis(100));
         }
@@ -152,7 +179,9 @@ fn events_stream() {
     loop {
         line.clear();
         rd.read_line(&mut line).unwrap();
-        if line.starts_with("data:") && line.contains("\"status\"") { break; }
+        if line.starts_with("data:") && line.contains("\"status\"") {
+            break;
+        }
         assert!(Instant::now() < deadline, "no status event");
     }
 }
@@ -177,8 +206,13 @@ fn virtual_fan_follows_the_options_file() {
     let (http, tcp) = (free_tcp(), free_tcp());
     let child = Command::new(env!("CARGO_BIN_EXE_p56-server"))
         .args(["--http-port", &http.to_string(), "--tcp-port", &tcp.to_string(), "--sim-udp-port", &free_udp().to_string()])
-        .arg("--options-file").arg(&opts)
-        .env("RUST_LOG", "warn").stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap();
+        .arg("--options-file")
+        .arg(&opts)
+        .env("RUST_LOG", "warn")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
     let s = Srv { child, base: format!("http://127.0.0.1:{http}"), http, tcp };
     let deadline = Instant::now() + Duration::from_secs(10);
     while ureq::get(&format!("{}/api/ping", s.base)).call().is_err() {
@@ -221,10 +255,15 @@ fn virtual_fan_follows_the_supervisor_options() {
     let (http, tcp) = (free_tcp(), free_tcp());
     let child = Command::new(env!("CARGO_BIN_EXE_p56-server"))
         .args(["--http-port", &http.to_string(), "--tcp-port", &tcp.to_string(), "--sim-udp-port", &free_udp().to_string()])
-        .arg("--options-file").arg(&opts)
+        .arg("--options-file")
+        .arg(&opts)
         .args(["--options-url", &format!("http://127.0.0.1:{sup_port}/addons/self/info")])
-        .env("SUPERVISOR_TOKEN", "test-token").env("RUST_LOG", "warn")
-        .stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap();
+        .env("SUPERVISOR_TOKEN", "test-token")
+        .env("RUST_LOG", "warn")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
     let s = Srv { child, base: format!("http://127.0.0.1:{http}"), http, tcp };
     let deadline = Instant::now() + Duration::from_secs(10);
     while ureq::get(&format!("{}/api/ping", s.base)).call().is_err() {
@@ -297,7 +336,11 @@ fn styles_icons_colour_scale_and_animations() {
     let (code, v) = s.post("/api/show", json!({ "text": "x", "style": "fancy" }));
     assert_eq!(code, 500);
     assert!(v["error"].as_str().unwrap_or("").contains("unknown style"), "{v}");
-    s.wait("files on the fan", |st| st["playlist"].as_array().is_some_and(|p| ["styled.mp4", "price.mp4", "icon.mp4", "anim.mp4", "frames.mp4"].iter().all(|n| p.iter().any(|e| e["name"] == *n))));
+    s.wait("files on the fan", |st| {
+        st["playlist"]
+            .as_array()
+            .is_some_and(|p| ["styled.mp4", "price.mp4", "icon.mp4", "anim.mp4", "frames.mp4"].iter().all(|n| p.iter().any(|e| e["name"] == *n)))
+    });
 }
 
 // ---- auto-delete timers (show_seconds) --------------------------------------------------
@@ -355,15 +398,18 @@ fn stale_timer_never_deletes_another_file_in_the_same_slot() {
 fn temporary_file_returns_to_the_previous_file_by_name() {
     let s = start(true);
     let id = connected_fan(&s);
-    for n in ["a", "b", "c"] { show_ok(&s, json!({ "text": n, "name": n })); }
+    for n in ["a", "b", "c"] {
+        show_ok(&s, json!({ "text": n, "name": n }));
+    }
     s.call("set_value", json!({ "id": id, "what": "select", "value": 3 }));
     s.wait("c plays", |st| st["devices"][0]["status"]["play_index"] == 3 && slot_of(st, "c.mp4") == Some(3));
     show_ok(&s, json!({ "text": "note", "name": "note", "show_seconds": 4 }));
     // the slots shift while the note is shown: c moves from 3 to 2
     s.call("set_value", json!({ "id": id, "what": "delete", "value": 1 }));
     s.wait("a deleted", |st| names(st) == ["b.mp4", "c.mp4", "note.mp4"]);
-    let st = s.wait("note removed, c plays again", |st| !names(st).contains(&"note.mp4".to_string())
-        && st["devices"][0]["status"]["play_index"].as_u64() == slot_of(st, "c.mp4"));
+    let st = s.wait("note removed, c plays again", |st| {
+        !names(st).contains(&"note.mp4".to_string()) && st["devices"][0]["status"]["play_index"].as_u64() == slot_of(st, "c.mp4")
+    });
     assert_eq!(names(&st), ["b.mp4", "c.mp4"], "{st}");
 }
 
@@ -373,12 +419,20 @@ fn temporary_file_returns_to_the_previous_file_by_name() {
 fn cast_reaches_only_the_selected_fan() {
     let s = start(false);
     let pc = std::net::SocketAddr::from((Ipv4Addr::LOCALHOST, s.tcp));
-    let sim = |name: &str, last: u8| p56_sim::Sim::start(p56_sim::SimConfig {
-        name: name.into(), udp_port: 0, pc: Some(pc), mac: [0x02, 0xE0, 0xE0, 0x56, 0x01, last], ..Default::default()
-    }).unwrap();
+    let sim = |name: &str, last: u8| {
+        p56_sim::Sim::start(p56_sim::SimConfig {
+            name: name.into(),
+            udp_port: 0,
+            pc: Some(pc),
+            mac: [0x02, 0xE0, 0xE0, 0x56, 0x01, last],
+            ..Default::default()
+        })
+        .unwrap()
+    };
     let (a, b) = (sim("FAN-A", 0xA1), sim("FAN-B", 0xB2));
-    s.wait("two fans", |v| v["devices"].as_array().is_some_and(|d| d.len() == 2
-        && d.iter().all(|x| x["status"].is_object() && x["mac"].as_str().is_some_and(|m| !m.is_empty()))));
+    s.wait("two fans", |v| {
+        v["devices"].as_array().is_some_and(|d| d.len() == 2 && d.iter().all(|x| x["status"].is_object() && x["mac"].as_str().is_some_and(|m| !m.is_empty())))
+    });
     let (code, v) = s.post("/api/show", json!({ "text": "LIVE", "mode": "cast", "show_seconds": 1, "mac": "02:E0:E0:56:01:A1" }));
     assert_eq!(code, 200, "{v}");
     assert_eq!(v["fans"], 1, "{v}");
@@ -440,13 +494,18 @@ fn answer(r: Result<ureq::Response, ureq::Error>) -> (u16, Value) {
 
 #[test]
 fn api_token_is_required_from_the_network_only() {
-    let Some(ip) = lan_ip() else { eprintln!("skipped: this machine has no non-loopback IPv4 address"); return };
+    let Some(ip) = lan_ip() else {
+        eprintln!("skipped: this machine has no non-loopback IPv4 address");
+        return;
+    };
     let token = "s3cret/+token";
     let s = start_with(true, &["--api-token", token]);
     let lan = format!("http://{ip}:{}", s.http);
     let get = |p: &str, auth: Option<&str>| {
         let mut r = ureq::get(&format!("{lan}{p}")).timeout(Duration::from_secs(10));
-        if let Some(a) = auth { r = r.set("Authorization", a); }
+        if let Some(a) = auth {
+            r = r.set("Authorization", a);
+        }
         answer(r.call())
     };
     // from the network without (or with a wrong) token: refused
@@ -455,7 +514,9 @@ fn api_token_is_required_from_the_network_only() {
     assert_eq!(get("/api/state", Some("Bearer wrong")).0, 401);
     assert_eq!(get("/api/state?token=wrong", None).0, 401);
     assert_eq!(get("/api/shown/02:e0:e0:56:00:f5", None).0, 401);
-    for p in ["/status", "/health"] { assert_eq!(get(p, None).0, 401, "{p}"); }
+    for p in ["/status", "/health"] {
+        assert_eq!(get(p, None).0, 401, "{p}");
+    }
     for p in ["/api/call/devices", "/api/show", "/text", "/upload", "/delete", "/on", "/off"] {
         let (code, _) = answer(ureq::post(&format!("{lan}{p}")).send_json(json!({ "text": "x" })));
         assert_eq!(code, 401, "POST {p}");
@@ -469,7 +530,7 @@ fn api_token_is_required_from_the_network_only() {
     assert_eq!(get("/", None).0, 200);
     assert_eq!(get("/api/ping", None).0, 200);
     // this machine (loopback) needs no token
-    assert_eq!(s.get("/api/state")["version"].is_string(), true);
+    assert!(s.get("/api/state")["version"].is_string());
     let (code, _) = s.post("/api/call/devices", json!({}));
     assert_eq!(code, 200);
 }

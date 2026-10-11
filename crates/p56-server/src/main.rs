@@ -71,7 +71,9 @@ struct Args {
 }
 
 impl Args {
-    fn token(&self) -> Option<&str> { self.api_token.as_deref().map(str::trim).filter(|t| !t.is_empty()) }
+    fn token(&self) -> Option<&str> {
+        self.api_token.as_deref().map(str::trim).filter(|t| !t.is_empty())
+    }
 }
 
 /// Requests that need no token: the web UI page, the ping and CORS preflights.
@@ -82,7 +84,9 @@ fn public(method: &Method, url: &str) -> bool {
 
 /// Constant-time comparison (only the length can be learned from the timing).
 fn same_secret(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() { return false; }
+    if a.len() != b.len() {
+        return false;
+    }
     a.iter().zip(b).fold(0u8, |d, (x, y)| d | (x ^ y)) == 0
 }
 
@@ -94,7 +98,11 @@ fn percent_decode(s: &str) -> Vec<u8> {
     let mut i = 0;
     while i < b.len() {
         if b[i] == b'%' && i + 2 < b.len() {
-            if let (Some(h), Some(l)) = (hex(b[i + 1]), hex(b[i + 2])) { out.push(h << 4 | l); i += 3; continue; }
+            if let (Some(h), Some(l)) = (hex(b[i + 1]), hex(b[i + 2])) {
+                out.push(h << 4 | l);
+                i += 3;
+                continue;
+            }
         }
         out.push(b[i]);
         i += 1;
@@ -105,12 +113,17 @@ fn percent_decode(s: &str) -> Vec<u8> {
 /// The request carries the API token in an `Authorization: Bearer` header or a `token` query parameter.
 fn has_token(req: &Request, token: &str) -> bool {
     let header = req.headers().iter().filter(|h| h.field.equiv("Authorization")).any(|h| {
-        h.value.as_str().trim().split_once(' ')
+        h.value
+            .as_str()
+            .trim()
+            .split_once(' ')
             .is_some_and(|(scheme, t)| scheme.eq_ignore_ascii_case("bearer") && same_secret(t.trim().as_bytes(), token.as_bytes()))
     });
-    header || req.url().split_once('?').is_some_and(|(_, q)| q.split('&').any(|kv| {
-        kv.strip_prefix("token=").is_some_and(|v| same_secret(&percent_decode(v), token.as_bytes()))
-    }))
+    header
+        || req
+            .url()
+            .split_once('?')
+            .is_some_and(|(_, q)| q.split('&').any(|kv| kv.strip_prefix("token=").is_some_and(|v| same_secret(&percent_decode(v), token.as_bytes()))))
 }
 
 fn allowed(addr: Option<&std::net::SocketAddr>) -> bool {
@@ -138,7 +151,10 @@ fn main() {
         (false, Some(_)) => log::info!("API open to the network, with an API token"),
         (false, None) => log::warn!("API open to the whole network WITHOUT a token: anyone on it can control the fans; set an API token"),
     }
-    if args.discovery { let port = args.http_port; thread::spawn(move || announce(port)); }
+    if args.discovery {
+        let port = args.http_port;
+        thread::spawn(move || announce(port));
+    }
     let token = args.token().map(str::to_string);
     for req in server.incoming_requests() {
         let trusted = allowed(req.remote_addr());
@@ -149,8 +165,8 @@ fn main() {
         if let Some(t) = &token {
             if !trusted && !public(req.method(), req.url()) && !has_token(&req, t) {
                 log::debug!("401 for {} {} from {:?}", req.method(), req.url().split('?').next().unwrap_or(""), req.remote_addr());
-                let _ = req.respond(json_response(&json!({ "error": "Unauthorized" }), 401)
-                    .with_header(Header::from_bytes("WWW-Authenticate", "Bearer").unwrap()));
+                let _ =
+                    req.respond(json_response(&json!({ "error": "Unauthorized" }), 401).with_header(Header::from_bytes("WWW-Authenticate", "Bearer").unwrap()));
                 continue;
             }
         }
@@ -162,12 +178,18 @@ fn main() {
 
 fn start_service(args: &Args, subs: Subscribers) -> Arc<Service> {
     let emit: p56_service::Emit = Arc::new(move |t: &str, data: Value| {
-        if t == "log" { if let Some(m) = data.get("msg").and_then(|m| m.as_str()) { log::info!("{m}"); } }
+        if t == "log" {
+            if let Some(m) = data.get("msg").and_then(|m| m.as_str()) {
+                log::info!("{m}");
+            }
+        }
         let line = format!("data: {}\n\n", json!({ "type": t, "data": data }));
         subs.lock().unwrap().retain(|s| s.send(line.clone()).is_ok());
     });
     let mut targets = args.fans.clone();
-    if args.simulate || args.options_file.is_some() { targets.push(format!("127.0.0.1:{}", args.sim_udp_port)); }
+    if args.simulate || args.options_file.is_some() {
+        targets.push(format!("127.0.0.1:{}", args.sim_udp_port));
+    }
     let svc = Service::new(emit, Defaults { ip: args.ip.clone(), targets, port: Some(args.tcp_port), media_dirs: args.media_dirs.clone() });
     match svc.start_link(None, None, None) {
         Ok(ip) => log::info!("fan link started on TCP {} (advertising {ip})", args.tcp_port),
@@ -181,9 +203,16 @@ fn start_service(args: &Args, subs: Subscribers) -> Arc<Service> {
         thread::spawn(move || loop {
             // the URL has the latest saved options; the file is what the add-on started with
             let from_url = url.as_deref().and_then(fetch_json).as_ref().and_then(simulate_option);
-            let from_file = || file.as_ref().and_then(|p| std::fs::read_to_string(p).ok())
-                .and_then(|s| serde_json::from_str::<Value>(&s).ok()).as_ref().and_then(simulate_option);
-            if let Some(wanted) = from_url.or_else(from_file) { current = wanted; }
+            let from_file = || {
+                file.as_ref()
+                    .and_then(|p| std::fs::read_to_string(p).ok())
+                    .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+                    .as_ref()
+                    .and_then(simulate_option)
+            };
+            if let Some(wanted) = from_url.or_else(from_file) {
+                current = wanted;
+            }
             vf.set(current);
             thread::sleep(Duration::from_secs(2));
         });
@@ -212,7 +241,9 @@ fn fetch_json(url: &str) -> Option<Value> {
     let mut resp = String::new();
     s.read_to_string(&mut resp).ok()?;
     let (head, body) = resp.split_once("\r\n\r\n")?;
-    if !head.starts_with("HTTP/1.") || !head.split_whitespace().nth(1).is_some_and(|c| c == "200") { return None; }
+    if !head.starts_with("HTTP/1.") || !head.split_whitespace().nth(1).is_some_and(|c| c == "200") {
+        return None;
+    }
     serde_json::from_str(body).ok()
 }
 
@@ -226,7 +257,9 @@ struct VirtualFan {
 impl VirtualFan {
     fn set(&self, on: bool) {
         let mut sim = self.sim.lock().unwrap();
-        if on == sim.is_some() { return; }
+        if on == sim.is_some() {
+            return;
+        }
         if let Some(s) = sim.take() {
             s.stop();
             log::info!("virtual fan stopped");
@@ -236,7 +269,11 @@ impl VirtualFan {
         for attempt in 0..10 {
             let cfg = p56_sim::SimConfig { name: "VIRTUAL-P56".into(), udp_port: self.udp_port, pc_port: self.tcp_port, ..Default::default() };
             match p56_sim::Sim::start(cfg) {
-                Ok(s) => { log::info!("virtual fan started"); *sim = Some(s); return; }
+                Ok(s) => {
+                    log::info!("virtual fan started");
+                    *sim = Some(s);
+                    return;
+                }
                 Err(e) if attempt == 9 => log::warn!("virtual fan not started: {e}"),
                 Err(_) => thread::sleep(Duration::from_millis(300)),
             }
@@ -270,7 +307,10 @@ fn handle(mut req: Request, svc: &Arc<Service>, subs: &Subscribers) {
             return;
         }
         (Method::Get, "/api/ping") => json_response(&json!({ "ok": true, "server": "p56-server", "version": env!("CARGO_PKG_VERSION") }), 200),
-        (Method::Get, "/api/events") => { sse(req, subs); return; }
+        (Method::Get, "/api/events") => {
+            sse(req, subs);
+            return;
+        }
         (Method::Get, "/api/state") => json_response(&state(svc), 200),
         (Method::Post, p) if p.starts_with("/api/call/") => {
             let cmd = p.trim_start_matches("/api/call/").to_string();
@@ -307,13 +347,22 @@ fn handle(mut req: Request, svc: &Arc<Service>, subs: &Subscribers) {
         }
         (Method::Post, "/text") => {
             let mut b = body_json(&mut req);
-            if b.get("text").and_then(|t| t.as_str()).unwrap_or("").is_empty() { json_response(&json!({ "error": "Missing 'text'" }), 400) }
-            else { if let Some(o) = b.as_object_mut() { o.entry("mode").or_insert(json!("upload")); } show(svc, b) }
+            if b.get("text").and_then(|t| t.as_str()).unwrap_or("").is_empty() {
+                json_response(&json!({ "error": "Missing 'text'" }), 400)
+            } else {
+                if let Some(o) = b.as_object_mut() {
+                    o.entry("mode").or_insert(json!("upload"));
+                }
+                show(svc, b)
+            }
         }
         (Method::Post, "/upload") => {
             let b = body_json(&mut req);
-            if b.get("image").is_none() && b.get("path").is_none() && b.get("data").is_none() { json_response(&json!({ "error": "Missing 'image' path" }), 400) }
-            else { show(svc, b) }
+            if b.get("image").is_none() && b.get("path").is_none() && b.get("data").is_none() {
+                json_response(&json!({ "error": "Missing 'image' path" }), 400)
+            } else {
+                show(svc, b)
+            }
         }
         (Method::Post, "/delete") => {
             let b = body_json(&mut req);
@@ -340,16 +389,27 @@ fn handle(mut req: Request, svc: &Arc<Service>, subs: &Subscribers) {
     let _ = req.respond(resp);
 }
 
-fn all_fans(svc: &Service) -> Vec<u32> { svc.link().map(|l| l.ids()).unwrap_or_default() }
-fn first_fan(svc: &Service) -> Option<u32> { all_fans(svc).first().copied() }
+fn all_fans(svc: &Service) -> Vec<u32> {
+    svc.link().map(|l| l.ids()).unwrap_or_default()
+}
+fn first_fan(svc: &Service) -> Option<u32> {
+    all_fans(svc).first().copied()
+}
 
 fn show(svc: &Arc<Service>, b: Value) -> Response<std::io::Cursor<Vec<u8>>> {
-    let req: ShowRequest = match serde_json::from_value(b) { Ok(r) => r, Err(e) => return json_response(&json!({ "success": false, "error": e.to_string() }), 400) };
+    let req: ShowRequest = match serde_json::from_value(b) {
+        Ok(r) => r,
+        Err(e) => return json_response(&json!({ "success": false, "error": e.to_string() }), 400),
+    };
     // a file on the server may only be read from the media folders
     if let Some(p) = req.path.as_deref().filter(|p| !p.trim().is_empty()) {
-        if let Err(e) = svc.media_path(p) { return json_response(&json!({ "success": false, "error": e }), 403); }
+        if let Err(e) = svc.media_path(p) {
+            return json_response(&json!({ "success": false, "error": e }), 403);
+        }
     }
-    if first_fan(svc).is_none() { return json_response(&json!({ "success": false, "error": "No fan connected" }), 503); }
+    if first_fan(svc).is_none() {
+        return json_response(&json!({ "success": false, "error": "No fan connected" }), 503);
+    }
     match svc.show(req) {
         Ok(v) => json_response(&v, 200),
         Err(e) => json_response(&json!({ "success": false, "error": e }), 500),
@@ -376,25 +436,37 @@ fn sse(req: Request, subs: &Subscribers) {
     subs.lock().unwrap().push(tx);
     let mut w = req.into_writer();
     let head = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-store\r\nConnection: keep-alive\r\nX-Accel-Buffering: no\r\n\r\n";
-    if w.write_all(head.as_bytes()).and_then(|_| w.write_all(b": p56\n\n")).and_then(|_| w.flush()).is_err() { return; }
+    if w.write_all(head.as_bytes()).and_then(|_| w.write_all(b": p56\n\n")).and_then(|_| w.flush()).is_err() {
+        return;
+    }
     loop {
         let msg = match rx.recv_timeout(Duration::from_secs(15)) {
             Ok(m) => m,
             Err(mpsc::RecvTimeoutError::Timeout) => ": keepalive\n\n".to_string(),
             Err(_) => return,
         };
-        if w.write_all(msg.as_bytes()).and_then(|_| w.flush()).is_err() { return; }
+        if w.write_all(msg.as_bytes()).and_then(|_| w.flush()).is_err() {
+            return;
+        }
     }
 }
 
 /// Tell Home Assistant about this server so the integration is offered automatically.
 fn announce(port: u16) {
-    let Ok(token) = std::env::var("SUPERVISOR_TOKEN") else { log::info!("no SUPERVISOR_TOKEN: discovery skipped"); return };
+    let Ok(token) = std::env::var("SUPERVISOR_TOKEN") else {
+        log::info!("no SUPERVISOR_TOKEN: discovery skipped");
+        return;
+    };
     thread::sleep(Duration::from_secs(3));
     let host = std::env::var("HOSTNAME").ok().filter(|h| !h.is_empty()).unwrap_or_else(|| "127.0.0.1".into());
     let body = json!({ "service": "p56_pov", "config": { "host": "127.0.0.1", "port": port, "addon_host": host } }).to_string();
     let req = format!("POST /discovery HTTP/1.1\r\nHost: supervisor\r\nAuthorization: Bearer {token}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
-    match TcpStream::connect(("supervisor", 80)).and_then(|mut s| { s.write_all(req.as_bytes())?; let mut r = String::new(); s.read_to_string(&mut r)?; Ok(r) }) {
+    match TcpStream::connect(("supervisor", 80)).and_then(|mut s| {
+        s.write_all(req.as_bytes())?;
+        let mut r = String::new();
+        s.read_to_string(&mut r)?;
+        Ok(r)
+    }) {
         Ok(r) => log::info!("discovery to Home Assistant: {}", r.lines().next().unwrap_or("")),
         Err(e) => log::warn!("discovery failed: {e}"),
     }

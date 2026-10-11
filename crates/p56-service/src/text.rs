@@ -20,14 +20,21 @@ pub const SCALE_GREEN_RED: [[u8; 3]; 3] = [[48, 209, 88], [255, 214, 10], [255, 
 pub fn parse_color(s: &str) -> Option<[u8; 3]> {
     let s = s.trim().to_ascii_lowercase();
     let named = match s.as_str() {
-        "white" | "wit" => Some([255, 255, 255]), "black" | "zwart" => Some([0, 0, 0]),
-        "red" | "rood" => Some([255, 40, 40]), "green" | "groen" => Some([40, 230, 80]),
-        "blue" | "blauw" => Some([50, 110, 255]), "yellow" | "geel" => Some([255, 220, 0]),
-        "orange" | "oranje" => Some([255, 140, 0]), "cyan" => Some([0, 220, 255]),
-        "magenta" | "paars" | "purple" => Some([200, 60, 255]), "pink" | "roze" => Some([255, 110, 180]),
+        "white" | "wit" => Some([255, 255, 255]),
+        "black" | "zwart" => Some([0, 0, 0]),
+        "red" | "rood" => Some([255, 40, 40]),
+        "green" | "groen" => Some([40, 230, 80]),
+        "blue" | "blauw" => Some([50, 110, 255]),
+        "yellow" | "geel" => Some([255, 220, 0]),
+        "orange" | "oranje" => Some([255, 140, 0]),
+        "cyan" => Some([0, 220, 255]),
+        "magenta" | "paars" | "purple" => Some([200, 60, 255]),
+        "pink" | "roze" => Some([255, 110, 180]),
         _ => None,
     };
-    if named.is_some() { return named; }
+    if named.is_some() {
+        return named;
+    }
     if let Some(h) = s.strip_prefix('#') {
         let v = u32::from_str_radix(h, 16).ok()?;
         return match h.len() {
@@ -52,8 +59,12 @@ pub fn icon_char(name: &str) -> Option<char> {
 /// Colour for `value` on a scale from `min` to `max`, blending through `stops`
 /// (e.g. green → yellow → red). Values outside the range take the end colours.
 pub fn color_scale(value: f64, min: f64, max: f64, stops: &[[u8; 3]]) -> [u8; 3] {
-    if stops.is_empty() { return [255, 255, 255]; }
-    if stops.len() == 1 || (max - min).abs() < f64::EPSILON { return stops[0]; }
+    if stops.is_empty() {
+        return [255, 255, 255];
+    }
+    if stops.len() == 1 || (max - min).abs() < f64::EPSILON {
+        return stops[0];
+    }
     let t = ((value - min) / (max - min)).clamp(0.0, 1.0) * (stops.len() - 1) as f64;
     let i = (t.floor() as usize).min(stops.len() - 2);
     let f = t - i as f64;
@@ -88,7 +99,9 @@ fn line_width<F: Font, S: ScaleFont<F>>(font: &S, line: &str) -> f32 {
     let mut prev = None;
     for c in line.chars() {
         let id = font.glyph_id(c);
-        if let Some(p) = prev { w += font.kern(p, id); }
+        if let Some(p) = prev {
+            w += font.kern(p, id);
+        }
         w += font.h_advance(id);
         prev = Some(id);
     }
@@ -102,12 +115,21 @@ fn wrap<F: Font, S: ScaleFont<F>>(font: &S, text: &str, max_w: f32) -> Vec<Strin
         let mut cur = String::new();
         for word in para.split_whitespace() {
             let cand = if cur.is_empty() { word.to_string() } else { format!("{cur} {word}") };
-            if line_width(font, &cand) <= max_w || cur.is_empty() { cur = cand; } else { lines.push(std::mem::take(&mut cur)); cur = word.to_string(); }
+            if line_width(font, &cand) <= max_w || cur.is_empty() {
+                cur = cand;
+            } else {
+                lines.push(std::mem::take(&mut cur));
+                cur = word.to_string();
+            }
         }
         lines.push(cur);
     }
-    while lines.last().is_some_and(|l| l.is_empty()) { lines.pop(); }
-    if lines.is_empty() { lines.push(String::new()); }
+    while lines.last().is_some_and(|l| l.is_empty()) {
+        lines.pop();
+    }
+    if lines.is_empty() {
+        lines.push(String::new());
+    }
     lines
 }
 
@@ -119,16 +141,22 @@ fn fit(font: &FontRef, text: &str, box_w: f32, box_h: f32, start: f32) -> (Vec<S
         let lines = wrap(&sf, text, box_w);
         let widest = lines.iter().map(|l| line_width(&sf, l)).fold(0.0, f32::max);
         let height = lines.len() as f32 * (sf.ascent() - sf.descent() + sf.line_gap()) - sf.line_gap();
-        if (widest <= box_w && height <= box_h) || size <= 10.0 { return (lines, size); }
+        if (widest <= box_w && height <= box_h) || size <= 10.0 {
+            return (lines, size);
+        }
         size *= 0.92;
     }
 }
 
 fn blend(img: &mut RgbImage, x: i32, y: i32, c: [u8; 3], cov: f32) {
-    if x < 0 || y < 0 || x >= SIDE as i32 || y >= SIDE as i32 || cov <= 0.0 { return; }
+    if x < 0 || y < 0 || x >= SIDE as i32 || y >= SIDE as i32 || cov <= 0.0 {
+        return;
+    }
     let p = img.get_pixel_mut(x as u32, y as u32);
     let cov = cov.min(1.0);
-    for k in 0..3 { p[k] = (p[k] as f32 * (1.0 - cov) + c[k] as f32 * cov).round() as u8; }
+    for k in 0..3 {
+        p[k] = (p[k] as f32 * (1.0 - cov) + c[k] as f32 * cov).round() as u8;
+    }
 }
 
 fn draw_glyph(img: &mut RgbImage, font: &FontRef, glyph: ab_glyph::Glyph, c: [u8; 3]) {
@@ -148,7 +176,9 @@ fn draw_lines(img: &mut RgbImage, font: &FontRef, lines: &[String], size: f32, t
         let mut prev = None;
         for ch in line.chars() {
             let id = sf.glyph_id(ch);
-            if let Some(p) = prev { x += sf.kern(p, id); }
+            if let Some(p) = prev {
+                x += sf.kern(p, id);
+            }
             draw_glyph(img, font, id.with_scale_and_position(PxScale::from(size), point(x, y)), c);
             x += sf.h_advance(id);
             prev = Some(id);
@@ -220,10 +250,20 @@ pub fn render_card(c: &Card) -> RgbImage {
     let font = FontRef::try_from_slice(FONT).expect("embedded font");
     let side = SIDE as f32;
     let mut img = RgbImage::from_pixel(SIDE, SIDE, Rgb(c.bg));
-    if let Some(rc) = c.ring { draw_ring(&mut img, rc, c.ticks); }
+    if let Some(rc) = c.ring {
+        draw_ring(&mut img, rc, c.ticks);
+    }
     // Content stays inside the disc: a centred box of 80 % × 62 % of the diameter,
     // smaller when a ring takes the rim.
-    let k = if c.ring.is_some() { if c.ticks { 0.78 } else { 0.86 } } else { 1.0 };
+    let k = if c.ring.is_some() {
+        if c.ticks {
+            0.78
+        } else {
+            0.86
+        }
+    } else {
+        1.0
+    };
     let (box_w, box_h) = (side * 0.80 * k, side * 0.62 * k);
     let start = if c.max_size > 0.0 { c.max_size.min(side * 0.45) } else { side * 0.45 };
     let text = c.text.trim();
@@ -261,7 +301,9 @@ mod tests {
             if p.0.iter().any(|v| *v > 128) {
                 lit += 1;
                 let r = ((x as f64 + 0.5 - c).powi(2) + (y as f64 + 0.5 - c).powi(2)).sqrt();
-                if r > c * radius_frac { outside += 1; }
+                if r > c * radius_frac {
+                    outside += 1;
+                }
             }
         }
         (lit, outside)
@@ -304,8 +346,14 @@ mod tests {
     #[test]
     fn card_with_icon_ring_and_ticks_stays_inside() {
         let card = Card {
-            text: "Washing machine done".into(), fg: [255, 255, 255], bg: [0, 0, 0], max_size: 0.0,
-            icon: icon_char("mdi:washing-machine"), icon_color: [0, 200, 255], ring: Some([255, 59, 48]), ticks: true,
+            text: "Washing machine done".into(),
+            fg: [255, 255, 255],
+            bg: [0, 0, 0],
+            max_size: 0.0,
+            icon: icon_char("mdi:washing-machine"),
+            icon_color: [0, 200, 255],
+            ring: Some([255, 59, 48]),
+            ticks: true,
         };
         let img = render_card(&card);
         let (lit, outside) = lit_outside(&img, 0.995);
@@ -324,8 +372,16 @@ mod tests {
 
     #[test]
     fn icon_alone_is_big() {
-        let card = Card { text: String::new(), fg: [255, 255, 255], bg: [0, 0, 0], max_size: 0.0,
-            icon: icon_char("flash"), icon_color: [255, 214, 10], ring: None, ticks: false };
+        let card = Card {
+            text: String::new(),
+            fg: [255, 255, 255],
+            bg: [0, 0, 0],
+            max_size: 0.0,
+            icon: icon_char("flash"),
+            icon_color: [255, 214, 10],
+            ring: None,
+            ticks: false,
+        };
         let (lit, outside) = lit_outside(&render_card(&card), 0.98);
         assert!(lit > 30_000, "big icon: {lit}");
         assert_eq!(outside, 0);

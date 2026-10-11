@@ -10,9 +10,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 #[tauri::command]
 async fn p56(state: State<'_, Arc<Service>>, cmd: String, args: Option<Value>) -> Result<Value, String> {
     let svc = state.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || svc.call(&cmd, &args.unwrap_or(Value::Null)))
-        .await
-        .map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || svc.call(&cmd, &args.unwrap_or(Value::Null))).await.map_err(|e| e.to_string())?
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

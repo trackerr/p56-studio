@@ -28,17 +28,23 @@ pub fn open(path: &Path, max_side: u32) -> Result<VideoSource, Error> {
     let mut it = text.trim().split(',');
     let w: u32 = it.next().and_then(|s| s.parse().ok()).ok_or_else(|| Error::Invalid("no video stream".into()))?;
     let h: u32 = it.next().and_then(|s| s.parse().ok()).ok_or_else(|| Error::Invalid("no video stream".into()))?;
-    let fps = it.next().and_then(|r| {
-        let (a, b) = r.split_once('/')?;
-        Some(a.parse::<f64>().ok()? / b.parse::<f64>().ok()?.max(1.0))
-    }).unwrap_or(25.0);
+    let fps = it
+        .next()
+        .and_then(|r| {
+            let (a, b) = r.split_once('/')?;
+            Some(a.parse::<f64>().ok()? / b.parse::<f64>().ok()?.max(1.0))
+        })
+        .unwrap_or(25.0);
     // Scale down so the polar warp stays cheap; keep aspect.
     let scale = (max_side as f64 / w.max(h) as f64).min(1.0);
     let (ow, oh) = (((w as f64 * scale) as u32) & !1, ((h as f64 * scale) as u32) & !1);
     let child = Command::new("ffmpeg")
-        .args(["-v", "error", "-i"]).arg(path)
+        .args(["-v", "error", "-i"])
+        .arg(path)
         .args(["-vf", &format!("scale={ow}:{oh}"), "-f", "rawvideo", "-pix_fmt", "rgb24", "-"])
-        .stdout(Stdio::piped()).stderr(Stdio::null()).stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .stdin(Stdio::null())
         .spawn()
         .map_err(|e| Error::Io(format!("ffmpeg not available: {e}")))?;
     Ok(VideoSource { child, width: ow, height: oh, fps })
@@ -56,5 +62,7 @@ impl VideoSource {
 }
 
 impl Drop for VideoSource {
-    fn drop(&mut self) { let _ = self.child.kill(); }
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+    }
 }

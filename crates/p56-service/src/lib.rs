@@ -30,7 +30,10 @@ struct Media {
 }
 
 #[derive(Default)]
-struct LiveStats { n: u64, since: Option<Instant> }
+struct LiveStats {
+    n: u64,
+    since: Option<Instant>,
+}
 
 /// Where the link listens and what it targets when the UI does not say otherwise.
 #[derive(Debug, Clone, Default)]
@@ -65,7 +68,9 @@ fn at_fan_rate<T: Clone>(frames: Vec<(T, u32)>, max: usize) -> Vec<T> {
     for (f, ms) in frames {
         let n = ((ms + step / 2) / step).max(1) as usize;
         for _ in 0..n {
-            if out.len() >= max { return out; }
+            if out.len() >= max {
+                return out;
+            }
             out.push(f.clone());
         }
     }
@@ -106,8 +111,17 @@ pub struct Service {
 
 #[derive(Serialize, Clone)]
 pub struct StatusDto {
-    pub power: bool, pub playing: bool, pub repeat_all: bool, pub breath: bool, pub autostart: bool, pub master: bool,
-    pub play_index: u8, pub brightness: u8, pub color_mode: u8, pub angle: i32, pub fan_type: u8,
+    pub power: bool,
+    pub playing: bool,
+    pub repeat_all: bool,
+    pub breath: bool,
+    pub autostart: bool,
+    pub master: bool,
+    pub play_index: u8,
+    pub brightness: u8,
+    pub color_mode: u8,
+    pub angle: i32,
+    pub fan_type: u8,
 }
 
 #[derive(Serialize, Clone)]
@@ -127,17 +141,27 @@ pub struct DeviceDto {
 
 #[derive(Deserialize, Clone, Copy, Debug)]
 pub struct PlacementDto {
-    #[serde(default)] pub x: f64,
-    #[serde(default)] pub y: f64,
-    #[serde(default = "one")] pub scale: f64,
-    #[serde(default)] pub mirror: bool,
+    #[serde(default)]
+    pub x: f64,
+    #[serde(default)]
+    pub y: f64,
+    #[serde(default = "one")]
+    pub scale: f64,
+    #[serde(default)]
+    pub mirror: bool,
 }
-fn one() -> f64 { 1.0 }
+fn one() -> f64 {
+    1.0
+}
 impl Default for PlacementDto {
-    fn default() -> Self { PlacementDto { x: 0.0, y: 0.0, scale: 1.0, mirror: false } }
+    fn default() -> Self {
+        PlacementDto { x: 0.0, y: 0.0, scale: 1.0, mirror: false }
+    }
 }
 impl From<PlacementDto> for Placement {
-    fn from(p: PlacementDto) -> Self { Placement { x_offset: p.x, y_offset: p.y, scale: p.scale, mirror: p.mirror } }
+    fn from(p: PlacementDto) -> Self {
+        Placement { x_offset: p.x, y_offset: p.y, scale: p.scale, mirror: p.mirror }
+    }
 }
 
 /// What to show for `show_text` / `show_image`.
@@ -146,36 +170,55 @@ pub struct ShowRequest {
     /// Fan id; empty = all connected fans.
     pub id: Option<u32>,
     /// Fan MAC address (stable across reconnects), instead of id.
-    #[serde(default)] pub mac: Option<String>,
-    #[serde(default)] pub text: Option<String>,
+    #[serde(default)]
+    pub mac: Option<String>,
+    #[serde(default)]
+    pub text: Option<String>,
     /// Image as base64 or data URL.
-    #[serde(default)] pub data: Option<String>,
+    #[serde(default)]
+    pub data: Option<String>,
     /// Image file path on the server; only inside `Defaults::media_dirs` (add-on: /media, /share).
-    #[serde(default, alias = "image")] pub path: Option<String>,
-    #[serde(default, alias = "fg_color")] pub color: Option<Value>,
-    #[serde(default, alias = "bg_color")] pub background: Option<Value>,
-    #[serde(default)] pub font_size: Option<f32>,
+    #[serde(default, alias = "image")]
+    pub path: Option<String>,
+    #[serde(default, alias = "fg_color")]
+    pub color: Option<Value>,
+    #[serde(default, alias = "bg_color")]
+    pub background: Option<Value>,
+    #[serde(default)]
+    pub font_size: Option<f32>,
     /// Remove again after this many seconds (0 = keep).
-    #[serde(default)] pub show_seconds: Option<f64>,
+    #[serde(default)]
+    pub show_seconds: Option<f64>,
     /// "upload" (store in the playlist, default) or "cast" (live, nothing stored).
-    #[serde(default)] pub mode: Option<String>,
-    #[serde(default, alias = "filename")] pub name: Option<String>,
-    #[serde(default)] pub placement: Option<PlacementDto>,
+    #[serde(default)]
+    pub mode: Option<String>,
+    #[serde(default, alias = "filename")]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub placement: Option<PlacementDto>,
     /// Icon above the text (or alone): a Material Design Icon such as "mdi:flash".
-    #[serde(default)] pub icon: Option<String>,
-    #[serde(default)] pub icon_color: Option<Value>,
+    #[serde(default)]
+    pub icon: Option<String>,
+    #[serde(default)]
+    pub icon_color: Option<Value>,
     /// Ready-made look: alert, warning, info, success, price or clock.
-    #[serde(default)] pub style: Option<String>,
+    #[serde(default)]
+    pub style: Option<String>,
     /// Text colour from a value: green at min, yellow halfway, red at max.
-    #[serde(default)] pub color_scale: Option<ColorScaleDto>,
+    #[serde(default)]
+    pub color_scale: Option<ColorScaleDto>,
     /// Accent ring along the rim: true (text colour), false, or a colour.
-    #[serde(default)] pub ring: Option<Value>,
+    #[serde(default)]
+    pub ring: Option<Value>,
     /// Several pictures (base64) shown as an animation.
-    #[serde(default)] pub frames: Option<Vec<String>>,
+    #[serde(default)]
+    pub frames: Option<Vec<String>>,
     /// Time per frame when casting an animation (ms, default 100).
-    #[serde(default)] pub frame_ms: Option<u64>,
+    #[serde(default)]
+    pub frame_ms: Option<u64>,
     /// At most this many frames of a GIF or rames (default 200).
-    #[serde(default)] pub max_frames: Option<usize>,
+    #[serde(default)]
+    pub max_frames: Option<usize>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -184,13 +227,22 @@ pub struct ColorScaleDto {
     pub min: f64,
     pub max: f64,
     /// Colours from min to max (default green, yellow, red).
-    #[serde(default)] pub colors: Option<Vec<Value>>,
+    #[serde(default)]
+    pub colors: Option<Vec<Value>>,
     /// Red at min and green at max instead.
-    #[serde(default)] pub invert: bool,
+    #[serde(default)]
+    pub invert: bool,
 }
 
 /// Defaults of a ready-made style; explicit request fields win.
-struct Style { fg: [u8; 3], bg: [u8; 3], icon: Option<&'static str>, ring: Option<[u8; 3]>, ticks: bool, ring_follows_text: bool }
+struct Style {
+    fg: [u8; 3],
+    bg: [u8; 3],
+    icon: Option<&'static str>,
+    ring: Option<[u8; 3]>,
+    ticks: bool,
+    ring_follows_text: bool,
+}
 
 fn style(name: &str) -> Result<Style, String> {
     let s = |fg, bg, icon, ring| Style { fg, bg, icon, ring, ticks: false, ring_follows_text: false };
@@ -209,11 +261,15 @@ fn style(name: &str) -> Result<Style, String> {
 fn card_for(r: &ShowRequest) -> Result<text::Card, String> {
     let st = r.style.as_deref().filter(|s| !s.trim().is_empty()).map(style).transpose()?;
     let scaled = r.color_scale.as_ref().map(|cs| {
-        let mut stops: Vec<[u8; 3]> = cs.colors.as_ref()
+        let mut stops: Vec<[u8; 3]> = cs
+            .colors
+            .as_ref()
             .map(|v| v.iter().map(|c| color(&Some(c.clone()), [255, 255, 255])).collect())
             .filter(|v: &Vec<[u8; 3]>| !v.is_empty())
             .unwrap_or_else(|| text::SCALE_GREEN_RED.to_vec());
-        if cs.invert { stops.reverse(); }
+        if cs.invert {
+            stops.reverse();
+        }
         text::color_scale(cs.value, cs.min, cs.max, &stops)
     });
     let fg = scaled.unwrap_or_else(|| color(&r.color, st.as_ref().map(|s| s.fg).unwrap_or([255, 255, 255])));
@@ -264,7 +320,9 @@ pub fn b64(s: &str) -> Result<Vec<u8>, String> {
     base64::engine::general_purpose::STANDARD.decode(s.trim()).map_err(|e| format!("invalid data: {e}"))
 }
 
-fn err<E: std::fmt::Display>(e: E) -> String { e.to_string() }
+fn err<E: std::fmt::Display>(e: E) -> String {
+    e.to_string()
+}
 
 fn decode_source(bytes: &[u8]) -> Result<image::RgbImage, String> {
     Ok(transcode::fit(transcode::decode_rgb(bytes).map_err(err)?, MAX_SIDE))
@@ -292,16 +350,35 @@ fn color(v: &Option<Value>, default: [u8; 3]) -> [u8; 3] {
 
 impl Service {
     pub fn new(emit: Emit, defaults: Defaults) -> Arc<Service> {
-        let media_dirs = defaults.media_dirs.iter().filter_map(|d| match std::fs::canonicalize(d) {
-            Ok(c) if c.is_dir() => Some(c),
-            Ok(_) => { log::warn!("media folder {} is not a folder; ignored", d.display()); None }
-            Err(e) => { log::warn!("media folder {}: {e}; ignored", d.display()); None }
-        }).collect();
+        let media_dirs = defaults
+            .media_dirs
+            .iter()
+            .filter_map(|d| match std::fs::canonicalize(d) {
+                Ok(c) if c.is_dir() => Some(c),
+                Ok(_) => {
+                    log::warn!("media folder {} is not a folder; ignored", d.display());
+                    None
+                }
+                Err(e) => {
+                    log::warn!("media folder {}: {e}; ignored", d.display());
+                    None
+                }
+            })
+            .collect();
         Arc::new(Service {
-            link: Mutex::new(None), fan_type: Mutex::new(0), cast_session: Arc::new(AtomicU64::new(0)),
-            media: Mutex::new(HashMap::new()), next_media: AtomicU32::new(0),
-            live: Mutex::new(LiveStats::default()), last_activity: Mutex::new(None), shown: Mutex::new(HashMap::new()),
-            names: Mutex::new(HashMap::new()), next_generation: AtomicU64::new(0), media_dirs, emit, defaults,
+            link: Mutex::new(None),
+            fan_type: Mutex::new(0),
+            cast_session: Arc::new(AtomicU64::new(0)),
+            media: Mutex::new(HashMap::new()),
+            next_media: AtomicU32::new(0),
+            live: Mutex::new(LiveStats::default()),
+            last_activity: Mutex::new(None),
+            shown: Mutex::new(HashMap::new()),
+            names: Mutex::new(HashMap::new()),
+            next_generation: AtomicU64::new(0),
+            media_dirs,
+            emit,
+            defaults,
         })
     }
 
@@ -371,7 +448,9 @@ impl Service {
         }
         drop(names);
         if was_playing {
-            if let Some(back) = restore.as_deref().and_then(slot_of) { let _ = l.select(id, back); }
+            if let Some(back) = restore.as_deref().and_then(slot_of) {
+                let _ = l.select(id, back);
+            }
         }
     }
 
@@ -379,7 +458,9 @@ impl Service {
         self.link.lock().unwrap().clone().ok_or_else(|| "link not started".into())
     }
 
-    fn emit(&self, t: &str, data: Value) { (self.emit)(t, data); }
+    fn emit(&self, t: &str, data: Value) {
+        (self.emit)(t, data);
+    }
 
     /// Remember what fan id shows now (as a round preview), for dashboards.
     fn remember(&self, ids: &[u32], jpeg: &[u8], ft: &FanType) {
@@ -390,23 +471,33 @@ impl Service {
         for id in ids {
             let mac = l.device(*id).and_then(|d| d.info).map(|i| i.mac).filter(|m| !m.is_empty());
             m.insert(id.to_string(), png.clone());
-            if let Some(mac) = mac { m.insert(mac, png.clone()); }
+            if let Some(mac) = mac {
+                m.insert(mac, png.clone());
+            }
         }
         drop(m);
         self.emit("shown", json!({ "ids": ids }));
     }
 
     /// Round preview (PNG) of what the fan with this MAC (or id) was last sent by this server.
-    pub fn shown(&self, mac: &str) -> Option<Vec<u8>> { self.shown.lock().unwrap().get(mac).cloned() }
+    pub fn shown(&self, mac: &str) -> Option<Vec<u8>> {
+        self.shown.lock().unwrap().get(mac).cloned()
+    }
 
     /// Dispatch one command from the UI or the HTTP API.
     pub fn call(self: &Arc<Self>, cmd: &str, a: &Value) -> Result<Value, String> {
         match cmd {
             "start_link" => self.start_link(arg(a, "ip"), arg(a, "targets"), arg(a, "port")).map(Value::from),
-            "stop_link" => { self.stop_link(); Ok(Value::Null) }
+            "stop_link" => {
+                self.stop_link();
+                Ok(Value::Null)
+            }
             "link_info" => self.link_info(),
             "devices" => Ok(serde_json::to_value(self.devices()?).unwrap()),
-            "set_fan_type" => { *self.fan_type.lock().unwrap() = need::<u8>(a, "fan_type")?; Ok(Value::Null) }
+            "set_fan_type" => {
+                *self.fan_type.lock().unwrap() = need::<u8>(a, "fan_type")?;
+                Ok(Value::Null)
+            }
             "fan_types" => Ok(fan_types()),
             "control" => self.control(need(a, "id")?, &need::<String>(a, "action")?).map(|_| Value::Null),
             "set_value" => self.set_value(need(a, "id")?, &need::<String>(a, "what")?, need(a, "value")?).map(|_| Value::Null),
@@ -415,12 +506,18 @@ impl Service {
             "media_text" => self.media_text(a),
             "media_begin" => Ok(self.media_begin(need(a, "name")?).into()),
             "media_push" => self.media_push(need(a, "media")?, &need::<String>(a, "data")?, arg(a, "delay").unwrap_or(0)).map(Value::from),
-            "media_drop" => { self.media.lock().unwrap().remove(&need::<u32>(a, "media")?); Ok(Value::Null) }
+            "media_drop" => {
+                self.media.lock().unwrap().remove(&need::<u32>(a, "media")?);
+                Ok(Value::Null)
+            }
             "preview" => self.preview(arg(a, "media").unwrap_or(0), arg(a, "frame"), arg(a, "placement").unwrap_or_default(), arg(a, "id")),
             "upload" => self.upload(need(a, "args")?),
             "cast_start" => self.cast_start(need(a, "args")?).map(|_| Value::Null),
             "cast_frame" => self.cast_frame(&need::<String>(a, "data")?, arg(a, "placement").unwrap_or_default()).map(Value::from),
-            "cast_stop" => { self.cast_stop(); Ok(Value::Null) }
+            "cast_stop" => {
+                self.cast_stop();
+                Ok(Value::Null)
+            }
             "show_text" | "show_image" => self.show(serde_json::from_value(a.clone()).map_err(err)?),
             "platform" => Ok(json!({ "os": std::env::consts::OS, "screen": cfg!(any(target_os = "windows", target_os = "macos")),
                 "version": env!("CARGO_PKG_VERSION") })),
@@ -432,13 +529,21 @@ impl Service {
 
     pub fn start_link(self: &Arc<Self>, ip: Option<String>, targets: Option<Vec<String>>, port: Option<u16>) -> Result<String, String> {
         let mut g = self.link.lock().unwrap();
-        if let Some(l) = g.as_ref() { return Ok(l.local_ip.to_string()); }
+        if let Some(l) = g.as_ref() {
+            return Ok(l.local_ip.to_string());
+        }
         let ip = ip.filter(|s| !s.trim().is_empty()).or(self.defaults.ip.clone());
         let mut tg = targets.unwrap_or_default();
         tg.extend(self.defaults.targets.iter().cloned());
         let cfg = Config {
             local_ip: ip.and_then(|s| s.trim().parse().ok()),
-            targets: tg.iter().filter_map(|t| { let t = t.trim(); t.parse().ok().or_else(|| format!("{t}:8988").parse().ok()) }).collect(),
+            targets: tg
+                .iter()
+                .filter_map(|t| {
+                    let t = t.trim();
+                    t.parse().ok().or_else(|| format!("{t}:8988").parse().ok())
+                })
+                .collect(),
             tcp_port: port.or(self.defaults.port).unwrap_or(p56_core::protocol::TCP_PORT),
             ..Default::default()
         };
@@ -456,8 +561,13 @@ impl Service {
                     Event::Disconnected { id } => ("disconnected", json!({ "id": id })),
                     Event::Packet { id, packet } => {
                         let kind = match &packet {
-                            Packet::Status(_) => "status", Packet::MachineInfo(_) => "info", Packet::FileList(_) => "files",
-                            Packet::Error(_) => "error", Packet::List { .. } => "list", Packet::TransDone => "done", _ => continue,
+                            Packet::Status(_) => "status",
+                            Packet::MachineInfo(_) => "info",
+                            Packet::FileList(_) => "files",
+                            Packet::Error(_) => "error",
+                            Packet::List { .. } => "list",
+                            Packet::TransDone => "done",
+                            _ => continue,
                         };
                         let msg = if let Packet::Error(e) = &packet { e.to_string() } else { String::new() };
                         ("packet", json!({ "id": id, "kind": kind, "msg": msg }))
@@ -487,26 +597,39 @@ impl Service {
 
     pub fn devices(&self) -> Result<Vec<DeviceDto>, String> {
         let l = self.link()?;
-        Ok(l.devices().into_iter().map(|d| {
-            let i = d.info.clone().unwrap_or_default();
-            let status = d.status.as_ref().map(|s| StatusDto {
-                power: s.power, playing: s.playing, repeat_all: s.repeat_all, breath: s.breath, autostart: s.autostart,
-                master: s.master, play_index: s.play_index, brightness: s.brightness, color_mode: s.color_mode,
-                angle: s.angle as i32 - 180, fan_type: s.fan_type,
-            });
-            let support = d.status.as_ref().map(|s| format!("{:?}", FanType::support(s.fan_type)).to_lowercase()).unwrap_or_default();
-            DeviceDto {
-                id: d.id,
-                ip: d.ip.map(|i| i.to_string()).unwrap_or_default(),
-                name: if i.name.is_empty() { format!("fan #{}", d.id) } else { i.name },
-                mac: i.mac, hotspot: i.hotspot, router: i.router,
-                status,
-                files: d.files,
-                last_error: d.last_error.map(|e: FanError| e.to_string()),
-                ble: d.lists.iter().find(|(k, _)| **k & 0x80 != 0).map(|(_, v)| v.clone()),
-                support,
-            }
-        }).collect())
+        Ok(l.devices()
+            .into_iter()
+            .map(|d| {
+                let i = d.info.clone().unwrap_or_default();
+                let status = d.status.as_ref().map(|s| StatusDto {
+                    power: s.power,
+                    playing: s.playing,
+                    repeat_all: s.repeat_all,
+                    breath: s.breath,
+                    autostart: s.autostart,
+                    master: s.master,
+                    play_index: s.play_index,
+                    brightness: s.brightness,
+                    color_mode: s.color_mode,
+                    angle: s.angle as i32 - 180,
+                    fan_type: s.fan_type,
+                });
+                let support = d.status.as_ref().map(|s| format!("{:?}", FanType::support(s.fan_type)).to_lowercase()).unwrap_or_default();
+                DeviceDto {
+                    id: d.id,
+                    ip: d.ip.map(|i| i.to_string()).unwrap_or_default(),
+                    name: if i.name.is_empty() { format!("fan #{}", d.id) } else { i.name },
+                    mac: i.mac,
+                    hotspot: i.hotspot,
+                    router: i.router,
+                    status,
+                    files: d.files,
+                    last_error: d.last_error.map(|e: FanError| e.to_string()),
+                    ble: d.lists.iter().find(|(k, _)| **k & 0x80 != 0).map(|(_, v)| v.clone()),
+                    support,
+                }
+            })
+            .collect())
     }
 
     /// Unix time of the last packet from any fan.
@@ -517,11 +640,21 @@ impl Service {
     /// Fan type for transcoding: the user's choice, else what fan `id` (or the first fan) reports, else P56.
     fn fan_type_for(&self, id: Option<u32>) -> Result<FanType, String> {
         let chosen = *self.fan_type.lock().unwrap();
-        let t = if chosen != 0 { chosen } else {
-            self.link.lock().unwrap().as_ref().and_then(|l| {
-                let devs = l.devices();
-                id.and_then(|i| devs.iter().find(|d| d.id == i).cloned()).or_else(|| devs.into_iter().next())
-            }).and_then(|d| d.status).map(|s| s.fan_type).filter(|t| *t != 0).unwrap_or(8)
+        let t = if chosen != 0 {
+            chosen
+        } else {
+            self.link
+                .lock()
+                .unwrap()
+                .as_ref()
+                .and_then(|l| {
+                    let devs = l.devices();
+                    id.and_then(|i| devs.iter().find(|d| d.id == i).cloned()).or_else(|| devs.into_iter().next())
+                })
+                .and_then(|d| d.status)
+                .map(|s| s.fan_type)
+                .filter(|t| *t != 0)
+                .unwrap_or(8)
         };
         FanType::usable(t)
     }
@@ -529,17 +662,30 @@ impl Service {
     pub fn control(&self, id: u32, action: &str) -> Result<(), String> {
         let l = self.link()?;
         match action {
-            "on" => l.on(id), "off" => l.off(id), "play" => l.play(id), "pause" => l.pause(id),
+            "on" => l.on(id),
+            "off" => l.off(id),
+            "play" => l.play(id),
+            "pause" => l.pause(id),
             "refresh" => l.refresh(id),
-            "repeat_all" => l.repeat(id, true), "repeat_one" => l.repeat(id, false),
-            "breath_on" => l.breath(id, true), "breath_off" => l.breath(id, false),
-            "autostart_on" => l.autostart(id, true), "autostart_off" => l.autostart(id, false),
-            "master_on" => l.master(id, true), "master_off" => l.master(id, false),
-            "color_true" => l.color_mode(id, ColorMode::True), "color_bright" => l.color_mode(id, ColorMode::Bright),
-            "ble_on" => l.ble(id, true), "ble_off" => l.ble(id, false), "ble_scan" => l.ble_scan(id), "ble_disconnect" => l.ble_disconnect(id),
-            "format" => l.format_card(id), "reset" => l.factory_reset(id),
+            "repeat_all" => l.repeat(id, true),
+            "repeat_one" => l.repeat(id, false),
+            "breath_on" => l.breath(id, true),
+            "breath_off" => l.breath(id, false),
+            "autostart_on" => l.autostart(id, true),
+            "autostart_off" => l.autostart(id, false),
+            "master_on" => l.master(id, true),
+            "master_off" => l.master(id, false),
+            "color_true" => l.color_mode(id, ColorMode::True),
+            "color_bright" => l.color_mode(id, ColorMode::Bright),
+            "ble_on" => l.ble(id, true),
+            "ble_off" => l.ble(id, false),
+            "ble_scan" => l.ble_scan(id),
+            "ble_disconnect" => l.ble_disconnect(id),
+            "format" => l.format_card(id),
+            "reset" => l.factory_reset(id),
             other => Err(p56_core::Error::Invalid(format!("unknown action {other}"))),
-        }.map_err(err)
+        }
+        .map_err(err)
     }
 
     pub fn set_value(&self, id: u32, what: &str, value: i32) -> Result<(), String> {
@@ -552,7 +698,8 @@ impl Service {
             "delete" => l.delete(id, value.clamp(1, 255) as u8),
             "ble_connect" => l.ble_connect(id, value.clamp(0, 255) as u8),
             other => Err(p56_core::Error::Invalid(format!("unknown setting {other}"))),
-        }.map_err(err)
+        }
+        .map_err(err)
     }
 
     pub fn set_text(&self, id: u32, what: &str, a: String, b: Option<String>, slot: Option<u8>) -> Result<(), String> {
@@ -569,7 +716,8 @@ impl Service {
             "hotspot" => l.set_hotspot(id, &a, &b),
             "router" => l.set_router(id, &a, &b),
             other => Err(p56_core::Error::Invalid(format!("unknown field {other}"))),
-        }.map_err(err)
+        }
+        .map_err(err)
     }
 
     // ---- media ---------------------------------------------------------------
@@ -577,7 +725,10 @@ impl Service {
     fn store_media(&self, name: String, frames: Vec<(Vec<u8>, u32)>) -> u32 {
         let id = self.next_media.fetch_add(1, Ordering::SeqCst) + 1;
         let mut m = self.media.lock().unwrap();
-        if m.len() > 8 { let oldest = *m.keys().min().unwrap(); m.remove(&oldest); }
+        if m.len() > 8 {
+            let oldest = *m.keys().min().unwrap();
+            m.remove(&oldest);
+        }
         m.insert(id, Media { name, frames });
         id
     }
@@ -587,9 +738,8 @@ impl Service {
         let bytes = b64(data)?;
         let fr = transcode::decode_frames(&bytes, 600).map_err(|e| format!("cannot read image: {e}"))?;
         let (w, h) = fr[0].0.dimensions();
-        let frames = if fr.len() == 1 { vec![(bytes, 0)] } else {
-            fr.into_iter().map(|(f, ms)| (transcode::jpeg(&transcode::fit(f, MAX_SIDE), 92), ms)).collect()
-        };
+        let frames =
+            if fr.len() == 1 { vec![(bytes, 0)] } else { fr.into_iter().map(|(f, ms)| (transcode::jpeg(&transcode::fit(f, MAX_SIDE), 92), ms)).collect() };
         let n = frames.len();
         let id = self.store_media(name.clone(), frames);
         Ok(json!({ "id": id, "name": name, "frames": n, "width": w, "height": h }))
@@ -604,13 +754,17 @@ impl Service {
         Ok(json!({ "id": id, "name": name, "frames": 1, "width": text::SIDE, "height": text::SIDE }))
     }
 
-    pub fn media_begin(&self, name: String) -> u32 { self.store_media(name, Vec::new()) }
+    pub fn media_begin(&self, name: String) -> u32 {
+        self.store_media(name, Vec::new())
+    }
 
     fn media_push(&self, media: u32, data: &str, delay: u32) -> Result<usize, String> {
         let bytes = b64(data)?;
         let mut m = self.media.lock().unwrap();
         let md = m.get_mut(&media).ok_or("media no longer exists")?;
-        if md.frames.len() >= 3000 { return Err("at most 3000 frames".into()); }
+        if md.frames.len() >= 3000 {
+            return Err("at most 3000 frames".into());
+        }
         md.frames.push((bytes, delay));
         Ok(md.frames.len())
     }
@@ -618,13 +772,20 @@ impl Service {
     /// Preview of one frame of a media item (0 = test card) — no network.
     fn preview(&self, media: u32, frame: Option<usize>, placement: PlacementDto, id: Option<u32>) -> Result<Value, String> {
         let ft = self.fan_type_for(id)?;
-        let (src, n) = if media == 0 { (None, 1) } else {
+        let (src, n) = if media == 0 {
+            (None, 1)
+        } else {
             let m = self.media.lock().unwrap();
             let md = m.get(&media).ok_or("media no longer exists")?;
-            if md.frames.is_empty() { return Err("no frames yet".into()); }
+            if md.frames.is_empty() {
+                return Err("no frames yet".into());
+            }
             (Some(md.frames[frame.unwrap_or(0).min(md.frames.len() - 1)].0.clone()), md.frames.len())
         };
-        let img = match src { None => transcode::test_card(), Some(b) => decode_source(&b)? };
+        let img = match src {
+            None => transcode::test_card(),
+            Some(b) => decode_source(&b)?,
+        };
         // what an upload would send (the cast preview comes from the cast loop itself)
         let f = transcode::encode_upload(&img, &ft, &placement.into());
         let round = transcode::preview_from_jpeg(&f.jpeg, &ft, 480).map_err(err)?;
@@ -641,11 +802,15 @@ impl Service {
         let pl: Placement = arg::<PlacementDto>(&a, "placement").unwrap_or_default().into();
         let l = self.link()?;
         let ft = self.fan_type_for(Some(id))?;
-        let (src, default_name): (Vec<(Vec<u8>, u32)>, String) = if media == 0 { (vec![], "testcard".into()) } else {
+        let (src, default_name): (Vec<(Vec<u8>, u32)>, String) = if media == 0 {
+            (vec![], "testcard".into())
+        } else {
             let m = self.media.lock().unwrap();
             let md = m.get(&media).ok_or("media no longer exists")?;
             let mut v = md.frames.clone();
-            if max_frames > 0 { v.truncate(max_frames); }
+            if max_frames > 0 {
+                v.truncate(max_frames);
+            }
             (v, md.name.rsplit_once('.').map(|(a, _)| a.to_string()).unwrap_or(md.name.clone()))
         };
         let name = arg::<String>(&a, "name").filter(|n| !n.trim().is_empty()).unwrap_or(default_name);
@@ -654,10 +819,16 @@ impl Service {
             vec![transcode::encode_upload(&transcode::test_card(), &ft, &pl).jpeg]
         } else {
             let total = src.len();
-            let encoded = src.iter().enumerate().map(|(i, (b, delay))| {
-                if i % 5 == 0 { progress("transcoding", i, total); }
-                decode_source(b).map(|img| (transcode::encode_upload(&img, &ft, &pl).jpeg, *delay))
-            }).collect::<Result<Vec<_>, _>>()?;
+            let encoded = src
+                .iter()
+                .enumerate()
+                .map(|(i, (b, delay))| {
+                    if i % 5 == 0 {
+                        progress("transcoding", i, total);
+                    }
+                    decode_source(b).map(|img| (transcode::encode_upload(&img, &ft, &pl).jpeg, *delay))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
             at_fan_rate(encoded, MAX_UPLOAD_FRAMES)
         };
         progress("sending", 0, frames.len());
@@ -701,15 +872,21 @@ impl Service {
             let mut cache: Vec<Option<Vec<u8>>> = media.as_ref().map(|m| vec![None; m.len()]).unwrap_or_default();
             let test = transcode::encode(&transcode::test_card(), &ft, &pl).jpeg;
             #[cfg(any(target_os = "windows", target_os = "macos"))]
-            let screen = if source == "screen" { xcap::Monitor::all().ok().and_then(|m| m.into_iter().find(|m| m.is_primary().unwrap_or(false))) } else { None };
+            let screen =
+                if source == "screen" { xcap::Monitor::all().ok().and_then(|m| m.into_iter().find(|m| m.is_primary().unwrap_or(false))) } else { None };
             while me.cast_session.load(Ordering::SeqCst) == session {
                 let t = Instant::now();
                 let (jpeg, q, delay) = if let Some(m) = &media {
-                    if m.is_empty() { break; }
+                    if m.is_empty() {
+                        break;
+                    }
                     let k = i % m.len();
                     i += 1;
                     if cache[k].is_none() {
-                        match decode_source(&m[k].0) { Ok(img) => cache[k] = Some(transcode::encode(&img, &ft, &pl).jpeg), Err(_) => continue }
+                        match decode_source(&m[k].0) {
+                            Ok(img) => cache[k] = Some(transcode::encode(&img, &ft, &pl).jpeg),
+                            Err(_) => continue,
+                        }
                     }
                     (cache[k].clone().unwrap(), 0, m[k].1)
                 } else if source == "screen" {
@@ -722,23 +899,32 @@ impl Service {
                                 let f = transcode::encode(&img, &ft, &pl);
                                 (f.jpeg, f.quality, 0)
                             }
-                            Err(_) => { thread::sleep(Duration::from_millis(100)); continue; }
+                            Err(_) => {
+                                thread::sleep(Duration::from_millis(100));
+                                continue;
+                            }
                         }
                     }
                     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-                    { break }
+                    {
+                        break;
+                    }
                 } else {
                     (test.clone(), 80, 0)
                 };
                 let fans = l.cast(&jpeg);
-                if fans > 0 { n += 1; }
+                if fans > 0 {
+                    n += 1;
+                }
                 if last_report.elapsed() > Duration::from_millis(500) {
                     me.emit_cast(&ft, n as f64 / last_report.elapsed().as_secs_f64(), fans, &jpeg, q);
                     n = 0;
                     last_report = Instant::now();
                 }
                 let wait = if delay > 0 { Duration::from_millis(delay as u64) } else { period };
-                if let Some(rest) = wait.checked_sub(t.elapsed()) { thread::sleep(rest); }
+                if let Some(rest) = wait.checked_sub(t.elapsed()) {
+                    thread::sleep(rest);
+                }
             }
             // Ended by itself (no source left): report it. A cast that was stopped or replaced
             // stays quiet, so a late "stopped" never cancels the cast that replaced it.
@@ -782,29 +968,34 @@ impl Service {
         let l = self.link()?;
         let ids: Vec<u32> = match (r.id, r.mac.as_deref().filter(|m| !m.is_empty())) {
             (Some(i), _) => vec![i],
-            (None, Some(mac)) => l.ids().into_iter().filter(|i| l.device(*i).and_then(|d| d.info).is_some_and(|inf| inf.mac.eq_ignore_ascii_case(mac))).collect(),
+            (None, Some(mac)) => {
+                l.ids().into_iter().filter(|i| l.device(*i).and_then(|d| d.info).is_some_and(|inf| inf.mac.eq_ignore_ascii_case(mac))).collect()
+            }
             (None, None) => l.ids(),
         };
-        if ids.is_empty() { return Err("no fan connected".into()); }
+        if ids.is_empty() {
+            return Err("no fan connected".into());
+        }
         let max_frames = r.max_frames.unwrap_or(200).clamp(1, 600);
         let has_text = r.text.as_deref().is_some_and(|t| !t.trim().is_empty());
         let has_icon = r.icon.as_deref().is_some_and(|i| !i.trim().is_empty() && i.trim() != "none");
         // (pictures, ms per frame when casting)
-        let (images, frame_ms): (Vec<image::RgbImage>, u64) = if has_text || has_icon || (r.style.is_some() && r.data.is_none() && r.path.is_none() && r.frames.is_none()) {
-            (vec![text::render_card(&card_for(&r)?)], 100)
-        } else if let Some(fr) = r.frames.as_ref().filter(|f| !f.is_empty()) {
-            let imgs = fr.iter().take(max_frames).map(|f| decode_source(&b64(f)?)).collect::<Result<Vec<_>, String>>()?;
-            (imgs, r.frame_ms.unwrap_or(100))
-        } else {
-            let bytes = match (&r.data, &r.path) {
-                (Some(d), _) => b64(d)?,
-                (None, Some(p)) => std::fs::read(self.media_path(p)?).map_err(|e| format!("{p}: {e}"))?,
-                _ => return Err("provide 'text', 'icon', 'data', 'path' or 'frames'".into()),
+        let (images, frame_ms): (Vec<image::RgbImage>, u64) =
+            if has_text || has_icon || (r.style.is_some() && r.data.is_none() && r.path.is_none() && r.frames.is_none()) {
+                (vec![text::render_card(&card_for(&r)?)], 100)
+            } else if let Some(fr) = r.frames.as_ref().filter(|f| !f.is_empty()) {
+                let imgs = fr.iter().take(max_frames).map(|f| decode_source(&b64(f)?)).collect::<Result<Vec<_>, String>>()?;
+                (imgs, r.frame_ms.unwrap_or(100))
+            } else {
+                let bytes = match (&r.data, &r.path) {
+                    (Some(d), _) => b64(d)?,
+                    (None, Some(p)) => std::fs::read(self.media_path(p)?).map_err(|e| format!("{p}: {e}"))?,
+                    _ => return Err("provide 'text', 'icon', 'data', 'path' or 'frames'".into()),
+                };
+                let fr = transcode::decode_frames(&bytes, max_frames).map_err(|e| format!("cannot read image: {e}"))?;
+                let ms = r.frame_ms.unwrap_or_else(|| fr.first().map(|(_, d)| *d as u64).filter(|d| *d > 0).unwrap_or(100));
+                (fr.into_iter().map(|(img, _)| transcode::fit(img, MAX_SIDE)).collect(), ms)
             };
-            let fr = transcode::decode_frames(&bytes, max_frames).map_err(|e| format!("cannot read image: {e}"))?;
-            let ms = r.frame_ms.unwrap_or_else(|| fr.first().map(|(_, d)| *d as u64).filter(|d| *d > 0).unwrap_or(100));
-            (fr.into_iter().map(|(img, _)| transcode::fit(img, MAX_SIDE)).collect(), ms)
-        };
         let pl: Placement = r.placement.unwrap_or_default().into();
         let secs = r.show_seconds.unwrap_or(0.0).max(0.0);
         let cast = r.mode.as_deref() == Some("cast");
@@ -813,7 +1004,13 @@ impl Service {
             // only the selected fans, each with frames encoded for its own fan type
             let mut groups: Vec<(FanType, Vec<u32>, Vec<Vec<u8>>)> = Vec::new();
             for &id in &ids {
-                let ft = match self.fan_type_for(Some(id)) { Ok(f) => f, Err(e) => { results.push(json!({ "id": id, "success": false, "error": e })); continue } };
+                let ft = match self.fan_type_for(Some(id)) {
+                    Ok(f) => f,
+                    Err(e) => {
+                        results.push(json!({ "id": id, "success": false, "error": e }));
+                        continue;
+                    }
+                };
                 match groups.iter_mut().find(|(f, _, _)| *f == ft) {
                     Some((_, gids, _)) => gids.push(id),
                     None => groups.push((ft, vec![id], images.iter().map(|img| transcode::encode(img, &ft, &pl).jpeg).collect())),
@@ -822,7 +1019,9 @@ impl Service {
             if groups.is_empty() {
                 return Err(results.first().and_then(|r| r["error"].as_str()).unwrap_or("no fan connected").to_string());
             }
-            for (ft, gids, jpegs) in &groups { self.remember(gids, &jpegs[0], ft); }
+            for (ft, gids, jpegs) in &groups {
+                self.remember(gids, &jpegs[0], ft);
+            }
             let dur = if secs > 0.0 { secs } else { 10.0 };
             let n = images.len();
             let period = Duration::from_millis(if n > 1 { frame_ms.clamp(20, 2000) } else { 200 });
@@ -835,7 +1034,9 @@ impl Service {
                 let mut i = 0;
                 while Instant::now() < end && me.cast_session.load(Ordering::SeqCst) == session {
                     if let Ok(l) = me.link() {
-                        for (_, gids, jpegs) in &groups { l.cast_to(gids, &jpegs[i % jpegs.len()]); }
+                        for (_, gids, jpegs) in &groups {
+                            l.cast_to(gids, &jpegs[i % jpegs.len()]);
+                        }
                     }
                     i += 1;
                     thread::sleep(period);
@@ -844,12 +1045,20 @@ impl Service {
             return Ok(json!({ "success": true, "mode": "cast", "seconds": dur, "fans": fans, "frames": n, "results": results }));
         }
         for id in ids {
-            let ft = match self.fan_type_for(Some(id)) { Ok(f) => f, Err(e) => { results.push(json!({ "id": id, "success": false, "error": e })); continue } };
+            let ft = match self.fan_type_for(Some(id)) {
+                Ok(f) => f,
+                Err(e) => {
+                    results.push(json!({ "id": id, "success": false, "error": e }));
+                    continue;
+                }
+            };
             // every picture once, then repeated to the fan's fixed 20 fps so the animation keeps its speed
             let encoded: Vec<(Vec<u8>, u32)> = images.iter().map(|img| (transcode::encode_upload(img, &ft, &pl).jpeg, frame_ms as u32)).collect();
             let jpegs = at_fan_rate(encoded, MAX_UPLOAD_FRAMES);
-            let name = p56_core::protocol::mp4_name(&r.name.clone().unwrap_or_else(|| format!("ha_{}", std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0))));
+            let name =
+                p56_core::protocol::mp4_name(&r.name.clone().unwrap_or_else(|| {
+                    format!("ha_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0))
+                }));
             // what plays now, by name: a slot number shifts when files are deleted
             let playing = l.device(id).and_then(|d| {
                 let s = d.status?.play_index;
@@ -868,13 +1077,19 @@ impl Service {
             }
             let outcome = match l.upload(id, &jpegs, &name, None) {
                 Ok(o) => o,
-                Err(e) => { results.push(json!({ "id": id, "success": false, "error": e.to_string() })); continue; }
+                Err(e) => {
+                    results.push(json!({ "id": id, "success": false, "error": e.to_string() }));
+                    continue;
+                }
             };
             // find the slot the fan gave the new file
             let deadline = Instant::now() + Duration::from_secs(6);
             let mut slot = 0u8;
             while Instant::now() < deadline {
-                if let Some(s) = l.device(id).and_then(|d| d.files.iter().find(|(_, n)| *n == name).map(|(s, _)| *s)) { slot = s; break; }
+                if let Some(s) = l.device(id).and_then(|d| d.files.iter().find(|(_, n)| *n == name).map(|(s, _)| *s)) {
+                    slot = s;
+                    break;
+                }
                 let _ = l.refresh(id);
                 thread::sleep(Duration::from_millis(300));
             }
@@ -900,13 +1115,19 @@ impl Service {
 }
 
 pub fn fan_types() -> Value {
-    (1..=40u8).filter_map(|id| {
-        let known = FanType::known(id);
-        let (angles, leds, _) = FanType::apk_geometry(id).or(known.map(|f| (f.angles, f.radius, 20)))?;
-        let jpeg = known.map(|f| { let (w, h) = f.jpeg_size(); format!("{w}×{h}") });
-        Some(json!({ "id": id, "angles": angles, "leds": leds, "jpeg": jpeg,
+    (1..=40u8)
+        .filter_map(|id| {
+            let known = FanType::known(id);
+            let (angles, leds, _) = FanType::apk_geometry(id).or(known.map(|f| (f.angles, f.radius, 20)))?;
+            let jpeg = known.map(|f| {
+                let (w, h) = f.jpeg_size();
+                format!("{w}×{h}")
+            });
+            Some(json!({ "id": id, "angles": angles, "leds": leds, "jpeg": jpeg,
             "support": format!("{:?}", FanType::support(id)).to_lowercase() }))
-    }).collect::<Vec<_>>().into()
+        })
+        .collect::<Vec<_>>()
+        .into()
 }
 
 #[cfg(test)]

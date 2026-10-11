@@ -121,7 +121,9 @@ impl FanType {
     /// an error (never a silent fallback to another layout). [`Support::Legacy`] types are
     /// accepted; see [`FanType::support`] for the caveat.
     pub fn usable(id: u8) -> Result<FanType, String> {
-        if let Some(m) = FanType::check(id) { return Err(m); }
+        if let Some(m) = FanType::check(id) {
+            return Err(m);
+        }
         FanType::known(id).ok_or_else(|| format!("unknown fan type {id}"))
     }
 
@@ -133,7 +135,9 @@ impl FanType {
         }
     }
 
-    pub fn all() -> &'static [u8] { &[1, 2, 3, 4, 5, 6, 7, 8, 11, 12, 13, 14, 15, 17] }
+    pub fn all() -> &'static [u8] {
+        &[1, 2, 3, 4, 5, 6, 7, 8, 11, 12, 13, 14, 15, 17]
+    }
 }
 
 /// Where the image is projected: offsets shift the polar centre (fraction of the
@@ -148,28 +152,33 @@ pub struct Placement {
 }
 
 impl Default for Placement {
-    fn default() -> Self { Placement { x_offset: 0.0, y_offset: 0.0, scale: 1.0, mirror: false } }
+    fn default() -> Self {
+        Placement { x_offset: 0.0, y_offset: 0.0, scale: 1.0, mirror: false }
+    }
 }
 
 /// Byte-wise attenuation along the radius (byte 0 = innermost LED, RGB per pixel).
 const RADIAL: [f64; 48] = {
     let mut t = [0.0; 48];
-    let steps: [(usize, f64); 10] = [
-        (19, 0.73), (5, 0.74), (3, 0.77), (3, 0.80), (3, 0.83),
-        (3, 0.86), (3, 0.89), (3, 0.92), (3, 0.95), (3, 0.98),
-    ];
+    let steps: [(usize, f64); 10] = [(19, 0.73), (5, 0.74), (3, 0.77), (3, 0.80), (3, 0.83), (3, 0.86), (3, 0.89), (3, 0.92), (3, 0.95), (3, 0.98)];
     let mut i = 0;
     let mut s = 0;
     while s < steps.len() {
         let mut k = 0;
-        while k < steps[s].0 { t[i] = steps[s].1; i += 1; k += 1; }
+        while k < steps[s].0 {
+            t[i] = steps[s].1;
+            i += 1;
+            k += 1;
+        }
         s += 1;
     }
     t
 };
 
 fn grey_mean(img: &RgbImage) -> f64 {
-    if img.is_empty() { return 0.0; }
+    if img.is_empty() {
+        return 0.0;
+    }
     let sum: f64 = img.pixels().map(|p| 0.299 * p[0] as f64 + 0.587 * p[1] as f64 + 0.114 * p[2] as f64).sum();
     sum / (img.width() * img.height()) as f64
 }
@@ -177,12 +186,16 @@ fn grey_mean(img: &RgbImage) -> f64 {
 /// Holoscope: target = mean × gain, clamped to 150 (100 for type 14); then convertScaleAbs.
 pub fn auto_brightness(img: &RgbImage, ft: &FanType) -> RgbImage {
     let mean = grey_mean(img);
-    if mean < 1.0 { return img.clone(); }
+    if mean < 1.0 {
+        return img.clone();
+    }
     let cap = if ft.id == 14 { 100.0 } else { 150.0 };
     let alpha = (mean * ft.gain).min(cap) / mean;
     let mut out = img.clone();
     for p in out.pixels_mut() {
-        for c in 0..3 { p[c] = (p[c] as f64 * alpha).round().clamp(0.0, 255.0) as u8; }
+        for c in 0..3 {
+            p[c] = (p[c] as f64 * alpha).round().clamp(0.0, 255.0) as u8;
+        }
     }
     out
 }
@@ -192,14 +205,20 @@ fn cubic(t: f64) -> f64 {
     // OpenCV bicubic (a = -0.75)
     let a = -0.75;
     let t = t.abs();
-    if t < 1.0 { (a + 2.0) * t * t * t - (a + 3.0) * t * t + 1.0 }
-    else if t < 2.0 { a * t * t * t - 5.0 * a * t * t + 8.0 * a * t - 4.0 * a }
-    else { 0.0 }
+    if t < 1.0 {
+        (a + 2.0) * t * t * t - (a + 3.0) * t * t + 1.0
+    } else if t < 2.0 {
+        a * t * t * t - 5.0 * a * t * t + 8.0 * a * t - 4.0 * a
+    } else {
+        0.0
+    }
 }
 
 fn sample_bicubic(img: &RgbImage, x: f64, y: f64) -> [u8; 3] {
     let (w, h) = (img.width() as i64, img.height() as i64);
-    if x < -0.5 || y < -0.5 || x > w as f64 - 0.5 || y > h as f64 - 0.5 { return [0, 0, 0]; }
+    if x < -0.5 || y < -0.5 || x > w as f64 - 0.5 || y > h as f64 - 0.5 {
+        return [0, 0, 0];
+    }
     let x0 = x.floor() as i64;
     let y0 = y.floor() as i64;
     let fx = x - x0 as f64;
@@ -213,7 +232,9 @@ fn sample_bicubic(img: &RgbImage, x: f64, y: f64) -> [u8; 3] {
             let xx = (x0 + i).clamp(0, w - 1) as u32;
             let p = img.get_pixel(xx, yy);
             let wgt = wx * wy;
-            for c in 0..3 { acc[c] += p[c] as f64 * wgt; }
+            for c in 0..3 {
+                acc[c] += p[c] as f64 * wgt;
+            }
         }
     }
     [acc[0].round().clamp(0.0, 255.0) as u8, acc[1].round().clamp(0.0, 255.0) as u8, acc[2].round().clamp(0.0, 255.0) as u8]
@@ -236,7 +257,9 @@ pub fn to_polar(img: &RgbImage, ft: &FanType, pl: &Placement) -> RgbImage {
             let mag = rho as f64 / k_mag;
             let mut sx = cx + mag * c;
             let sy = cy + mag * s;
-            if pl.mirror { sx = w - 1.0 - sx; }
+            if pl.mirror {
+                sx = w - 1.0 - sx;
+            }
             out.put_pixel(rho, phi, Rgb(sample_bicubic(img, sx, sy)));
         }
     }
@@ -248,13 +271,21 @@ pub fn to_polar(img: &RgbImage, ft: &FanType, pl: &Placement) -> RgbImage {
 pub fn radial_correction(polar: &mut RgbImage, ft: &FanType) {
     let rad = polar.width() as usize;
     let mut f = RADIAL;
-    if matches!(ft.id, 5 | 14 | 17) { f[0] = 0.6; f[1] = 0.6; f[2] = 0.6; }
+    if matches!(ft.id, 5 | 14 | 17) {
+        f[0] = 0.6;
+        f[1] = 0.6;
+        f[2] = 0.6;
+    }
     let n = f.len().min(rad * 3);
     for r in 0..polar.height() {
         let row = polar.as_mut().chunks_exact_mut(rad * 3).nth(r as usize).unwrap();
-        for i in 0..n { row[i] = (row[i] as f64 * f[i]).trunc() as u8; }
+        for i in 0..n {
+            row[i] = (row[i] as f64 * f[i]).trunc() as u8;
+        }
         let k = ((r % 8) * 3) as usize;
-        for b in row.iter_mut().take(k) { *b = 0; }
+        for b in row.iter_mut().take(k) {
+            *b = 0;
+        }
     }
 }
 
@@ -333,8 +364,7 @@ pub fn jpeg(img: &RgbImage, quality: u8) -> Vec<u8> {
     let mut out = Vec::with_capacity(32 * 1024);
     let mut enc = jpeg_encoder::Encoder::new(&mut out, quality.clamp(1, 100));
     enc.set_sampling_factor(jpeg_encoder::SamplingFactor::F_2_2);
-    enc.encode(img.as_raw(), img.width() as u16, img.height() as u16, jpeg_encoder::ColorType::Rgb)
-        .expect("jpeg encode");
+    enc.encode(img.as_raw(), img.width() as u16, img.height() as u16, jpeg_encoder::ColorType::Rgb).expect("jpeg encode");
     out
 }
 
@@ -349,10 +379,14 @@ pub struct Frame {
 }
 
 /// Full pipeline: any RGB image → fan-ready JPEG for a live cast frame (≤ [`MAX_JPEG`]).
-pub fn encode(img: &RgbImage, ft: &FanType, pl: &Placement) -> Frame { encode_within(img, ft, pl, MAX_JPEG) }
+pub fn encode(img: &RgbImage, ft: &FanType, pl: &Placement) -> Frame {
+    encode_within(img, ft, pl, MAX_JPEG)
+}
 
 /// The same for a frame of an uploaded file, which may be larger (≤ [`MAX_UPLOAD_JPEG`]).
-pub fn encode_upload(img: &RgbImage, ft: &FanType, pl: &Placement) -> Frame { encode_within(img, ft, pl, MAX_UPLOAD_JPEG) }
+pub fn encode_upload(img: &RgbImage, ft: &FanType, pl: &Placement) -> Frame {
+    encode_within(img, ft, pl, MAX_UPLOAD_JPEG)
+}
 
 /// Encode at the best quality that fits `max` bytes. A JPEG is never cut short (that drops its
 /// `FF D9` end marker): the quality goes down instead, and as a last resort the picture is
@@ -388,9 +422,13 @@ pub fn round_preview(polar: &RgbImage, size: u32) -> RgbImage {
             let dx = x as f64 + 0.5 - c;
             let dy = y as f64 + 0.5 - c;
             let r = (dx * dx + dy * dy).sqrt() / c;
-            if r >= 1.0 { continue; }
+            if r >= 1.0 {
+                continue;
+            }
             let mut phi = dy.atan2(dx);
-            if phi < 0.0 { phi += 2.0 * std::f64::consts::PI; }
+            if phi < 0.0 {
+                phi += 2.0 * std::f64::consts::PI;
+            }
             let pr = (r * rad).min(rad - 1.0) as u32;
             let pa = ((phi / (2.0 * std::f64::consts::PI)) * ang) as u32 % polar.height();
             out.put_pixel(x, y, *polar.get_pixel(pr, pa));
@@ -425,11 +463,15 @@ pub fn decode_frames(bytes: &[u8], max: usize) -> Result<Vec<(RgbImage, u32)>, i
         for f in dec.into_frames() {
             let f = f?;
             let (n, d) = f.delay().numer_denom_ms();
-            let ms = if d == 0 { 100 } else { n / d };
+            let ms = n.checked_div(d).unwrap_or(100);
             out.push((image::DynamicImage::ImageRgba8(f.into_buffer()).to_rgb8(), ms.max(20)));
-            if max > 0 && out.len() >= max { break; }
+            if max > 0 && out.len() >= max {
+                break;
+            }
         }
-        if !out.is_empty() { return Ok(out); }
+        if !out.is_empty() {
+            return Ok(out);
+        }
     }
     Ok(vec![(decode_rgb(bytes)?, 0)])
 }
@@ -438,7 +480,9 @@ pub fn decode_frames(bytes: &[u8], max: usize) -> Result<Vec<(RgbImage, u32)>, i
 pub fn fit(img: RgbImage, side: u32) -> RgbImage {
     let (w, h) = img.dimensions();
     let s = side as f64 / w.min(h).max(1) as f64;
-    if s >= 1.0 { return img; }
+    if s >= 1.0 {
+        return img;
+    }
     image::imageops::resize(&img, ((w as f64 * s).round() as u32).max(1), ((h as f64 * s).round() as u32).max(1), image::imageops::FilterType::Triangle)
 }
 
@@ -457,11 +501,17 @@ pub fn test_card() -> RgbImage {
             let dx = x as f64 - c;
             let dy = y as f64 - c;
             let r = (dx * dx + dy * dy).sqrt();
-            let px = if (r - 340.0).abs() < 12.5 { [255, 0, 0] }
-                else if (r - 250.0).abs() < 12.5 { [0, 255, 0] }
-                else if (r - 160.0).abs() < 12.5 { [0, 0, 255] }
-                else if dx.abs() < 7.5 && dy < 0.0 { [255, 255, 255] }
-                else { [0, 0, 0] };
+            let px = if (r - 340.0).abs() < 12.5 {
+                [255, 0, 0]
+            } else if (r - 250.0).abs() < 12.5 {
+                [0, 255, 0]
+            } else if (r - 160.0).abs() < 12.5 {
+                [0, 0, 255]
+            } else if dx.abs() < 7.5 && dy < 0.0 {
+                [255, 255, 255]
+            } else {
+                [0, 0, 0]
+            };
             img.put_pixel(x, y, Rgb(px));
         }
     }
@@ -488,7 +538,9 @@ mod tests {
     fn noisy_picture_stays_complete_within_limits() {
         let mut seed = 0x1234_5678u32;
         let noise = RgbImage::from_fn(720, 720, |_, _| {
-            seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5;
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
             Rgb([seed as u8, (seed >> 8) as u8, (seed >> 16) as u8])
         });
         for &id in FanType::all() {
@@ -510,7 +562,9 @@ mod tests {
         assert!(FanType::usable(255).unwrap_err().contains("unknown fan type 255"));
         assert!(FanType::usable(0).unwrap_err().contains("unknown fan type 0"));
         assert!(FanType::usable(32).unwrap_err().contains("not supported"));
-        for &id in FanType::all() { assert_eq!(FanType::usable(id).unwrap().id, id); }
+        for &id in FanType::all() {
+            assert_eq!(FanType::usable(id).unwrap().id, id);
+        }
     }
 
     #[test]

@@ -53,13 +53,19 @@ fn rig_with(f: impl FnOnce(&mut SimConfig)) -> Rig {
     rig
 }
 
-fn rig() -> Rig { rig_with(|_| {}) }
+fn rig() -> Rig {
+    rig_with(|_| {})
+}
 
 impl Rig {
     fn wait_dev(&self, pred: impl Fn(&p56_core::Device) -> bool) {
         let deadline = std::time::Instant::now() + T;
         loop {
-            if let Some(d) = self.link.device(self.id) { if pred(&d) { return; } }
+            if let Some(d) = self.link.device(self.id) {
+                if pred(&d) {
+                    return;
+                }
+            }
             assert!(std::time::Instant::now() < deadline, "device state never matched: {:?}", self.link.device(self.id));
             std::thread::sleep(Duration::from_millis(10));
         }
@@ -76,7 +82,10 @@ impl Rig {
     }
 }
 
-fn strip(mut s: SimState) -> SimState { s.commands.truncate(0); s }
+fn strip(mut s: SimState) -> SimState {
+    s.commands.clear();
+    s
+}
 
 #[test]
 fn connects_and_reports_info_and_status() {
@@ -123,8 +132,7 @@ fn settings_roundtrip_through_status() {
     r.link.autostart(r.id, false).unwrap();
     r.link.master(r.id, true).unwrap();
     r.link.volume(r.id, 4).unwrap();
-    r.wait_dev(|d| d.status.as_ref().is_some_and(|s| s.brightness == 7 && s.angle == 300 && s.color_mode == 1
-        && s.breath && !s.autostart && s.master));
+    r.wait_dev(|d| d.status.as_ref().is_some_and(|s| s.brightness == 7 && s.angle == 300 && s.color_mode == 1 && s.breath && !s.autostart && s.master));
     r.wait_sim(|s| s.volume == 4);
     r.link.color_mode(r.id, ColorMode::Bright).unwrap();
     r.link.angle(r.id, 0).unwrap();
@@ -152,7 +160,7 @@ fn names_hotspot_router() {
 fn upload_select_rename_delete() {
     let r = rig();
     let j = r.jpeg();
-    r.link.upload(r.id, &[j.clone()], "kat", Some(1)).unwrap();
+    r.link.upload(r.id, std::slice::from_ref(&j), "kat", Some(1)).unwrap();
     r.wait_sim(|s| s.files.len() == 1 && s.files[0].name == "kat.mp4" && (s.files[0].width, s.files[0].height) == (688, 240));
     r.link.upload(r.id, &[j.clone(), j.clone(), j], "hond.mp4", Some(2)).unwrap();
     r.wait_sim(|s| s.files.len() == 2 && s.files[1].frames == 3 && s.current == 2);
@@ -204,7 +212,9 @@ fn concatenated_animation_format_is_a_protocol_error() {
     blob.extend(&j);
     blob.extend(&j);
     blob.push(0);
-    while blob.len() % 4 != 0 { blob.push(0); } // keep the old length field 4-byte aligned
+    while !blob.len().is_multiple_of(4) {
+        blob.push(0);
+    } // keep the old length field 4-byte aligned
     let n = blob.len() - 8 - proto::UPLOAD_PCM - 2 * j.len();
     blob[4..8].copy_from_slice(&((proto::UPLOAD_PCM + 2 * j.len() + n) as u32).to_le_bytes());
     r.link.send_to(r.id, &blob).unwrap();
@@ -236,7 +246,9 @@ fn cast_without_acknowledgement_fails_fast_and_reconnects() {
     assert!(t.elapsed() < Duration::from_secs(3), "gave up within the ack window, took {:?}", t.elapsed());
     // after a few unacknowledged frames in a row the link drops the connection; the fan reconnects
     let before = r.sim.state().connections;
-    for _ in 0..6 { r.link.cast_to(&r.link.ids(), &j); }
+    for _ in 0..6 {
+        r.link.cast_to(&r.link.ids(), &j);
+    }
     r.sim.modify(|s| s.cast_mute = false);
     r.wait_sim(|s| s.connections > before && s.connected);
     assert!(r.link.wait_connected(T));
@@ -253,13 +265,13 @@ fn cast_without_acknowledgement_fails_fast_and_reconnects() {
 fn upload_errors_from_fan() {
     let r = rig_with(|c| c.max_files = 2);
     let j = r.jpeg();
-    r.link.upload(r.id, &[j.clone()], "a", None).unwrap();
-    match r.link.upload(r.id, &[j.clone()], "a", None) {
+    r.link.upload(r.id, std::slice::from_ref(&j), "a", None).unwrap();
+    match r.link.upload(r.id, std::slice::from_ref(&j), "a", None) {
         Err(Error::Fan(FanError::DuplicateName)) => {}
         other => panic!("expected duplicate name, got {other:?}"),
     }
-    r.link.upload(r.id, &[j.clone()], "b", None).unwrap();
-    match r.link.upload(r.id, &[j.clone()], "c", None) {
+    r.link.upload(r.id, std::slice::from_ref(&j), "b", None).unwrap();
+    match r.link.upload(r.id, std::slice::from_ref(&j), "c", None) {
         Err(Error::Fan(FanError::TooManyFiles)) => {}
         other => panic!("expected too many files, got {other:?}"),
     }
@@ -295,7 +307,9 @@ fn gif_animation_uploads_all_frames() {
 fn live_cast_frames_are_valid() {
     let r = rig();
     let j = r.jpeg();
-    for _ in 0..25 { assert_eq!(r.link.cast(&j), 1); }
+    for _ in 0..25 {
+        assert_eq!(r.link.cast(&j), 1);
+    }
     r.wait_sim(|s| s.cast_ok == 25);
     assert_eq!(r.sim.state().cast_bad, 0);
     assert!(r.sim.current_jpeg().is_some());
@@ -343,7 +357,9 @@ fn reconnects_after_drop() {
     let id = loop {
         let ids = r.link.ids();
         if r.sim.state().connected && r.sim.state().connections >= 2 && !ids.contains(&old) {
-            if let Some(&id) = ids.first() { break id; }
+            if let Some(&id) = ids.first() {
+                break id;
+            }
         }
         assert!(std::time::Instant::now() < deadline, "no reconnect: ids={ids:?} sim={}", r.sim.state().connections);
         std::thread::sleep(Duration::from_millis(20));
@@ -362,22 +378,33 @@ fn two_fans_cast_and_commands() {
     a.set_pc_port(link.tcp_port);
     b.set_pc_port(link.tcp_port);
     let deadline = std::time::Instant::now() + T;
-    while link.ids().len() < 2 { assert!(std::time::Instant::now() < deadline); std::thread::sleep(Duration::from_millis(20)); }
+    while link.ids().len() < 2 {
+        assert!(std::time::Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(20));
+    }
     let j = transcode::encode(&transcode::test_card(), &FanType::P56, &Placement::default()).jpeg;
-    for _ in 0..10 { assert_eq!(link.cast(&j), 2); }
+    for _ in 0..10 {
+        assert_eq!(link.cast(&j), 2);
+    }
     assert!(a.wait_until(T, |s| s.cast_ok == 10));
     assert!(b.wait_until(T, |s| s.cast_ok == 10));
-    for id in link.ids() { link.brightness(id, 5).unwrap(); }
+    for id in link.ids() {
+        link.brightness(id, 5).unwrap();
+    }
     assert!(a.wait_until(T, |s| s.brightness == 5));
     assert!(b.wait_until(T, |s| s.brightness == 5));
     assert!(a.state().protocol_errors.is_empty() && b.state().protocol_errors.is_empty());
-    a.stop(); b.stop(); link.shutdown();
+    a.stop();
+    b.stop();
+    link.shutdown();
 }
 
 #[test]
 fn fragmented_replies_are_parsed() {
     let r = rig_with(|c| c.fragment = true);
-    for v in 1..=16 { r.link.brightness(r.id, v).unwrap(); }
+    for v in 1..=16 {
+        r.link.brightness(r.id, v).unwrap();
+    }
     r.wait_dev(|d| d.status.as_ref().is_some_and(|s| s.brightness == 16));
     r.link.upload(r.id, &[r.jpeg()], "frag", Some(1)).unwrap();
     r.wait_dev(|d| d.files.len() == 1);
@@ -401,30 +428,74 @@ fn odd_input_from_fan_does_not_break_link() {
 /// Random command sequences checked against a simple model of the fan.
 #[test]
 fn random_sequences_match_model() {
-    let r = rig_with(|c| { c.fragment = true; c.max_files = 6; });
+    let r = rig_with(|c| {
+        c.fragment = true;
+        c.max_files = 6;
+    });
     let j = r.jpeg();
     let mut seed: u64 = 0x1234_5678_9abc_def1;
-    let mut rnd = |n: u64| { seed ^= seed << 13; seed ^= seed >> 7; seed ^= seed << 17; seed % n };
+    let mut rnd = |n: u64| {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        seed % n
+    };
     let mut files: Vec<String> = Vec::new();
-    let mut up = 0u32;
     for step in 0..120 {
         match rnd(10) {
-            0 => { let v = 1 + rnd(16) as u8; r.link.brightness(r.id, v).unwrap(); r.wait_sim(|s| s.brightness == v); }
-            1 => { let a = rnd(361) as u16; r.link.angle(r.id, a).unwrap(); r.wait_sim(|s| s.angle == a); }
-            2 => { let on = rnd(2) == 0; r.link.breath(r.id, on).unwrap(); r.wait_sim(|s| s.breath == on); }
-            3 => {
-                up += 1;
-                let name = format!("f{step}.mp4");
-                let res = r.link.upload(r.id, &[j.clone()], &name, None);
-                if files.len() >= 6 { assert!(matches!(res, Err(Error::Fan(FanError::TooManyFiles))), "{res:?}"); }
-                else { res.unwrap(); files.push(name); }
+            0 => {
+                let v = 1 + rnd(16) as u8;
+                r.link.brightness(r.id, v).unwrap();
+                r.wait_sim(|s| s.brightness == v);
             }
-            4 if !files.is_empty() => { let i = rnd(files.len() as u64) as usize; r.link.delete(r.id, i as u8 + 1).unwrap(); files.remove(i); }
-            5 if !files.is_empty() => { let i = rnd(files.len() as u64) as usize; let n = format!("r{step}.mp4"); r.link.rename(r.id, i as u8 + 1, &n).unwrap(); files[i] = n; }
-            6 => { let m = if rnd(2) == 0 { ColorMode::True } else { ColorMode::Bright }; r.link.color_mode(r.id, m).unwrap(); }
-            7 => { assert_eq!(r.link.cast(&j), 1); }
-            8 => { if rnd(2) == 0 { r.link.pause(r.id).unwrap(); } else { r.link.play(r.id).unwrap(); } }
-            _ => { r.link.refresh(r.id).unwrap(); }
+            1 => {
+                let a = rnd(361) as u16;
+                r.link.angle(r.id, a).unwrap();
+                r.wait_sim(|s| s.angle == a);
+            }
+            2 => {
+                let on = rnd(2) == 0;
+                r.link.breath(r.id, on).unwrap();
+                r.wait_sim(|s| s.breath == on);
+            }
+            3 => {
+                let name = format!("f{step}.mp4");
+                let res = r.link.upload(r.id, std::slice::from_ref(&j), &name, None);
+                if files.len() >= 6 {
+                    assert!(matches!(res, Err(Error::Fan(FanError::TooManyFiles))), "{res:?}");
+                } else {
+                    res.unwrap();
+                    files.push(name);
+                }
+            }
+            4 if !files.is_empty() => {
+                let i = rnd(files.len() as u64) as usize;
+                r.link.delete(r.id, i as u8 + 1).unwrap();
+                files.remove(i);
+            }
+            5 if !files.is_empty() => {
+                let i = rnd(files.len() as u64) as usize;
+                let n = format!("r{step}.mp4");
+                r.link.rename(r.id, i as u8 + 1, &n).unwrap();
+                files[i] = n;
+            }
+            6 => {
+                let m = if rnd(2) == 0 { ColorMode::True } else { ColorMode::Bright };
+                r.link.color_mode(r.id, m).unwrap();
+            }
+            7 => {
+                assert_eq!(r.link.cast(&j), 1);
+            }
+            8 => {
+                if rnd(2) == 0 {
+                    r.link.pause(r.id).unwrap();
+                } else {
+                    r.link.play(r.id).unwrap();
+                }
+            }
+            _ => {
+                r.link.refresh(r.id).unwrap();
+            }
         }
         let want = files.clone();
         assert!(r.sim.wait_until(T, |s| s.file_names() == want), "step {step}: sim {:?} vs model {want:?}", r.sim.state().file_names());

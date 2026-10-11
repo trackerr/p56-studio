@@ -6,9 +6,15 @@ use std::time::Duration;
 
 use p56_sim::{Sim, SimConfig};
 
-fn free_tcp() -> u16 { TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap().local_addr().unwrap().port() }
+fn free_tcp() -> u16 {
+    TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap().local_addr().unwrap().port()
+}
 
-struct Env { sim: Sim, port: u16, udp: u16 }
+struct Env {
+    sim: Sim,
+    port: u16,
+    udp: u16,
+}
 
 fn env() -> Env {
     let port = free_tcp();
@@ -43,24 +49,36 @@ fn cli_full_workflow() {
     let e = env();
     let t = e.ok(&["info"]);
     assert!(t.contains("name CLI-FAN") && t.contains("type 8"), "{t}");
-    e.ok(&["off"]); e.wait(|s| !s.power);
-    e.ok(&["on"]); e.wait(|s| s.power);
-    e.ok(&["brightness", "5"]); e.wait(|s| s.brightness == 5);
-    e.ok(&["angle", "-90"]); e.wait(|s| s.angle == 90);
-    e.ok(&["color", "true"]); e.wait(|s| s.color_mode == 1);
-    e.ok(&["breath", "on"]); e.wait(|s| s.breath);
-    e.ok(&["repeat", "one"]); e.wait(|s| !s.repeat_all);
-    e.ok(&["name", "Kitchen"]); e.wait(|s| s.device_name == "Kitchen");
-    e.ok(&["router", "Home", "password1"]); e.wait(|s| s.router.0 == "Home");
-    e.ok(&["upload", "test", "--name", "card", "--slot", "1"]); e.wait(|s| s.files.len() == 1 && s.files[0].name == "card.mp4");
-    e.ok(&["rename", "1", "ring"]); e.wait(|s| s.files[0].name == "ring.mp4");
+    e.ok(&["off"]);
+    e.wait(|s| !s.power);
+    e.ok(&["on"]);
+    e.wait(|s| s.power);
+    e.ok(&["brightness", "5"]);
+    e.wait(|s| s.brightness == 5);
+    e.ok(&["angle", "-90"]);
+    e.wait(|s| s.angle == 90);
+    e.ok(&["color", "true"]);
+    e.wait(|s| s.color_mode == 1);
+    e.ok(&["breath", "on"]);
+    e.wait(|s| s.breath);
+    e.ok(&["repeat", "one"]);
+    e.wait(|s| !s.repeat_all);
+    e.ok(&["name", "Kitchen"]);
+    e.wait(|s| s.device_name == "Kitchen");
+    e.ok(&["router", "Home", "password1"]);
+    e.wait(|s| s.router.0 == "Home");
+    e.ok(&["upload", "test", "--name", "card", "--slot", "1"]);
+    e.wait(|s| s.files.len() == 1 && s.files[0].name == "card.mp4");
+    e.ok(&["rename", "1", "ring"]);
+    e.wait(|s| s.files[0].name == "ring.mp4");
     let t = e.ok(&["cast", "test", "--seconds", "1.5", "--fps", "10"]);
     assert!(t.contains("frames cast"), "{t}");
     e.wait(|s| s.cast_ok >= 5);
     e.ok(&["ble", "on"]);
     let t = e.ok(&["ble", "scan"]);
     assert!(t.contains("BT-Speaker"), "{t}");
-    e.ok(&["delete", "1"]); e.wait(|s| s.files.is_empty());
+    e.ok(&["delete", "1"]);
+    e.wait(|s| s.files.is_empty());
     assert!(e.sim.state().protocol_errors.is_empty(), "{:?}", e.sim.state().protocol_errors);
 }
 
@@ -73,7 +91,8 @@ fn cli_refuses_without_confirmation_and_bad_values() {
     assert!(!ok && t.contains("1–16"), "{t}");
     let (ok, t) = e.p56(&["hotspot", "x", "short"]);
     assert!(!ok && t.contains("8 characters"), "{t}");
-    e.ok(&["format", "--yes"]); e.wait(|s| s.formats == 1);
+    e.ok(&["format", "--yes"]);
+    e.wait(|s| s.formats == 1);
 }
 
 #[test]
@@ -126,15 +145,17 @@ fn cli_rejects_unsupported_type_reported_by_the_fan() {
 #[test]
 fn cli_cast_reaches_only_the_selected_fan() {
     let port = free_tcp();
-    let start = |name: &str, last: u8| Sim::start(SimConfig {
-        udp_port: 0, pc_port: port, name: name.into(), mac: [0x02, 0xE0, 0xE0, 0x56, 0x00, last], ..Default::default()
-    }).unwrap();
+    let start = |name: &str, last: u8| {
+        Sim::start(SimConfig { udp_port: 0, pc_port: port, name: name.into(), mac: [0x02, 0xE0, 0xE0, 0x56, 0x00, last], ..Default::default() }).unwrap()
+    };
     let (a, b) = (start("FAN-A", 1), start("FAN-B", 2));
     let out = Command::new(env!("CARGO_BIN_EXE_p56"))
         .args(["--port", &port.to_string(), "--wait", "10"])
         .args(["--target", &format!("127.0.0.1:{}", a.udp_port), "--target", &format!("127.0.0.1:{}", b.udp_port)])
         .args(["--fan", "2", "cast", "test", "--seconds", "1.5", "--fps", "10"])
-        .env("RUST_LOG", "warn").output().unwrap();
+        .env("RUST_LOG", "warn")
+        .output()
+        .unwrap();
     let t = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
     assert!(out.status.success(), "{t}");
     std::thread::sleep(Duration::from_millis(300));

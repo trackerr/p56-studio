@@ -123,12 +123,16 @@ pub fn interfaces() -> Vec<(Ipv4Addr, Ipv4Addr)> {
     if let Ok(list) = if_addrs::get_if_addrs() {
         for i in list {
             if let if_addrs::IfAddr::V4(v4) = i.addr {
-                if v4.ip.is_loopback() || v4.ip.is_link_local() { continue; }
+                if v4.ip.is_loopback() || v4.ip.is_link_local() {
+                    continue;
+                }
                 let bc = v4.broadcast.unwrap_or_else(|| {
                     let m = u32::from(v4.netmask);
                     Ipv4Addr::from(u32::from(v4.ip) | !m)
                 });
-                if !out.iter().any(|(a, _)| *a == v4.ip) { out.push((v4.ip, bc)); }
+                if !out.iter().any(|(a, _)| *a == v4.ip) {
+                    out.push((v4.ip, bc));
+                }
             }
         }
     }
@@ -138,18 +142,24 @@ pub fn interfaces() -> Vec<(Ipv4Addr, Ipv4Addr)> {
 /// Best-effort local IPv4 as seen from the fan's network (default AP is 192.168.4.1).
 pub fn local_ip() -> Ipv4Addr {
     let ifs = interfaces();
-    if let Some((ip, _)) = ifs.iter().find(|(ip, _)| ip.octets()[..3] == [192, 168, 4]) { return *ip; }
+    if let Some((ip, _)) = ifs.iter().find(|(ip, _)| ip.octets()[..3] == [192, 168, 4]) {
+        return *ip;
+    }
     if let Ok(s) = UdpSocket::bind("0.0.0.0:0") {
         if s.connect("192.168.4.1:1").is_ok() {
             if let Ok(SocketAddr::V4(a)) = s.local_addr() {
-                if !a.ip().is_loopback() && !a.ip().is_unspecified() { return *a.ip(); }
+                if !a.ip().is_loopback() && !a.ip().is_unspecified() {
+                    return *a.ip();
+                }
             }
         }
     }
     ifs.first().map(|(ip, _)| *ip).unwrap_or(Ipv4Addr::new(192, 168, 4, 2))
 }
 
-fn fresh_ack_window(dur: u64) -> Duration { Duration::from_millis(dur) }
+fn fresh_ack_window(dur: u64) -> Duration {
+    Duration::from_millis(dur)
+}
 
 impl Link {
     /// Start broadcasting and listening. Returns the link and its event stream.
@@ -168,9 +178,19 @@ impl Link {
             tcp_port,
         };
         link.log(format!("TCP server on :{tcp_port} (advertising {ip})"));
-        { let l = link.clone(); thread::spawn(move || l.accept_loop(listener)); }
-        { let l = link.clone(); let c = cfg.clone(); thread::spawn(move || l.udp_loop(c)); }
-        if cfg.heartbeat { let l = link.clone(); thread::spawn(move || l.heartbeat_loop()); }
+        {
+            let l = link.clone();
+            thread::spawn(move || l.accept_loop(listener));
+        }
+        {
+            let l = link.clone();
+            let c = cfg.clone();
+            thread::spawn(move || l.udp_loop(c));
+        }
+        if cfg.heartbeat {
+            let l = link.clone();
+            thread::spawn(move || l.heartbeat_loop());
+        }
         Ok((link, rx))
     }
 
@@ -178,7 +198,9 @@ impl Link {
     pub fn shutdown(&self) {
         self.stop.store(true, Ordering::SeqCst);
         let mut g = self.inner.lock().unwrap();
-        for c in g.conns.values() { let _ = c.stream.shutdown(Shutdown::Both); }
+        for c in g.conns.values() {
+            let _ = c.stream.shutdown(Shutdown::Both);
+        }
         g.conns.clear();
         drop(g);
         // unblock accept()
@@ -191,8 +213,7 @@ impl Link {
     }
 
     fn udp_loop(&self, cfg: Config) {
-        let Ok(sock) = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, cfg.udp_port))
-            .or_else(|_| UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0))) else { return };
+        let Ok(sock) = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, cfg.udp_port)).or_else(|_| UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0))) else { return };
         let _ = sock.set_broadcast(true);
         let _ = sock.set_read_timeout(Some(Duration::from_millis(300)));
         let mut last = Instant::now() - cfg.broadcast_interval;
@@ -208,12 +229,16 @@ impl Link {
                     Some(ip) => {
                         let msg = format!("{ip}HS");
                         let _ = sock.send_to(msg.as_bytes(), (Ipv4Addr::BROADCAST, cfg.fan_udp_port));
-                        for (_, bc) in &ifs { let _ = sock.send_to(msg.as_bytes(), (*bc, cfg.fan_udp_port)); }
+                        for (_, bc) in &ifs {
+                            let _ = sock.send_to(msg.as_bytes(), (*bc, cfg.fan_udp_port));
+                        }
                     }
                     None => {
                         for (ip, bc) in &ifs {
                             let msg = format!("{ip}HS");
-                            if sock.send_to(msg.as_bytes(), (*bc, cfg.fan_udp_port)).is_ok() { sent.push(*ip); }
+                            if sock.send_to(msg.as_bytes(), (*bc, cfg.fan_udp_port)).is_ok() {
+                                sent.push(*ip);
+                            }
                         }
                         let _ = sock.send_to(format!("{}HS", self.local_ip).as_bytes(), (Ipv4Addr::BROADCAST, cfg.fan_udp_port));
                     }
@@ -230,7 +255,9 @@ impl Link {
                 let d = &buf[..n];
                 if d.ends_with(b"HS") && !own.contains(&from.ip()) && d.first().is_some_and(|c| c.is_ascii_digit()) {
                     let fresh = self.inner.lock().unwrap().seen.insert(from.ip(), Instant::now()).is_none();
-                    if fresh { let _ = self.events.send(Event::Discovered { ip: from.ip() }); }
+                    if fresh {
+                        let _ = self.events.send(Event::Discovered { ip: from.ip() });
+                    }
                 }
             }
         }
@@ -238,7 +265,9 @@ impl Link {
 
     fn accept_loop(&self, listener: TcpListener) {
         for stream in listener.incoming() {
-            if self.stop.load(Ordering::SeqCst) { break; }
+            if self.stop.load(Ordering::SeqCst) {
+                break;
+            }
             let Ok(stream) = stream else { continue };
             let _ = stream.set_nodelay(true);
             let peer = stream.peer_addr().map(|a| a.ip()).ok();
@@ -248,10 +277,16 @@ impl Link {
                 let mut g = self.inner.lock().unwrap();
                 let id = g.next_id;
                 g.next_id += 1;
-                g.conns.insert(id, Conn {
-                    stream, dev: Device { id, ip: peer, last_seen: Some(Instant::now()), ..Default::default() },
-                    inbox: inbox.clone(), tx: Arc::new(Mutex::new(())), cast_misses: 0,
-                });
+                g.conns.insert(
+                    id,
+                    Conn {
+                        stream,
+                        dev: Device { id, ip: peer, last_seen: Some(Instant::now()), ..Default::default() },
+                        inbox: inbox.clone(),
+                        tx: Arc::new(Mutex::new(())),
+                        cast_misses: 0,
+                    },
+                );
                 id
             };
             self.log(format!("fan #{id} connected from {}", peer.map(|p| p.to_string()).unwrap_or_default()));
@@ -268,7 +303,10 @@ impl Link {
         let mut rd = proto::Reader::default();
         let mut buf = [0u8; 8192];
         loop {
-            let n = match stream.read(&mut buf) { Ok(0) | Err(_) => break, Ok(n) => n };
+            let n = match stream.read(&mut buf) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => n,
+            };
             let pkts = rd.push(&buf[..n]);
             {
                 let (m, cv) = &*inbox;
@@ -279,7 +317,9 @@ impl Link {
                     ib.seq += 1;
                     let s = ib.seq;
                     ib.recent.push_back((s, p.clone()));
-                    if ib.recent.len() > 64 { ib.recent.pop_front(); }
+                    if ib.recent.len() > 64 {
+                        ib.recent.pop_front();
+                    }
                 }
                 cv.notify_all();
             }
@@ -293,12 +333,16 @@ impl Link {
                             Packet::MachineInfo(i) => c.dev.info = Some(i.clone()),
                             Packet::FileList(f) => c.dev.files = f.clone(),
                             Packet::Error(e) => c.dev.last_error = Some(*e),
-                            Packet::List { kind, index, items } => { c.dev.lists.insert(*kind, (*index, items.clone())); }
+                            Packet::List { kind, index, items } => {
+                                c.dev.lists.insert(*kind, (*index, items.clone()));
+                            }
                             _ => {}
                         }
                     }
                 }
-                if let Packet::Error(e) = &pkt { self.log(format!("fan #{id}: {e}")); }
+                if let Packet::Error(e) = &pkt {
+                    self.log(format!("fan #{id}: {e}"));
+                }
                 let _ = self.events.send(Event::Packet { id, packet: pkt });
             }
         }
@@ -318,7 +362,9 @@ impl Link {
                 let Some(tx) = self.tx(id) else { continue };
                 if let Ok(_g) = tx.try_lock() {
                     let _ = self.send_to(id, &proto::heartbeat());
-                    if tick % 5 == 0 { let _ = self.send_to(id, &proto::get_machine()); }
+                    if tick.is_multiple_of(5) {
+                        let _ = self.send_to(id, &proto::get_machine());
+                    }
                 };
             }
         }
@@ -354,7 +400,9 @@ impl Link {
         let mut g = m.lock().unwrap();
         while self.ids().is_empty() {
             let left = deadline.saturating_duration_since(Instant::now());
-            if left.is_zero() { return false; }
+            if left.is_zero() {
+                return false;
+            }
             g = cv.wait_timeout(g, left.min(Duration::from_millis(200))).unwrap().0;
         }
         true
@@ -374,14 +422,21 @@ impl Link {
     }
 
     fn mark(&self, id: u32) -> (u64, u64) {
-        self.inbox(id).map(|b| { let g = b.0.lock().unwrap(); (g.seq, g.bytes) }).unwrap_or((0, 0))
+        self.inbox(id)
+            .map(|b| {
+                let g = b.0.lock().unwrap();
+                (g.seq, g.bytes)
+            })
+            .unwrap_or((0, 0))
     }
 
     /// Send raw bytes to one fan.
     pub fn send_to(&self, id: u32, data: &[u8]) -> Result<(), Error> {
         let mut s = self.stream(id)?;
         s.write_all(data).map_err(|e| {
-            if let Some(c) = self.inner.lock().unwrap().conns.remove(&id) { let _ = c.stream.shutdown(Shutdown::Both); }
+            if let Some(c) = self.inner.lock().unwrap().conns.remove(&id) {
+                let _ = c.stream.shutdown(Shutdown::Both);
+            }
             Error::Io(e.to_string())
         })
     }
@@ -399,7 +454,9 @@ impl Link {
         let mut g = m.lock().unwrap();
         while g.bytes <= mark {
             let left = deadline.saturating_duration_since(Instant::now());
-            if left.is_zero() { return false; }
+            if left.is_zero() {
+                return false;
+            }
             g = cv.wait_timeout(g, left).unwrap().0;
         }
         true
@@ -412,11 +469,17 @@ impl Link {
         let deadline = Instant::now() + timeout;
         let mut g = m.lock().unwrap();
         loop {
-            if let Some((_, p)) = g.recent.iter().find(|(s, p)| *s > since && pred(p)) { return Some(p.clone()); }
+            if let Some((_, p)) = g.recent.iter().find(|(s, p)| *s > since && pred(p)) {
+                return Some(p.clone());
+            }
             let left = deadline.saturating_duration_since(Instant::now());
-            if left.is_zero() { return None; }
+            if left.is_zero() {
+                return None;
+            }
             g = cv.wait_timeout(g, left).unwrap().0;
-            if !self.inner.lock().unwrap().conns.contains_key(&id) { return None; }
+            if !self.inner.lock().unwrap().conns.contains_key(&id) {
+                return None;
+            }
         }
     }
 
@@ -427,11 +490,17 @@ impl Link {
         let deadline = Instant::now() + timeout;
         let mut g = m.lock().unwrap();
         loop {
-            if let Some((_, p)) = g.recent.iter().filter(|(s, p)| *s > since && pred(p)).nth(n.saturating_sub(1)) { return Some(p.clone()); }
+            if let Some((_, p)) = g.recent.iter().filter(|(s, p)| *s > since && pred(p)).nth(n.saturating_sub(1)) {
+                return Some(p.clone());
+            }
             let left = deadline.saturating_duration_since(Instant::now());
-            if left.is_zero() { return None; }
+            if left.is_zero() {
+                return None;
+            }
             g = cv.wait_timeout(g, left).unwrap().0;
-            if !self.inner.lock().unwrap().conns.contains_key(&id) { return None; }
+            if !self.inner.lock().unwrap().conns.contains_key(&id) {
+                return None;
+            }
         }
     }
 
@@ -440,12 +509,16 @@ impl Link {
         let deadline = Instant::now() + max;
         while Instant::now() < deadline {
             let s = self.packet_seq(id);
-            if self.wait_packet(id, s, silence, |_| true).is_none() { return; }
+            if self.wait_packet(id, s, silence, |_| true).is_none() {
+                return;
+            }
         }
     }
 
     /// Sequence number of the newest packet received from `id` (for [`Link::wait_packet`]).
-    pub fn packet_seq(&self, id: u32) -> u64 { self.mark(id).0 }
+    pub fn packet_seq(&self, id: u32) -> u64 {
+        self.mark(id).0
+    }
 
     /// Send and then wait up to `timeout` for *any* bytes back (ack).
     pub fn send_wait(&self, id: u32, data: &[u8], timeout: Duration) -> Result<bool, Error> {
@@ -476,30 +549,78 @@ impl Link {
     }
 
     // ---- commands ---------------------------------------------------------
-    pub fn on(&self, id: u32) -> Result<(), Error> { self.cmd(id, &proto::on()) }
-    pub fn off(&self, id: u32) -> Result<(), Error> { self.cmd(id, &proto::off()) }
-    pub fn play(&self, id: u32) -> Result<(), Error> { self.cmd(id, &proto::play()) }
-    pub fn pause(&self, id: u32) -> Result<(), Error> { self.cmd(id, &proto::pause()) }
-    pub fn select(&self, id: u32, slot: u8) -> Result<(), Error> { self.cmd(id, &proto::select(slot)) }
-    pub fn delete(&self, id: u32, slot: u8) -> Result<(), Error> { self.cmd(id, &proto::delete(slot)) }
-    pub fn rename(&self, id: u32, slot: u8, new_name: &str) -> Result<(), Error> { self.cmd(id, &proto::rename(slot, new_name)) }
-    pub fn repeat(&self, id: u32, all: bool) -> Result<(), Error> { self.cmd(id, &if all { proto::repeat_all() } else { proto::repeat_one() }) }
-    pub fn brightness(&self, id: u32, v: u8) -> Result<(), Error> { self.cmd(id, &proto::brightness(v)) }
-    pub fn angle(&self, id: u32, deg: u16) -> Result<(), Error> { self.cmd(id, &proto::angle(deg)) }
-    pub fn color_mode(&self, id: u32, m: ColorMode) -> Result<(), Error> { self.cmd(id, &proto::color_mode(m)) }
-    pub fn breath(&self, id: u32, on: bool) -> Result<(), Error> { self.cmd(id, &proto::breath(on)) }
-    pub fn autostart(&self, id: u32, on: bool) -> Result<(), Error> { self.cmd(id, &proto::autostart(on)) }
-    pub fn master(&self, id: u32, on: bool) -> Result<(), Error> { self.cmd(id, &proto::master(on)) }
-    pub fn volume(&self, id: u32, v: u8) -> Result<(), Error> { self.cmd(id, &proto::volume(v)) }
-    pub fn device_name(&self, id: u32, name: &str) -> Result<(), Error> { self.cmd(id, &proto::device_name(name)) }
-    pub fn set_hotspot(&self, id: u32, ssid: &str, pw: &str) -> Result<(), Error> { self.cmd(id, &proto::hotspot(ssid, pw)) }
-    pub fn set_router(&self, id: u32, ssid: &str, pw: &str) -> Result<(), Error> { self.cmd(id, &proto::router(ssid, pw)) }
-    pub fn ble(&self, id: u32, on: bool) -> Result<(), Error> { self.cmd(id, &proto::ble(on)) }
-    pub fn ble_scan(&self, id: u32) -> Result<(), Error> { self.cmd(id, &proto::ble_scan()) }
-    pub fn ble_connect(&self, id: u32, i: u8) -> Result<(), Error> { self.cmd(id, &proto::ble_connect(i)) }
-    pub fn ble_disconnect(&self, id: u32) -> Result<(), Error> { self.cmd(id, &proto::ble_disconnect()) }
-    pub fn format_card(&self, id: u32) -> Result<(), Error> { self.cmd(id, &proto::format_card()) }
-    pub fn factory_reset(&self, id: u32) -> Result<(), Error> { self.cmd(id, &proto::factory_reset()) }
+    pub fn on(&self, id: u32) -> Result<(), Error> {
+        self.cmd(id, &proto::on())
+    }
+    pub fn off(&self, id: u32) -> Result<(), Error> {
+        self.cmd(id, &proto::off())
+    }
+    pub fn play(&self, id: u32) -> Result<(), Error> {
+        self.cmd(id, &proto::play())
+    }
+    pub fn pause(&self, id: u32) -> Result<(), Error> {
+        self.cmd(id, &proto::pause())
+    }
+    pub fn select(&self, id: u32, slot: u8) -> Result<(), Error> {
+        self.cmd(id, &proto::select(slot))
+    }
+    pub fn delete(&self, id: u32, slot: u8) -> Result<(), Error> {
+        self.cmd(id, &proto::delete(slot))
+    }
+    pub fn rename(&self, id: u32, slot: u8, new_name: &str) -> Result<(), Error> {
+        self.cmd(id, &proto::rename(slot, new_name))
+    }
+    pub fn repeat(&self, id: u32, all: bool) -> Result<(), Error> {
+        self.cmd(id, &if all { proto::repeat_all() } else { proto::repeat_one() })
+    }
+    pub fn brightness(&self, id: u32, v: u8) -> Result<(), Error> {
+        self.cmd(id, &proto::brightness(v))
+    }
+    pub fn angle(&self, id: u32, deg: u16) -> Result<(), Error> {
+        self.cmd(id, &proto::angle(deg))
+    }
+    pub fn color_mode(&self, id: u32, m: ColorMode) -> Result<(), Error> {
+        self.cmd(id, &proto::color_mode(m))
+    }
+    pub fn breath(&self, id: u32, on: bool) -> Result<(), Error> {
+        self.cmd(id, &proto::breath(on))
+    }
+    pub fn autostart(&self, id: u32, on: bool) -> Result<(), Error> {
+        self.cmd(id, &proto::autostart(on))
+    }
+    pub fn master(&self, id: u32, on: bool) -> Result<(), Error> {
+        self.cmd(id, &proto::master(on))
+    }
+    pub fn volume(&self, id: u32, v: u8) -> Result<(), Error> {
+        self.cmd(id, &proto::volume(v))
+    }
+    pub fn device_name(&self, id: u32, name: &str) -> Result<(), Error> {
+        self.cmd(id, &proto::device_name(name))
+    }
+    pub fn set_hotspot(&self, id: u32, ssid: &str, pw: &str) -> Result<(), Error> {
+        self.cmd(id, &proto::hotspot(ssid, pw))
+    }
+    pub fn set_router(&self, id: u32, ssid: &str, pw: &str) -> Result<(), Error> {
+        self.cmd(id, &proto::router(ssid, pw))
+    }
+    pub fn ble(&self, id: u32, on: bool) -> Result<(), Error> {
+        self.cmd(id, &proto::ble(on))
+    }
+    pub fn ble_scan(&self, id: u32) -> Result<(), Error> {
+        self.cmd(id, &proto::ble_scan())
+    }
+    pub fn ble_connect(&self, id: u32, i: u8) -> Result<(), Error> {
+        self.cmd(id, &proto::ble_connect(i))
+    }
+    pub fn ble_disconnect(&self, id: u32) -> Result<(), Error> {
+        self.cmd(id, &proto::ble_disconnect())
+    }
+    pub fn format_card(&self, id: u32) -> Result<(), Error> {
+        self.cmd(id, &proto::format_card())
+    }
+    pub fn factory_reset(&self, id: u32) -> Result<(), Error> {
+        self.cmd(id, &proto::factory_reset())
+    }
     pub fn refresh(&self, id: u32) -> Result<(), Error> {
         self.cmd(id, &proto::get_machine())?;
         self.cmd(id, &proto::heartbeat())
@@ -510,7 +631,9 @@ impl Link {
     /// within [`MAX_UPLOAD_JPEG`], if the fan reports an error or if the connection drops;
     /// otherwise reports whether the fan acknowledged the data and listed the file.
     pub fn upload(&self, id: u32, frames: &[Vec<u8>], name: &str, show_slot: Option<u8>) -> Result<UploadOutcome, Error> {
-        if frames.is_empty() { return Err(Error::Invalid("no frames".into())); }
+        if frames.is_empty() {
+            return Err(Error::Invalid("no frames".into()));
+        }
         if let Some(i) = frames.iter().position(|f| f.len() > MAX_UPLOAD_JPEG || !proto::jpeg_complete(f)) {
             return Err(Error::Invalid(format!("frame {} is not a complete JPEG of at most {MAX_UPLOAD_JPEG} bytes", i + 1)));
         }
@@ -542,11 +665,16 @@ impl Link {
                 None => Ok(false),
             }
         };
-        let step = |d: &[u8], ms: u64| -> Result<bool, Error> { self.send_to(id, d)?; expect(ms) };
+        let step = |d: &[u8], ms: u64| -> Result<bool, Error> {
+            self.send_to(id, d)?;
+            expect(ms)
+        };
         step(&proto::on(), 1000)?;
         // Never send the file after the fan refused the name.
         step(&proto::set_filename(&name), 2000)?;
-        if let Some(e) = fan_error() { return Err(Error::Fan(e)); }
+        if let Some(e) = fan_error() {
+            return Err(Error::Fan(e));
+        }
         let (head, records) = proto::upload_blob(frames);
         let mut s = self.stream(id)?;
         let io = |e: std::io::Error| Error::Io(e.to_string());
@@ -569,13 +697,24 @@ impl Link {
         }
         step(&proto::off(), 600)?;
         step(&proto::on(), 600)?;
-        if let Some(slot) = show_slot { step(&proto::select(slot), 1000)?; }
-        if let Some(e) = fan_error() { return Err(Error::Fan(e)); }
+        if let Some(slot) = show_slot {
+            step(&proto::select(slot), 1000)?;
+        }
+        if let Some(e) = fan_error() {
+            return Err(Error::Fan(e));
+        }
         // The fan sends its playlist after storing a file; look for the name in it.
         let listed = self.wait_listed(id, &name, Duration::from_secs(3));
-        if gone() { return Err(Error::NotConnected); }
-        self.log(format!("uploaded: {name}, {} frame(s), {} bytes{}{}", frames.len(), records.len() + head.len(),
-            if acked { "" } else { ", not acknowledged" }, if listed { "" } else { ", not in the playlist (yet)" }));
+        if gone() {
+            return Err(Error::NotConnected);
+        }
+        self.log(format!(
+            "uploaded: {name}, {} frame(s), {} bytes{}{}",
+            frames.len(),
+            records.len() + head.len(),
+            if acked { "" } else { ", not acknowledged" },
+            if listed { "" } else { ", not in the playlist (yet)" }
+        ));
         Ok(UploadOutcome { acked, listed })
     }
 
@@ -588,7 +727,9 @@ impl Link {
                 None => return false,
                 _ => {}
             }
-            if Instant::now() >= deadline { return false; }
+            if Instant::now() >= deadline {
+                return false;
+            }
             let s = self.packet_seq(id);
             self.wait_packet(id, s, Duration::from_millis(200), |p| matches!(p, Packet::FileList(_)));
         }
@@ -613,12 +754,19 @@ impl Link {
             return 0;
         };
         let mut unique: Vec<u32> = Vec::with_capacity(ids.len());
-        for &id in ids { if !unique.contains(&id) { unique.push(id); } }
+        for &id in ids {
+            if !unique.contains(&id) {
+                unique.push(id);
+            }
+        }
         thread::scope(|sc| {
-            let jobs: Vec<_> = unique.iter().map(|&id| {
-                let frame = &frame;
-                sc.spawn(move || self.cast_one(id, frame))
-            }).collect();
+            let jobs: Vec<_> = unique
+                .iter()
+                .map(|&id| {
+                    let frame = &frame;
+                    sc.spawn(move || self.cast_one(id, frame))
+                })
+                .collect();
             jobs.into_iter().map(|j| j.join()).filter(|r| matches!(r, Ok(true))).count()
         })
     }
@@ -632,9 +780,14 @@ impl Link {
         let mut acked = true;
         for chunk in frame.chunks(CAST_CHUNK) {
             let (_, mark) = self.mark(id);
-            if s.write_all(chunk).is_err() { acked = false; break; }
+            if s.write_all(chunk).is_err() {
+                acked = false;
+                break;
+            }
             // Holoscope waits here until the fan reacts; so do we, but not for long.
-            if acked && !self.wait_bytes(id, mark, CAST_ACK) { acked = false; }
+            if acked && !self.wait_bytes(id, mark, CAST_ACK) {
+                acked = false;
+            }
         }
         let mut g = self.inner.lock().unwrap();
         let Some(c) = g.conns.get_mut(&id) else { return false };
