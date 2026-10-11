@@ -11,8 +11,8 @@ The Home Assistant add-on and integration have their own changelog in
   the playing file counting from 0, while selecting counts from 1 (as Holoscope does). The
   status is now read that way, and the simulator reports it like a real fan.
 - Cast: "This screen" was missing when the app controls the fan through a P56 server (such as
-  Home Assistant). It now uses the browser's screen sharing there (choose a screen or window
-  in its own picker); also in the Home Assistant panel in a desktop browser.
+  Home Assistant). The app now uses the system's screen sharing there (choose a screen or
+  window in its own picker). The Home Assistant panel itself does not offer it.
 
 ## 0.3.1 — 2026-10-11
 

@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { IconCamera, IconCast, IconImage, IconMonitor, IconRings, IconStop, type Icon } from '@/components/icons';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Choice, RoundView, Section, ValueSlider } from '@/components/bits';
-import { grab, invoke, onEvent } from '@/lib/api';
+import { grab, invoke, isTauri, onEvent } from '@/lib/api';
 import { useT } from '@/lib/i18n';
 import { useP56 } from '@/state';
 import { PlacementBox } from './MediaPanel';
@@ -16,9 +16,10 @@ type DesktopWindow = { id: number; title: string; app: string };
 // this device's camera: only where the browser offers it (not on a plain-http page, such as
 // Home Assistant opened without https)
 const hasCamera = () => !!navigator.mediaDevices?.getUserMedia;
-// screen sharing through the browser (its own picker for a screen or window): used where the
-// engine cannot capture this screen itself, such as through a P56 server or Home Assistant
-const hasDisplay = () => !!navigator.mediaDevices?.getDisplayMedia;
+// Screen sharing through the webview's own picker (a screen or window): for the P56 Studio app
+// when it controls the fan through a P56 server or Home Assistant, whose engine cannot capture
+// this screen. Not in a plain browser, such as the Home Assistant panel.
+const hasDisplay = () => isTauri && !!navigator.mediaDevices?.getDisplayMedia;
 
 export function CastPanel() {
   const { devices, media, placement, platform, addLog } = useP56();
