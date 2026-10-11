@@ -443,7 +443,11 @@ fn upload_through_a_big_send_buffer() {
             let img = image::RgbImage::from_fn(720, 720, |x, _| {
                 seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
                 let v = (seed >> 24) as u8 / 3;
-                if (x as usize + i * 9) % 200 < 30 { image::Rgb([255, 0, 200]) } else { image::Rgb([v, v, v]) }
+                if (x as usize + i * 9) % 200 < 30 {
+                    image::Rgb([255, 0, 200])
+                } else {
+                    image::Rgb([v, v, v])
+                }
             });
             transcode::encode_upload(&img, &ft, &Placement::default()).jpeg
         })
