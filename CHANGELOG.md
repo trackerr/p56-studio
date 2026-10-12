@@ -4,6 +4,18 @@ P56 Studio (Windows, Linux, Android), `p56` (CLI), `p56-sim` and `p56-server`.
 The Home Assistant add-on and integration have their own changelog in
 [`ha/p56_pov_display/CHANGELOG.md`](ha/p56_pov_display/CHANGELOG.md).
 
+## 0.3.12 — 2026-10-12
+
+### Changed
+- **AI pictures in any style.** The instructions no longer ask for bright neon-like pictures;
+  only what the fan needs is added (black background, subject in the middle, well lit). A
+  **Style** choice (photo, 3D render, cartoon, anime, painting, watercolour, pixel art, neon, line
+  drawing, comic, or as described) is in the AI box and `art_style` in the API.
+- Backgrounds behind text (`show_ai` with `text`, e.g. notifications and prices) stay simple:
+  a few bold, clean shapes, not busy, so the text stays readable.
+- The AI box offers Still and Turning; drawn animations are no longer offered, as the AI could
+  not draw them consistently (the API still accepts `kind: anim`).
+
 ## 0.3.11 — 2026-10-12
 
 ### Added

@@ -336,14 +336,14 @@ async def test_show_ai_goes_to_the_server(hass: HomeAssistant, p56_server, monke
     monkeypatch.setattr(entry.runtime_data.api, "call", capture)
     with pytest.raises(HomeAssistantError) as err:
         await hass.services.async_call(
-            DOMAIN, "show_ai", {"prompt": "a red fox", "kind": "anim", "show_seconds": 5}, blocking=True, return_response=True
+            DOMAIN, "show_ai", {"prompt": "a red fox", "kind": "spin", "art_style": "photo", "show_seconds": 5}, blocking=True, return_response=True
         )
     assert "add-on" in err.value.translation_placeholders["error"]
     cmd, args = sent[-1]
     assert cmd == "show_ai"
-    assert args["prompt"] == "a red fox" and args["kind"] == "anim" and args["show_seconds"] == 5
+    assert args["prompt"] == "a red fox" and args["kind"] == "spin" and args["art_style"] == "photo" and args["show_seconds"] == 5
     with pytest.raises(Exception, match="kind"):
-        await hass.services.async_call(DOMAIN, "show_ai", {"prompt": "fox", "kind": "video"}, blocking=True)
+        await hass.services.async_call(DOMAIN, "show_ai", {"prompt": "fox", "kind": "anim"}, blocking=True)
     # text over the AI's background: the price colour comes along as a colour scale
     with pytest.raises(HomeAssistantError):
         await hass.services.async_call(

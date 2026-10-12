@@ -74,8 +74,22 @@
     "ai_kind": {
       "options": {
         "still": "Stilstaand",
-        "spin": "Draaiend",
-        "anim": "Animatie"
+        "spin": "Draaiend om de eigen as"
+      }
+    },
+    "ai_style": {
+      "options": {
+        "free": "Zoals beschreven",
+        "photo": "Foto",
+        "3d": "3D-render",
+        "cartoon": "Cartoon",
+        "anime": "Anime",
+        "painting": "Schilderij",
+        "watercolor": "Aquarel",
+        "pixel": "Pixel art",
+        "neon": "Neon",
+        "line": "Lijntekening",
+        "comic": "Strip"
       }
     }
   },
@@ -367,7 +381,11 @@
         },
         "kind": {
           "name": "Soort",
-          "description": "Een stilstaand plaatje, het object dat om zijn eigen as draait (als op een draaiplateau), of een animatie waarin het op de plek beweegt."
+          "description": "Een stilstaand plaatje, of het object dat om zijn eigen as draait (als op een draaiplateau)."
+        },
+        "art_style": {
+          "name": "Stijl",
+          "description": "Hoe het getekend wordt: een kant-en-klare stijl, of typ er zelf een (bv. Van Gogh). Leeg: zoals de opdracht zegt."
         },
         "entity_id": {
           "name": "AI Task",

@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.1.12
+
+p56-server 0.3.12.
+
+- **AI pictures in any style**: photo, 3D render, cartoon, anime, painting, watercolour, pixel art,
+  neon, line drawing, comic, or your own words (`art_style` in `p56_pov.show_ai`, **Style** in the
+  panel). The pictures are no longer pushed towards a bright neon look.
+- Backgrounds behind text (notifications, prices) keep the simple look: a few bold shapes, not
+  busy.
+- Drawn animations are no longer offered (the AI could not draw them consistently); Turning stays.
+
 ## 2.1.11
 
 p56-server 0.3.11.

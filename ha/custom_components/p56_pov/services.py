@@ -80,6 +80,7 @@ SHOW_AI_SCHEMA = vol.Schema(
         **SHOW_COMMON,
         vol.Required("prompt"): vol.All(cv.string, vol.Length(min=1, max=1000)),
         vol.Optional("kind"): vol.In(AI_KINDS),
+        vol.Optional("art_style"): vol.All(cv.string, vol.Length(max=80)),
         vol.Optional("entity_id"): cv.entity_domain("ai_task"),
         vol.Optional("fresh"): cv.boolean,
         # text over the AI's background (then the AI makes a background, not a subject)
@@ -213,7 +214,7 @@ async def _show_image(call: ServiceCall) -> ServiceResponse:
 
 
 async def _show_ai(call: ServiceCall) -> ServiceResponse:
-    keys = ("prompt", "kind", "entity_id", "fresh", "text", "icon", "font_size", "show_seconds", "mode", "name")
+    keys = ("prompt", "kind", "art_style", "entity_id", "fresh", "text", "icon", "font_size", "show_seconds", "mode", "name")
     payload = {k: call.data[k] for k in keys if k in call.data}
     if "color" in call.data:
         payload["color"] = color_value(call.data["color"])

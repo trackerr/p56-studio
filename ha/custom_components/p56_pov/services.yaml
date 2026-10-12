@@ -199,8 +199,24 @@ show_ai:
           options:
             - still
             - spin
-            - anim
           translation_key: ai_kind
+    art_style:
+      selector:
+        select:
+          custom_value: true
+          options:
+            - free
+            - photo
+            - 3d
+            - cartoon
+            - anime
+            - painting
+            - watercolor
+            - pixel
+            - neon
+            - line
+            - comic
+          translation_key: ai_style
     entity_id:
       selector:
         entity:

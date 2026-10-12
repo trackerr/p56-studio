@@ -44,24 +44,52 @@ impl Kind {
     }
 }
 
-/// How a picture looks good on the fan, added to every prompt.
+/// What the fan needs, added to every prompt. Only technical: the style is the user's.
 const LOOK: &str = "made for a round holographic fan display (a spinning LED blade: black shows as \
-transparent, only bright pixels are seen). Pure solid black background (#000000) all around the \
-subject and up to every edge of the image, no white or coloured margin, no floor, no shadow, no \
-frame, no border, no text, letters or numbers. One bold subject, centred, filling most of the \
-space, bright saturated colours, thick shapes, high contrast, little fine detail.";
+transparent and only lit pixels are seen, so the subject itself is well lit). Pure black background \
+(#000000) all around the subject and up to every edge of the image, no white or coloured margin, no \
+floor, no frame, no border, no text, letters or numbers unless the subject asks for them. The \
+subject in the middle, filling most of the space.";
+
+/// Ready-made styles (`art_style`); any other text is used as the style itself.
+const STYLES: [(&str, &str); 10] = [
+    ("photo", "a realistic photograph"),
+    ("3d", "a detailed 3D render"),
+    ("cartoon", "a cartoon"),
+    ("anime", "anime"),
+    ("painting", "an oil painting"),
+    ("watercolor", "a watercolour painting"),
+    ("pixel", "pixel art"),
+    ("neon", "glowing neon lines"),
+    ("line", "clean line art"),
+    ("comic", "a comic book drawing"),
+];
+
+/// The style line of the instructions: a ready-made style, the user's own words, or nothing
+/// (the AI follows the prompt).
+fn style_line(style: Option<&str>) -> String {
+    match style.map(str::trim).filter(|s| !s.is_empty() && *s != "free") {
+        Some(s) => {
+            let words = STYLES.iter().find(|(k, _)| k.eq_ignore_ascii_case(s)).map_or_else(|| s.chars().take(80).collect(), |(_, w)| w.to_string());
+            format!("\nStyle: {words}")
+        }
+        None => String::new(),
+    }
+}
 
 /// The instructions sent to the AI for the user's prompt.
-pub fn instructions(prompt: &str, kind: Kind) -> String {
+pub fn instructions(prompt: &str, kind: Kind, style: Option<&str>) -> String {
     let prompt = prompt.trim();
-    match kind {
+    let style = style_line(style);
+    let body = match kind {
         Kind::Still => format!("A square image {LOOK}\nSubject: {prompt}"),
         Kind::Spin => format!("A square image, the subject seen straight from the front, {LOOK}\nSubject: {prompt}"),
         Kind::Backdrop => format!(
             "A square background picture made for a round holographic fan display (a spinning LED blade: black \
              shows as transparent, only bright pixels are seen). Large text will be written over its middle, so \
-             the middle stays dark and calm; the theme is shown by bright shapes and colours around the edge, like \
-             a ring or a frame. Pure black elsewhere, up to every edge of the image, no white margin, no text, \
+             the middle stays dark and calm; the theme is shown around the edge, like a ring or a frame. Keep it \
+             simple and not busy, so the text stays the main thing: a few bold, clean shapes in bright colours, \
+             little fine detail. Pure black elsewhere, up to every edge of the image, no white margin, no text, \
              letters or numbers.\nTheme: {prompt}"
         ),
         Kind::Anim => format!(
@@ -77,7 +105,8 @@ pub fn instructions(prompt: &str, kind: Kind) -> String {
             SHEET * SHEET,
             SHEET * SHEET
         ),
-    }
+    };
+    body + &style
 }
 
 /// The AI Task entities that can make pictures: `[{entity_id, name}]`.
@@ -101,7 +130,9 @@ const MADE_KEPT: usize = 8;
 
 /// Ask the AI for a picture and turn it into frames for the fan: (pictures, ms per frame). The
 /// same prompt again gives the same picture, unless `fresh`.
-pub fn generate(base: &str, token: &str, entity: Option<&str>, prompt: &str, kind: Kind, fresh: bool) -> Result<(Vec<RgbImage>, u32), String> {
+pub fn generate(
+    base: &str, token: &str, entity: Option<&str>, prompt: &str, kind: Kind, style: Option<&str>, fresh: bool,
+) -> Result<(Vec<RgbImage>, u32), String> {
     if prompt.trim().is_empty() {
         return Err("describe the picture first".into());
     }
@@ -113,14 +144,15 @@ pub fn generate(base: &str, token: &str, entity: Option<&str>, prompt: &str, kin
             .and_then(|e| e["entity_id"].as_str().map(String::from))
             .ok_or("no AI in Home Assistant can make pictures: add one (e.g. Google Generative AI) and its AI Task")?,
     };
-    let key = format!("{entity}\n{}", instructions(prompt, kind));
+    let instructions = instructions(prompt, kind, style);
+    let key = format!("{entity}\n{instructions}");
     if !fresh {
         if let Some((_, images, ms)) = MADE.lock().unwrap().iter().find(|(k, _, _)| *k == key) {
             log::info!("AI picture from {entity}: made before");
             return Ok((images.clone(), *ms));
         }
     }
-    let body = json!({ "task_name": "P56 picture", "entity_id": entity, "instructions": instructions(prompt, kind) });
+    let body = json!({ "task_name": "P56 picture", "entity_id": entity, "instructions": instructions });
     let url = format!("{base}/services/ai_task/generate_image?return_response");
     let (code, answer) =
         crate::http_request("POST", &url, Some(token), "application/json", Some(&serde_json::to_vec(&body).unwrap_or_default()), GENERATE_TIMEOUT)?;
@@ -325,9 +357,17 @@ mod tests {
         assert_eq!(Kind::parse("").unwrap(), Kind::Still);
         assert_eq!(Kind::parse("anim").unwrap(), Kind::Anim);
         assert!(Kind::parse("video").is_err());
-        let i = instructions("  a red fox ", Kind::Anim);
+        let i = instructions("  a red fox ", Kind::Anim, None);
         assert!(i.contains("4 by 4") && i.ends_with("Subject: a red fox"), "{i}");
-        assert!(instructions("fox", Kind::Spin).contains("from the front"));
+        assert!(instructions("fox", Kind::Spin, None).contains("from the front"));
+        // no style of our own: only what the fan needs
+        let plain = instructions("fox", Kind::Still, None);
+        assert!(plain.contains("black") && !plain.contains("neon") && !plain.contains("Style"), "{plain}");
+        assert!(instructions("fox", Kind::Still, Some("photo")).ends_with("Style: a realistic photograph"));
+        assert!(instructions("fox", Kind::Still, Some(" Van Gogh ")).ends_with("Style: Van Gogh"));
+        assert!(!instructions("fox", Kind::Still, Some("free")).contains("Style"));
+        // a background behind text (notifications, prices) stays simple
+        assert!(instructions("cheap power", Kind::Backdrop, None).contains("simple and not busy"));
     }
 
     #[test]

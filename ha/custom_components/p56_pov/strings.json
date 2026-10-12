@@ -74,8 +74,22 @@
     "ai_kind": {
       "options": {
         "still": "Still",
-        "spin": "Turning",
-        "anim": "Animation"
+        "spin": "Turning round its own axis"
+      }
+    },
+    "ai_style": {
+      "options": {
+        "free": "As described",
+        "photo": "Photo",
+        "3d": "3D render",
+        "cartoon": "Cartoon",
+        "anime": "Anime",
+        "painting": "Painting",
+        "watercolor": "Watercolour",
+        "pixel": "Pixel art",
+        "neon": "Neon",
+        "line": "Line drawing",
+        "comic": "Comic"
       }
     }
   },
@@ -367,7 +381,11 @@
         },
         "kind": {
           "name": "Kind",
-          "description": "A still picture, the object turning round its own axis (as on a turntable), or an animation in which it moves on the spot."
+          "description": "A still picture, or the object turning round its own axis (as on a turntable)."
+        },
+        "art_style": {
+          "name": "Style",
+          "description": "How it is drawn: a ready-made style, or type your own (e.g. Van Gogh). Empty: as the prompt says."
         },
         "entity_id": {
           "name": "AI Task",

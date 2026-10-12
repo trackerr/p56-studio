@@ -464,7 +464,7 @@ fn ha_call(svc: &Arc<Service>, cmd: &str, args: &Value) -> Option<Result<Value, 
 
 /// AI pictures through Home Assistant's AI Task:
 /// - `ai_status`: the AI Task entities that can make pictures (empty: none set up);
-/// - `ai_image` {prompt, kind, entity_id?, name?}: a new media item (for the app's Media panel);
+/// - `ai_image` {prompt, kind, art_style?, entity_id?, name?}: a new media item (for the app's Media panel);
 /// - `show_ai` {prompt, kind, entity_id?, …the fields of /api/show}: straight onto the fans; with
 ///   `text` (or `icon`) the AI makes a background and the text is written over it.
 ///
@@ -477,7 +477,7 @@ fn ai_call(svc: &Arc<Service>, cmd: &str, args: &Value, base: &str, token: &str)
     let text = cmd == "show_ai" && ["text", "icon"].iter().any(|k| args[k].as_str().is_some_and(|s| !s.trim().is_empty()));
     let kind = if text { ai::Kind::Backdrop } else { ai::Kind::parse(args["kind"].as_str().unwrap_or_default())? };
     let fresh = args["fresh"].as_bool().unwrap_or(false);
-    let (images, ms) = ai::generate(base, token, args["entity_id"].as_str(), prompt, kind, fresh)?;
+    let (images, ms) = ai::generate(base, token, args["entity_id"].as_str(), prompt, kind, args["art_style"].as_str(), fresh)?;
     // a name for the fan from the prompt's first words
     let words: String = prompt.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { ' ' }).collect();
     let default_name = format!("ai {}", words.split_whitespace().collect::<Vec<_>>().join(" ")).chars().take(24).collect::<String>().trim().to_string();
@@ -487,7 +487,7 @@ fn ai_call(svc: &Arc<Service>, cmd: &str, args: &Value, base: &str, token: &str)
     }
     let mut req = args.clone();
     let o = req.as_object_mut().ok_or("expected an object")?;
-    for k in ["prompt", "kind", "entity_id", "fresh", "data", "path", "image", "frames", "backdrop"] {
+    for k in ["prompt", "kind", "art_style", "entity_id", "fresh", "data", "path", "image", "frames", "backdrop"] {
         o.remove(k);
     }
     o.entry("name").or_insert(json!(name));

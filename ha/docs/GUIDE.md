@@ -117,8 +117,9 @@ times a second until you press stop; the fan then returns to its playlist.
 
 ## 7. Pictures made by AI
 
-Type what you want to see, and an AI draws it for the fan: a still picture, an object turning
-round its own axis (as on a turntable), or a short animation in which it moves on the spot.
+Type what you want to see, and an AI draws it for the fan, in any style: a photo, a painting,
+a cartoon, a 3D render, neon and more. Show it still, or let the object turn round its own axis
+(as on a turntable).
 
 **What you need:** an AI in Home Assistant that can make pictures, for example **Google
 Generative AI** (Gemini). Set it up under **Settings → Devices & services → Add integration**
@@ -127,11 +128,12 @@ nothing about your AI account is stored by P56. Making pictures can cost money a
 provider (with Google it needs billing turned on for the key).
 
 **From the panel:** open **P56 POV → Media**. When an AI is available, an **AI picture** box
-appears: describe the picture (for example *a neon jellyfish*), choose **Still**, **Turning** or
-**Animation** and press **Make**. After 5–30 seconds it is in the preview, ready for **Upload**
-or the **Cast** tab like any other picture; an animation plays in the preview (pause it with
+appears: describe the picture (for example *a jellyfish*), choose **Still** or **Turning** and a
+**Style** (or leave it on *As described* and put the style in your words), and press **Make**. After 5–30 seconds it is in the preview, ready for **Upload**
+or the **Cast** tab like any other picture; a turning picture plays in the preview (pause it with
 the button next to the frame slider). A black background and one bold subject in the
-middle are asked for automatically, because that looks best on the fan.
+middle are asked for automatically, because the fan shows black as transparent; the style is
+up to you.
 
 **From an automation:**
 
@@ -139,7 +141,8 @@ middle are asked for automatically, because that looks best on the fan.
 action: p56_pov.show_ai
 data:
   prompt: a neon jellyfish
-  kind: spin          # still, spin (turning round its own axis) or anim (moving on the spot)
+  kind: spin          # still, or spin (turning round its own axis)
+  art_style: photo    # or 3d, cartoon, anime, painting, watercolor, pixel, neon, line, comic, or your own words
   show_seconds: 60
 ```
 

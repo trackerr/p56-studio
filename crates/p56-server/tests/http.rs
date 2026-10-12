@@ -649,7 +649,7 @@ fn ai_pictures_through_home_assistant() {
     let ha = format!("http://127.0.0.1:{}", fake_home_assistant());
     let s = start_env(false, &[], &[("P56_HA_URL", &ha), ("P56_HA_TOKEN", "test-token")]);
     assert_eq!(s.call("ai_status", json!({})), json!({ "entities": [{ "entity_id": "ai_task.google_ai_task", "name": "Google AI Task" }] }));
-    let still = s.call("ai_image", json!({ "prompt": "a red fox", "kind": "still" }));
+    let still = s.call("ai_image", json!({ "prompt": "a red fox", "kind": "still", "art_style": "photo" }));
     assert_eq!((still["frames"].as_u64(), still["name"].as_str()), (Some(1), Some("ai a red fox")), "{still}");
     let anim = s.call("ai_image", json!({ "prompt": "a red fox", "kind": "anim", "name": "fox" }));
     assert_eq!(anim["frames"], 16, "{anim}");

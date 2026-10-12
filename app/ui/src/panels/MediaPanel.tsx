@@ -6,14 +6,18 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
 import { Choice, RoundView, Section, ValueSlider } from '@/components/bits';
 
 /** Text that moves: a ticker across the middle or round along the rim ('' = still). */
 type Motion = '' | 'scroll' | 'orbit';
-/** An AI picture: still, turned round by the server, or drawn as an animation. */
-type AiKind = 'still' | 'spin' | 'anim';
+/** An AI picture: still, or turned round its own axis by the server. */
+type AiKind = 'still' | 'spin';
+/** Ready-made styles for AI pictures ('free': as the prompt says). */
+const AI_STYLES = ['free', 'photo', '3d', 'cartoon', 'anime', 'painting', 'watercolor', 'pixel', 'neon', 'line', 'comic'] as const;
+type AiStyle = (typeof AI_STYLES)[number];
 import { DEFAULT_PLACEMENT, decodeAudio, decodeVideo, invoke, onEvent, pickMedia, toBase64, type MediaInfo, type Picked, type Preview } from '@/lib/api';
 import { useT, type Key, type TFunc } from '@/lib/i18n';
 import { useP56 } from '@/state';
@@ -94,14 +98,14 @@ export function MediaPanel() {
 
   // AI pictures: only where Home Assistant (with an AI that makes pictures) is behind the server
   const [aiOk, setAiOk] = useState(false);
-  const [ai, setAi] = useState({ prompt: '', kind: 'still' as AiKind });
+  const [ai, setAi] = useState({ prompt: '', kind: 'still' as AiKind, style: 'free' as AiStyle });
   useEffect(() => {
     invoke<{ entities: unknown[] }>('ai_status').then((s) => setAiOk(s.entities.length > 0)).catch(() => setAiOk(false));
   }, []);
   async function makeAi() {
     setBusy({ step: 'ai' });
     try {
-      const m = await invoke<MediaInfo>('ai_image', { prompt: ai.prompt, kind: ai.kind });
+      const m = await invoke<MediaInfo>('ai_image', { prompt: ai.prompt, kind: ai.kind, art_style: ai.style });
       setPicked(null); setMedia(m); setFrame(0); setName(m.name);
       addLog(t('media.logAi', { prompt: ai.prompt }));
     } catch (e) { toast.error(t('media.aiFailed'), { description: String(e) }); }
@@ -304,13 +308,21 @@ export function MediaPanel() {
                 <Input className="min-w-48 flex-1" placeholder={t('media.aiPlaceholder')} aria-label={t('media.ai')} value={ai.prompt} data-testid="ai-prompt" onChange={(e) => setAi({ ...ai, prompt: e.target.value })} />
                 <Button type="submit" variant="secondary" disabled={!ai.prompt.trim() || !!busy} data-testid="ai-make"><IconSparkle />{t('media.aiMake')}</Button>
               </form>
-              <div className="mt-2">
+              <div className="mt-2 flex flex-wrap items-center gap-x-6 gap-y-2">
                 <Choice label={t('media.aiKind')} value={ai.kind} onChange={(kind) => setAi({ ...ai, kind })}
                   options={[
                     { value: 'still', label: t('media.still'), testId: 'ai-still' },
                     { value: 'spin', label: t('media.aiSpin'), testId: 'ai-spin' },
-                    { value: 'anim', label: t('media.aiAnim'), testId: 'ai-anim' },
                   ]} />
+                <div className="flex min-w-48 items-center gap-3">
+                  <span className="orbit-label">{t('media.aiStyle')}</span>
+                  <Select value={ai.style} onValueChange={(style) => setAi({ ...ai, style: style as AiStyle })}>
+                    <SelectTrigger data-testid="ai-style" aria-label={t('media.aiStyle')}><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {AI_STYLES.map((s) => <SelectItem key={s} value={s}>{t(`media.aiStyle_${s}` as Key)}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
               <p className="mt-2 text-xs text-muted-foreground">{t('media.aiHint')}</p>
             </div>
