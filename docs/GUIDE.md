@@ -41,7 +41,7 @@ The round dial is the fan.
 - **Turn the picture**: drag the **outer ring**. The fan turns its picture as you let go.
 - **Brightness**: the **slider** under the dial, from 1 to 16.
 - **Power**, **pause / play** and **refresh** are the round buttons below.
-- On the right (below on a phone): **repeat** the whole list or one file, the **colour mode**,
+- On the right (below on a phone): **repeat** the whole list or one file, the
   breathing light, start automatically at power-on, volume (only on fans with a speaker) and,
   under maintenance, **format** (erases all files) and **factory settings**.
 

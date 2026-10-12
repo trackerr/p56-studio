@@ -9,7 +9,6 @@
     },
     "select": {
       "file": { "default": "mdi:playlist-play" },
-      "color_mode": { "default": "mdi:palette" },
       "repeat": { "default": "mdi:repeat", "state": { "one": "mdi:repeat-once" } }
     },
     "number": {

@@ -41,7 +41,7 @@ are sometimes padded to 5 (Holoscope.exe: `3E`, Holoscope.apk: `00`).
 | 26 | start live cast (Holoscope.exe `samescreen`) | `5A 26 26 F5` → fan answers `5A 29 29 F5`; see §7 |
 | 28 | live cast frame | `5A 28 <jpeg> 00… 55 F5`, always 20480 B |
 | 2A / 2B | group angle alignment start / stop | `5A 2A 2A F5` / `5A 2B 2B F5` |
-| 2C / 2D | colour: true colour / high brightness | `5A 2C 2C F5` / `5A 2D 2D F5` |
+| 2C / 2D | colour: true colour / high brightness | `5A 2C 2C F5` / `5A 2D 2D F5`. On a real P56 switching made no visible difference and the status always reports `colour` 0, so P56 Studio and Home Assistant do not offer it; `p56 color` stays for other models |
 | 80 | delete slot n (1-based) | `5A 80 n n F5` |
 | 81 | brightness 1–16 | `5A 81 v v F5` |
 | 82 | angle 0–360 (Holoscope slider −180…180 + 180) | `5A 82 hi lo hi^lo F5` |
@@ -102,7 +102,7 @@ never send these commands, and the simulator treats them like any other unknown 
 
 `slot` is the playing file **0-based** (0 = the first file), while `SHOW (87 n)`, delete and
 rename count from 1: Holoscope selects list position + 1 and compares the status value with its
-0-based list positions. P56 Studio adds 1 when reading it (confirmed on a real P56). `brightness` 1–16, `colour` 1 = true colour / 2 = high brightness, `angle` 0–360 (180 = neutral),
+0-based list positions. P56 Studio adds 1 when reading it (confirmed on a real P56). `brightness` 1–16, `colour` 1 = true colour / 2 = high brightness (a P56 always reports 0), `angle` 0–360 (180 = neutral),
 `group` = number of the group picture this fan belongs to (1–16, Holoscope ignores larger values),
 `type` = fan type (§6). **Correction:** byte 4 is the brightness and bytes 5–6 the configured angle
 (not "LEDs per arm" and "number of angles"); the flag bits are as above.

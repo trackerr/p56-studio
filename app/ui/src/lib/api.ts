@@ -360,7 +360,7 @@ async function demo(cmd: string, a: any): Promise<unknown> {
         on: () => (s.power = true), off: () => (s.power = false), play: () => { s.playing = true; s.power = true; }, pause: () => (s.playing = false),
         repeat_all: () => (s.repeat_all = true), repeat_one: () => (s.repeat_all = false), breath_on: () => (s.breath = true), breath_off: () => (s.breath = false),
         autostart_on: () => (s.autostart = true), autostart_off: () => (s.autostart = false), master_on: () => (s.master = true), master_off: () => (s.master = false),
-        color_true: () => (s.color_mode = 1), color_bright: () => (s.color_mode = 2), format: () => (demoFan.files = []), reset: () => { s.brightness = 16; s.angle = 0; },
+        format: () => (demoFan.files = []), reset: () => { s.brightness = 16; s.angle = 0; },
         refresh: () => {},
       };
       m[a.action]?.(); st(); return null;

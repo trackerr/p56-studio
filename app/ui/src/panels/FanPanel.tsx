@@ -144,7 +144,6 @@ export function FanPanel() {
         <div className="flex min-w-0 flex-col items-center gap-5">
           <div className="flex flex-wrap justify-center gap-x-8 gap-y-2">
             <Readout label={t('fan.angle')}>{s?.angle ?? 0}°</Readout>
-            <Readout label={t('fan.color')}>{s?.color_mode === 1 ? t('fan.trueColor') : s?.color_mode === 2 ? t('fan.highBrightness') : t('fan.colorNotReported')}</Readout>
             <Readout label={t('fan.repeat')}>{s?.repeat_all === false ? t('fan.repeatOne') : t('fan.repeatAll')}</Readout>
           </div>
 
@@ -216,13 +215,6 @@ export function FanPanel() {
                 options={[
                   { value: 'all', label: t('fan.repeatAll'), testId: 'repeat-all', icon: IconRepeat },
                   { value: 'one', label: t('fan.repeatOne'), testId: 'repeat-one', icon: IconRepeatOne },
-                ]} />
-              <div className="orbit-label pt-3">{t('fan.color')}</div>
-              <Choice label={t('fan.colorMode')} value={s?.color_mode === 1 ? 'true' : s?.color_mode === 2 ? 'bright' : ''}
-                onChange={(v) => run(t('fan.colorMode'), (i) => control(i, v === 'true' ? 'color_true' : 'color_bright'))}
-                options={[
-                  { value: 'true', label: t('fan.trueColor'), testId: 'color-true' },
-                  { value: 'bright', label: t('fan.highBrightness'), testId: 'color-bright' },
                 ]} />
             </div>
           </Section>

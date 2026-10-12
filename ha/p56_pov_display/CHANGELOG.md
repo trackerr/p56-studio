@@ -7,6 +7,10 @@
   server no longer accepts the Bluetooth commands. On the P56, Wi-Fi and Bluetooth share one
   radio: with a Bluetooth receiver connected, the fan could no longer rejoin the home Wi-Fi and
   kept showing its own hotspot. Do not pair a Bluetooth speaker to the fan. The volume still works.
+- **Colour mode**: the `select.<fan>_colour_mode` entity is gone, and the P56 POV panel no longer
+  shows the colour readout or the colour choice. On a real P56, switching between true colour
+  and high brightness made no visible difference, and the fan never reports which mode it is in.
+  Remove the entity from dashboards or automations that still use it.
 
 ## 2.1.13
 

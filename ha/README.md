@@ -22,7 +22,7 @@ hologram fan, straight from Home Assistant. Local, no vendor app, no cloud.**
 
 | | |
 | --- | --- |
-| 💡 **Control** | On/off and brightness as a light, play/pause, playlist, repeat, picture angle, colour mode |
+| 💡 **Control** | On/off and brightness as a light, play/pause, playlist, repeat, picture angle |
 | 📝 **Text** | A text field on your dashboard, or the `p56_pov.show_text` action, sized automatically to fit the round display |
 | 🔔 **Notifications** | `notify.send_message` shows a message for 15 seconds, then the playlist resumes |
 | 🎨 **Styles & icons** | Ready-made looks (alert, warning, info, success, price, clock) with a ring along the rim, any Home Assistant icon, and a text colour that follows a value (green → red) |
@@ -98,7 +98,7 @@ For each fan (example names for a fan called *P56*):
 | `notify.p56_message` | Notifications, shown for a while |
 | `image.p56_shown` | What Home Assistant last sent to the fan |
 | `sensor.p56_playing_file`, `sensor.p56_files` | Current file, number of files |
-| `number.p56_picture_angle`, `select.p56_colour_mode` | Settings |
+| `number.p56_picture_angle` | Settings |
 
 Plus `sensor.p56_server_connected_fans` (0 means no fan is connected).
 

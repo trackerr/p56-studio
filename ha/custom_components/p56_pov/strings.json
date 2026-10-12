@@ -117,13 +117,6 @@
       "file": {
         "name": "File"
       },
-      "color_mode": {
-        "name": "Colour mode",
-        "state": {
-          "true_color": "True colour",
-          "high_brightness": "High brightness"
-        }
-      },
       "repeat": {
         "name": "Repeat",
         "state": {

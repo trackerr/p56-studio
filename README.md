@@ -33,7 +33,7 @@ Local, fast, no account, no cloud.
 
 **Full control**<br>
 The fan is drawn as a dial: drag the outer ring to turn the picture; brightness (16 steps) is the
-slider below it. Plus power, play/pause, colour mode, repeat, breathing light, autostart, group master,
+slider below it. Plus power, play/pause, repeat, breathing light, autostart, group master,
 volume, rename, delete, format and factory reset.
 
 **Upload anything**<br>

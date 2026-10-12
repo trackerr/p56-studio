@@ -14,6 +14,10 @@ The Home Assistant add-on and integration have their own changelog in
   Bluetooth audio receiver connected, the fan could no longer rejoin the home Wi-Fi and kept
   falling back to its own hotspot until Bluetooth was switched off. The volume slider still
   works: the fan's `8F` report is still read for the speaker volume.
+- **Colour mode** (true colour / high brightness): P56 Studio no longer shows the colour readout
+  or the colour choice on the Fan tab. Reason: on a real P56, switching it made no visible
+  difference, and the fan never reports which mode it is in (it sends 0). The `color_true` and
+  `color_bright` commands and `p56 color` stay, for fan models that may use it.
 
 ## 0.3.13 — 2026-10-12
 

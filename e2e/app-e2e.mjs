@@ -231,9 +231,7 @@ async function main() {
     if (!shown.includes('180°')) throw new Error('UI does not show the angle back: ' + shown);
   });
 
-  await test('color, repeat, breathing light, autostart, master', async () => {
-    await js(`$click('color-true')`); await waitSim('true color', (s) => s.color_mode === 1);
-    await sleep(300); await js(`$click('color-bright')`); await waitSim('high brightness', (s) => s.color_mode === 2);
+  await test('repeat, breathing light, autostart, master', async () => {
     await js(`$click('repeat-one')`); await waitSim('repeat current', (s) => !s.repeat_all);
     await sleep(300); await js(`$click('repeat-all')`); await waitSim('repeat all', (s) => s.repeat_all);
     await js(`$click('sw-breath')`); await waitSim('breathing light on', (s) => s.breath);

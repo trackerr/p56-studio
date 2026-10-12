@@ -117,13 +117,6 @@
       "file": {
         "name": "Bestand"
       },
-      "color_mode": {
-        "name": "Kleurmodus",
-        "state": {
-          "true_color": "Ware kleuren",
-          "high_brightness": "Extra helder"
-        }
-      },
       "repeat": {
         "name": "Herhalen",
         "state": {

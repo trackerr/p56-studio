@@ -1,9 +1,8 @@
-"""Choose the file to play, the colour mode and the repeat mode."""
+"""Choose the file to play and the repeat mode."""
 
 from __future__ import annotations
 
 from homeassistant.components.select import SelectEntity
-from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
@@ -11,9 +10,6 @@ from .coordinator import P56ConfigEntry
 from .entity import P56FanEntity, add_fan_entities
 
 PARALLEL_UPDATES = 1
-
-COLOR_MODES = {1: "true_color", 2: "high_brightness"}
-COLOR_ACTIONS = {"true_color": "color_true", "high_brightness": "color_bright"}
 
 
 async def async_setup_entry(
@@ -23,7 +19,7 @@ async def async_setup_entry(
     add_fan_entities(
         coordinator,
         async_add_entities,
-        lambda mac: [P56FileSelect(coordinator, mac), P56ColorSelect(coordinator, mac), P56RepeatSelect(coordinator, mac)],
+        lambda mac: [P56FileSelect(coordinator, mac), P56RepeatSelect(coordinator, mac)],
     )
 
 
@@ -48,21 +44,6 @@ class P56FileSelect(P56FanEntity, SelectEntity):
         slot = next((s for s, n in fan.files if n == option), None)
         if slot is not None:
             await self._set("select", slot)
-
-
-class P56ColorSelect(P56FanEntity, SelectEntity):
-    _attr_entity_category = EntityCategory.CONFIG
-    _attr_options = list(COLOR_ACTIONS)
-
-    def __init__(self, coordinator, mac: str) -> None:
-        super().__init__(coordinator, mac, "color_mode")
-
-    @property
-    def current_option(self) -> str | None:
-        return COLOR_MODES.get(self.status.get("color_mode"))
-
-    async def async_select_option(self, option: str) -> None:
-        await self._control(COLOR_ACTIONS[option])
 
 
 class P56RepeatSelect(P56FanEntity, SelectEntity):

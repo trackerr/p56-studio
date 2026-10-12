@@ -65,7 +65,7 @@ Add it, and every fan that connects becomes a device:
 | `light.<fan>` | Picture on/off and brightness (16 steps) |
 | `switch.<fan>_playing` | Play / pause |
 | `select.<fan>_file` | What plays (the playlist) |
-| `select.<fan>_repeat`, `select.<fan>_colour_mode` | Repeat all/one, true colour/high brightness |
+| `select.<fan>_repeat` | Repeat all files or one |
 | `number.<fan>_picture_angle` | Rotate the picture (−180 … 180°) |
 | `text.<fan>_text` | Type a text: the fan shows it (replaces its previous text) |
 | `notify.<fan>_message` | Notifications, shown for a while (option, default 15 s), then the playlist resumes |
