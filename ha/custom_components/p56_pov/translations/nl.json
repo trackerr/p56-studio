@@ -412,7 +412,7 @@
         },
         "icon": {
           "name": "Icoon",
-          "description": "Icoon boven de tekst, bijvoorbeeld mdi:flash."
+          "description": "Icoon boven de tekst, bijvoorbeeld mdi:flash. Vervalt als de AI een achtergrond maakt (alleen tekst)."
         },
         "value": {
           "name": "Waarde",

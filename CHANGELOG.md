@@ -4,6 +4,11 @@ P56 Studio (Windows, Linux, Android), `p56` (CLI), `p56-sim` and `p56-server`.
 The Home Assistant add-on and integration have their own changelog in
 [`ha/p56_pov_display/CHANGELOG.md`](ha/p56_pov_display/CHANGELOG.md).
 
+## 0.3.18 — 2026-10-12
+
+### Changed
+- `show_ai` with `text`: over the AI background only the text is shown; an `icon` is left out.
+
 ## 0.3.17 — 2026-10-12
 
 ### Added

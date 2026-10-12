@@ -412,7 +412,7 @@
         },
         "icon": {
           "name": "Icon",
-          "description": "Icon above the text, e.g. mdi:flash."
+          "description": "Icon above the text, e.g. mdi:flash. Left out when the AI makes a background (text only)."
         },
         "value": {
           "name": "Value",

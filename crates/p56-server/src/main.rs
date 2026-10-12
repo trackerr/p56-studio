@@ -507,6 +507,10 @@ fn ai_call(svc: &Arc<Service>, cmd: &str, args: &Value, base: &str, token: &str)
     let jpeg = |img: &image::RgbImage| base64::engine::general_purpose::STANDARD.encode(p56_core::transcode::jpeg(img, 92));
     if text {
         o.insert("backdrop".into(), json!(jpeg(&images[0])));
+        // over an AI picture only the text: an icon would be one picture too many
+        if o.get("text").and_then(|t| t.as_str()).is_some_and(|t| !t.trim().is_empty()) {
+            o.remove("icon");
+        }
     } else {
         for k in ["text", "icon", "style"] {
             o.remove(k);

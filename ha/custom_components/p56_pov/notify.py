@@ -6,7 +6,7 @@ from homeassistant.components.notify import NotifyEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .const import CONF_NOTIFY_SECONDS, DEFAULT_NOTIFY_SECONDS, NOTIFY_FILE_NAME
+from .const import CONF_NOTIFY_SECONDS, DEFAULT_NOTIFY_SECONDS, NOTIFY_FILE_NAME, NOTIFY_ICON
 from .coordinator import P56ConfigEntry
 from .entity import P56FanEntity, add_fan_entities, run_command
 from .show import text_payload
@@ -30,6 +30,7 @@ class P56Notify(P56FanEntity, NotifyEntity):
         opts = self.coordinator.config_entry.options
         payload = text_payload(opts, text)
         payload.update(
+            icon=NOTIFY_ICON,
             mac=self.mac,
             name=NOTIFY_FILE_NAME,
             show_seconds=opts.get(CONF_NOTIFY_SECONDS, DEFAULT_NOTIFY_SECONDS),

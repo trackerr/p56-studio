@@ -173,7 +173,9 @@ first one that can make pictures is used. The panel's Media tab has the same as 
 with plain http on the same machine, where the add-on fetches the finished picture.
 
 With `text` (or `icon`), the AI makes a **background** instead: calm and dark in the middle,
-the theme around the edge in a few simple, bold shapes (not busy, so the text stands out). The text is then written over it by the add-on, sharp and with a
+the theme around the edge in a few simple, bold shapes (not busy, so the text stands out).
+Over an AI background only the text is shown; an `icon` is left out (without AI, `show_text`
+shows icon and text). The text is then written over it by the add-on, sharp and with a
 dark edge, with the same `color`, `icon`, `font_size` and `value` / `value_min` / `value_max`
 as `show_text`. The same prompt again reuses the picture made before (the last 8 are kept
 while the add-on runs), so an automation that updates a price every quarter of an hour pays

@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.1.18
+
+p56-server 0.3.18.
+
+- A notification (`notify`) shows a bell above its text.
+- Over an AI background (`p56_pov.show_ai` with `text`) only the text is shown, no icon.
+
 ## 2.1.17
 
 p56-server 0.3.17.

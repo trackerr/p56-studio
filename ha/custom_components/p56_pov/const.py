@@ -30,6 +30,8 @@ STYLES: Final = ["alert", "warning", "info", "success", "price", "clock"]
 # Name the text entity and notify use on the fan, so they replace their previous message.
 TEXT_FILE_NAME: Final = "ha_tekst"
 NOTIFY_FILE_NAME: Final = "ha_melding"
+# A notification shows a bell above its text.
+NOTIFY_ICON: Final = "mdi:bell-ring"
 
 # Server events after which the state is fetched again.
 REFRESH_EVENTS: Final = {
