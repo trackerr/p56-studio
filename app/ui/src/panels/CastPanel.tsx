@@ -25,7 +25,8 @@ export function CastPanel() {
   const { devices, media, placement, platform, addLog } = useP56();
   const { t } = useT();
   const [src, setSrc] = useState<Src>('test');
-  const [fps, setFps] = useState(15);
+  // 25 looked smoother than 15 or 20 on a real P56, and the network keeps up (measured)
+  const [fps, setFps] = useState(25);
   const [running, setRunning] = useState(false);
   const [stats, setStats] = useState<{ fps: number; fans: number; jpeg: number; q: number } | null>(null);
   const [pv, setPv] = useState<string | null>(null);

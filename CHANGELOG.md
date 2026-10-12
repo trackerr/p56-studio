@@ -4,6 +4,12 @@ P56 Studio (Windows, Linux, Android), `p56` (CLI), `p56-sim` and `p56-server`.
 The Home Assistant add-on and integration have their own changelog in
 [`ha/p56_pov_display/CHANGELOG.md`](ha/p56_pov_display/CHANGELOG.md).
 
+## Unreleased
+
+### Changed
+- Live cast runs at **25 frames per second** by default (was 15): on a real P56 it looks
+  smoother than 15 or 20, and casting through Home Assistant keeps up.
+
 ## 0.3.7 — 2026-10-12
 
 ### Added

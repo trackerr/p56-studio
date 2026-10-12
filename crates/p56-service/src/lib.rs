@@ -1043,7 +1043,7 @@ impl Service {
     /// Backend-driven cast: "test", "screen" (desktop) or "media:<id>".
     fn cast_start(self: &Arc<Self>, a: Value) -> Result<(), String> {
         let source: String = need(&a, "source")?;
-        let fps: f64 = arg(&a, "fps").unwrap_or(15.0);
+        let fps: f64 = arg(&a, "fps").unwrap_or(25.0);
         let pl: Placement = arg::<PlacementDto>(&a, "placement").unwrap_or_default().into();
         let l = self.link()?;
         let ft = self.fan_type_for(None)?;

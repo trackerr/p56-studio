@@ -42,7 +42,7 @@ and sized to fit the round display.
 
 **Live cast**<br>
 Stream a test card, your media (photos, GIFs, videos), your **camera**, your **screen** or, in
-Home Assistant, any **camera entity** to one or more fans at ~15 fps, with nothing stored on the fan.
+Home Assistant, any **camera entity** to one or more fans at up to 25 fps, with nothing stored on the fan.
 
 </td>
 <td width="50%" valign="top">
