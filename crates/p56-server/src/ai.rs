@@ -29,6 +29,8 @@ pub enum Kind {
     Spin,
     /// 16 frames drawn by the AI (a sprite sheet).
     Anim,
+    /// A background for text written over it (`show_ai` with `text`): calm and dark in the middle.
+    Backdrop,
 }
 
 impl Kind {
@@ -55,6 +57,13 @@ pub fn instructions(prompt: &str, kind: Kind) -> String {
     match kind {
         Kind::Still => format!("A square image {LOOK}\nSubject: {prompt}"),
         Kind::Spin => format!("A square image, the subject seen straight from the front, {LOOK}\nSubject: {prompt}"),
+        Kind::Backdrop => format!(
+            "A square background picture made for a round holographic fan display (a spinning LED blade: black \
+             shows as transparent, only bright pixels are seen). Large text will be written over its middle, so \
+             the middle stays dark and calm; the theme is shown by bright shapes and colours around the edge, like \
+             a ring or a frame. Pure black elsewhere, up to every edge of the image, no white margin, no text, \
+             letters or numbers.\nTheme: {prompt}"
+        ),
         Kind::Anim => format!(
             "A square sprite sheet that fills the whole image on pure black, with no white or coloured margin, \
              frame or border around it: a {SHEET} by {SHEET} grid of {} equal square cells with a little black space \
@@ -85,8 +94,14 @@ pub fn entities(base: &str, token: &str) -> Result<Vec<Value>, String> {
         .collect())
 }
 
-/// Ask the AI for a picture and turn it into frames for the fan: (pictures, ms per frame).
-pub fn generate(base: &str, token: &str, entity: Option<&str>, prompt: &str, kind: Kind) -> Result<(Vec<RgbImage>, u32), String> {
+/// Pictures made before, by entity and instructions: an automation that shows the same prompt
+/// again (e.g. a price background every quarter of an hour) does not pay for a new picture.
+static MADE: std::sync::Mutex<Vec<(String, Vec<RgbImage>, u32)>> = std::sync::Mutex::new(Vec::new());
+const MADE_KEPT: usize = 8;
+
+/// Ask the AI for a picture and turn it into frames for the fan: (pictures, ms per frame). The
+/// same prompt again gives the same picture, unless `fresh`.
+pub fn generate(base: &str, token: &str, entity: Option<&str>, prompt: &str, kind: Kind, fresh: bool) -> Result<(Vec<RgbImage>, u32), String> {
     if prompt.trim().is_empty() {
         return Err("describe the picture first".into());
     }
@@ -98,6 +113,13 @@ pub fn generate(base: &str, token: &str, entity: Option<&str>, prompt: &str, kin
             .and_then(|e| e["entity_id"].as_str().map(String::from))
             .ok_or("no AI in Home Assistant can make pictures: add one (e.g. Google Generative AI) and its AI Task")?,
     };
+    let key = format!("{entity}\n{}", instructions(prompt, kind));
+    if !fresh {
+        if let Some((_, images, ms)) = MADE.lock().unwrap().iter().find(|(k, _, _)| *k == key) {
+            log::info!("AI picture from {entity}: made before");
+            return Ok((images.clone(), *ms));
+        }
+    }
     let body = json!({ "task_name": "P56 picture", "entity_id": entity, "instructions": instructions(prompt, kind) });
     let url = format!("{base}/services/ai_task/generate_image?return_response");
     let (code, answer) =
@@ -113,8 +135,8 @@ pub fn generate(base: &str, token: &str, entity: Option<&str>, prompt: &str, kin
     let mut img = transcode::decode_rgb(&bytes).map_err(|e| format!("cannot read the AI's picture: {e}"))?;
     blacken_background(&mut img);
     log::info!("AI picture from {entity}: {}×{}", img.width(), img.height());
-    Ok(match kind {
-        Kind::Still => (vec![transcode::fit(img, p56_service::MAX_SIDE)], 0),
+    let made = match kind {
+        Kind::Still | Kind::Backdrop => (vec![transcode::fit(img, p56_service::MAX_SIDE)], 0),
         Kind::Spin => {
             // turned round the middle of the object itself, not of the picture
             let sq = square(img, 480);
@@ -122,7 +144,14 @@ pub fn generate(base: &str, token: &str, entity: Option<&str>, prompt: &str, kin
             (turntable(&centred, SPIN_FRAMES), SPIN_MS)
         }
         Kind::Anim => (sheet(&img, SHEET), SHEET_MS),
-    })
+    };
+    let mut kept = MADE.lock().unwrap();
+    kept.retain(|(k, _, _)| *k != key);
+    if kept.len() >= MADE_KEPT {
+        kept.remove(0);
+    }
+    kept.push((key, made.0.clone(), made.1));
+    Ok(made)
 }
 
 /// The picture behind the AI's (signed) URL. Home Assistant serves it outside its REST API, so

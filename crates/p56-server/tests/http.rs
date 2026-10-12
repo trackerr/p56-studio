@@ -556,8 +556,15 @@ fn casting_turns_the_fan_on() {
 
 /// A stand-in for Home Assistant's REST API: two entities, one camera that needs the token.
 fn fake_home_assistant() -> u16 {
+    fake_home_assistant_counting().0
+}
+
+/// The fake Home Assistant, and how many pictures its AI made.
+fn fake_home_assistant_counting() -> (u16, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
     let srv = tiny_http::Server::http("127.0.0.1:0").unwrap();
     let port = srv.server_addr().to_ip().unwrap().port();
+    let made = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let count = made.clone();
     std::thread::spawn(move || {
         for mut req in srv.incoming_requests() {
             let authed = req.headers().iter().any(|h| h.field.equiv("Authorization") && h.value.as_str() == "Bearer test-token");
@@ -579,8 +586,11 @@ fn fake_home_assistant() -> u16 {
                 (true, "/services/ai_task/generate_image?return_response") => {
                     let b: Value = serde_json::from_str(&body).unwrap_or(Value::Null);
                     let ok = b["entity_id"] == "ai_task.google_ai_task"
-                        && b["instructions"].as_str().is_some_and(|i| i.contains("black") && i.contains("Subject: a red fox"));
+                        && b["instructions"]
+                            .as_str()
+                            .is_some_and(|i| i.contains("black") && (i.contains("Subject: a red fox") || i.contains("Theme: cheap power")));
                     if ok {
+                        count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                         tiny_http::Response::from_data(
                             serde_json::to_vec(&json!({ "changed_states": [], "service_response": { "url": "/ai_task/image/p56.png?authSig=signed", "width": 400, "height": 400 } })).unwrap(),
                         )
@@ -594,7 +604,7 @@ fn fake_home_assistant() -> u16 {
             let _ = req.respond(r);
         }
     });
-    port
+    (port, made)
 }
 
 /// In the add-on the server lists Home Assistant's cameras and casts one of them; outside Home
@@ -656,6 +666,31 @@ fn ai_pictures_through_home_assistant() {
     let r = s.call("show_ai", json!({ "prompt": "a red fox", "kind": "anim", "name": "fox" }));
     assert_eq!(r["success"], true, "{r}");
     assert!(fan.state().files.iter().any(|f| f.name == "fox.mp4"), "{:?}", fan.state().files);
+    assert!(fan.state().protocol_errors.is_empty(), "{:?}", fan.state().protocol_errors);
+}
+
+/// Text over a background the AI made (e.g. a price), and the same prompt again reuses that
+/// background instead of paying for a new one, unless `fresh`.
+#[test]
+fn ai_background_behind_text_is_made_once() {
+    let (port, made) = fake_home_assistant_counting();
+    let ha = format!("http://127.0.0.1:{port}");
+    let s = start_env(false, &[], &[("P56_HA_URL", &ha), ("P56_HA_TOKEN", "test-token")]);
+    let pc = std::net::SocketAddr::from((Ipv4Addr::LOCALHOST, s.tcp));
+    let fan = p56_sim::Sim::start(p56_sim::SimConfig { name: "FAN".into(), udp_port: 0, pc: Some(pc), ..Default::default() }).unwrap();
+    s.wait("fan", |v| v["devices"].as_array().is_some_and(|d| d.len() == 1 && d[0]["status"].is_object()));
+    let made = || made.load(std::sync::atomic::Ordering::SeqCst);
+    for (price, fresh, total) in [("0.21", false, 1), ("0.23", false, 1), ("0.25", true, 2)] {
+        let text = format!("€ {price}");
+        let r = s.call("show_ai", json!({ "prompt": "cheap power", "text": text, "name": "price", "mode": "cast", "show_seconds": 1, "fresh": fresh }));
+        assert_eq!(r["success"], true, "{r}");
+        assert_eq!(made(), total, "{price}: pictures made");
+    }
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while fan.state().cast_ok == 0 {
+        assert!(Instant::now() < deadline, "nothing was cast");
+        std::thread::sleep(Duration::from_millis(100));
+    }
     assert!(fan.state().protocol_errors.is_empty(), "{:?}", fan.state().protocol_errors);
 }
 

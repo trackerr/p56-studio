@@ -81,6 +81,16 @@ SHOW_AI_SCHEMA = vol.Schema(
         vol.Required("prompt"): vol.All(cv.string, vol.Length(min=1, max=1000)),
         vol.Optional("kind"): vol.In(AI_KINDS),
         vol.Optional("entity_id"): cv.entity_domain("ai_task"),
+        vol.Optional("fresh"): cv.boolean,
+        # text over the AI's background (then the AI makes a background, not a subject)
+        vol.Optional("text"): vol.All(cv.string, vol.Length(max=300)),
+        vol.Optional("color"): COLOR,
+        vol.Optional("font_size"): vol.All(vol.Coerce(float), vol.Range(min=0, max=400)),
+        vol.Optional("icon"): cv.string,
+        vol.Optional("value"): vol.Coerce(float),
+        vol.Optional("value_min"): vol.Coerce(float),
+        vol.Optional("value_max"): vol.Coerce(float),
+        vol.Optional("invert_colors"): cv.boolean,
     }
 )
 
@@ -158,20 +168,25 @@ async def _show_text(call: ServiceCall) -> ServiceResponse:
         if key in data:
             payload[key] = color_value(data[key])
     if "value" in data:
-        if "value_min" not in data or "value_max" not in data:
-            raise ServiceValidationError(translation_domain=DOMAIN, translation_key="value_needs_range")
-        payload["color_scale"] = {
-            "value": data["value"],
-            "min": data["value_min"],
-            "max": data["value_max"],
-            "invert": data.get("invert_colors", False),
-        }
+        payload["color_scale"] = _color_scale(data)
     if "icon_color" in data:
         payload["icon_color"] = color_value(data["icon_color"])
     for key in ("icon", "style", "ring", "font_size", "show_seconds", "mode", "name"):
         if key in data:
             payload[key] = data[key]
     return await _show(call, payload, default_colors=not style)
+
+
+def _color_scale(data: dict[str, Any]) -> dict[str, Any]:
+    """Text colour from `value` between `value_min` (green) and `value_max` (red)."""
+    if "value_min" not in data or "value_max" not in data:
+        raise ServiceValidationError(translation_domain=DOMAIN, translation_key="value_needs_range")
+    return {
+        "value": data["value"],
+        "min": data["value_min"],
+        "max": data["value_max"],
+        "invert": data.get("invert_colors", False),
+    }
 
 
 async def _show_image(call: ServiceCall) -> ServiceResponse:
@@ -198,7 +213,12 @@ async def _show_image(call: ServiceCall) -> ServiceResponse:
 
 
 async def _show_ai(call: ServiceCall) -> ServiceResponse:
-    payload = {k: call.data[k] for k in ("prompt", "kind", "entity_id", "show_seconds", "mode", "name") if k in call.data}
+    keys = ("prompt", "kind", "entity_id", "fresh", "text", "icon", "font_size", "show_seconds", "mode", "name")
+    payload = {k: call.data[k] for k in keys if k in call.data}
+    if "color" in call.data:
+        payload["color"] = color_value(call.data["color"])
+    if "value" in call.data:
+        payload["color_scale"] = _color_scale(call.data)
     return await _show(call, payload, ai=True)
 
 

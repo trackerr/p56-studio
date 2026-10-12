@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.1.11
+
+p56-server 0.3.11.
+
+- **Text over an AI background**: `p56_pov.show_ai` with `text` (for example the electricity
+  price) has the AI draw a background and writes the text over it, sharp and readable, with the
+  colour-by-value fields of `show_text`. The same prompt reuses the background made before, so
+  frequent updates do not cost a new picture each time.
+
 ## 2.1.10
 
 p56-server 0.3.10.

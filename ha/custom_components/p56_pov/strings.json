@@ -373,6 +373,42 @@
           "name": "AI Task",
           "description": "Which AI makes the picture (empty: the first one that can)."
         },
+        "text": {
+          "name": "Text",
+          "description": "Text written over the picture, e.g. a price. The AI then makes a background with a calm middle instead of a subject."
+        },
+        "color": {
+          "name": "Text colour",
+          "description": "Colour of the text (a name, #rrggbb or r,g,b)."
+        },
+        "icon": {
+          "name": "Icon",
+          "description": "Icon above the text, e.g. mdi:flash."
+        },
+        "value": {
+          "name": "Value",
+          "description": "Colour the text by this value: green at the minimum, red at the maximum."
+        },
+        "value_min": {
+          "name": "Minimum",
+          "description": "Value that is green."
+        },
+        "value_max": {
+          "name": "Maximum",
+          "description": "Value that is red."
+        },
+        "invert_colors": {
+          "name": "Reverse colours",
+          "description": "Red at the minimum and green at the maximum."
+        },
+        "font_size": {
+          "name": "Font size",
+          "description": "Largest letter size in pixels (0: as large as fits)."
+        },
+        "fresh": {
+          "name": "New picture",
+          "description": "Always have a new picture made; otherwise the same prompt reuses the picture made before (saves cost)."
+        },
         "show_seconds": {
           "name": "Duration",
           "description": "Remove again after this many seconds (0: keep)."

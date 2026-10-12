@@ -465,14 +465,19 @@ fn ha_call(svc: &Arc<Service>, cmd: &str, args: &Value) -> Option<Result<Value, 
 /// AI pictures through Home Assistant's AI Task:
 /// - `ai_status`: the AI Task entities that can make pictures (empty: none set up);
 /// - `ai_image` {prompt, kind, entity_id?, name?}: a new media item (for the app's Media panel);
-/// - `show_ai` {prompt, kind, entity_id?, …the fields of /api/show}: straight onto the fans.
+/// - `show_ai` {prompt, kind, entity_id?, …the fields of /api/show}: straight onto the fans; with
+///   `text` (or `icon`) the AI makes a background and the text is written over it.
+///
+/// The same prompt again reuses the picture made before, unless `fresh` is true.
 fn ai_call(svc: &Arc<Service>, cmd: &str, args: &Value, base: &str, token: &str) -> Result<Value, String> {
     if cmd == "ai_status" {
         return ai::entities(base, token).map(|e| json!({ "entities": e }));
     }
     let prompt = args["prompt"].as_str().unwrap_or_default();
-    let kind = ai::Kind::parse(args["kind"].as_str().unwrap_or_default())?;
-    let (images, ms) = ai::generate(base, token, args["entity_id"].as_str(), prompt, kind)?;
+    let text = cmd == "show_ai" && ["text", "icon"].iter().any(|k| args[k].as_str().is_some_and(|s| !s.trim().is_empty()));
+    let kind = if text { ai::Kind::Backdrop } else { ai::Kind::parse(args["kind"].as_str().unwrap_or_default())? };
+    let fresh = args["fresh"].as_bool().unwrap_or(false);
+    let (images, ms) = ai::generate(base, token, args["entity_id"].as_str(), prompt, kind, fresh)?;
     // a name for the fan from the prompt's first words
     let words: String = prompt.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { ' ' }).collect();
     let default_name = format!("ai {}", words.split_whitespace().collect::<Vec<_>>().join(" ")).chars().take(24).collect::<String>().trim().to_string();
@@ -482,14 +487,21 @@ fn ai_call(svc: &Arc<Service>, cmd: &str, args: &Value, base: &str, token: &str)
     }
     let mut req = args.clone();
     let o = req.as_object_mut().ok_or("expected an object")?;
-    for k in ["prompt", "kind", "entity_id", "text", "data", "path", "image", "icon", "style"] {
+    for k in ["prompt", "kind", "entity_id", "fresh", "data", "path", "image", "frames", "backdrop"] {
         o.remove(k);
     }
     o.entry("name").or_insert(json!(name));
-    let jpegs = images.iter().map(|img| base64::engine::general_purpose::STANDARD.encode(p56_core::transcode::jpeg(img, 92))).collect::<Vec<_>>();
-    o.insert("frames".into(), json!(jpegs));
-    if ms > 0 {
-        o.insert("frame_ms".into(), json!(ms));
+    let jpeg = |img: &image::RgbImage| base64::engine::general_purpose::STANDARD.encode(p56_core::transcode::jpeg(img, 92));
+    if text {
+        o.insert("backdrop".into(), json!(jpeg(&images[0])));
+    } else {
+        for k in ["text", "icon", "style"] {
+            o.remove(k);
+        }
+        o.insert("frames".into(), json!(images.iter().map(jpeg).collect::<Vec<_>>()));
+        if ms > 0 {
+            o.insert("frame_ms".into(), json!(ms));
+        }
     }
     let r: ShowRequest = serde_json::from_value(req).map_err(|e| e.to_string())?;
     svc.show(r)

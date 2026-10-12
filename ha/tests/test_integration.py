@@ -344,6 +344,18 @@ async def test_show_ai_goes_to_the_server(hass: HomeAssistant, p56_server, monke
     assert args["prompt"] == "a red fox" and args["kind"] == "anim" and args["show_seconds"] == 5
     with pytest.raises(Exception, match="kind"):
         await hass.services.async_call(DOMAIN, "show_ai", {"prompt": "fox", "kind": "video"}, blocking=True)
+    # text over the AI's background: the price colour comes along as a colour scale
+    with pytest.raises(HomeAssistantError):
+        await hass.services.async_call(
+            DOMAIN,
+            "show_ai",
+            {"prompt": "cheap power", "text": "€ 0.21", "value": 0.21, "value_min": 0.1, "value_max": 0.4, "fresh": True},
+            blocking=True,
+            return_response=True,
+        )
+    cmd, args = sent[-1]
+    assert args["text"] == "€ 0.21" and args["fresh"] is True
+    assert args["color_scale"] == {"value": 0.21, "min": 0.1, "max": 0.4, "invert": False}
 
 
 def test_video_helpers() -> None:

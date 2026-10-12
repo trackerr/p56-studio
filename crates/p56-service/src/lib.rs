@@ -306,6 +306,10 @@ pub struct ShowRequest {
     /// Move the other way: left to right / anticlockwise.
     #[serde(default)]
     pub reverse: Option<bool>,
+    /// A picture (base64) behind `text` / `icon`, e.g. a background an AI made; the text is drawn
+    /// over it with a dark edge so it stays readable.
+    #[serde(default)]
+    pub backdrop: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -1276,6 +1280,14 @@ impl Service {
             let fr = transcode::decode_frames(&bytes, max_frames).map_err(|e| format!("cannot read image: {e}"))?;
             let ms = r.frame_ms.unwrap_or_else(|| fr.first().map(|(_, d)| *d as u64).filter(|d| *d > 0).unwrap_or(100));
             (fr.into_iter().map(|(img, _)| transcode::fit(img, MAX_SIDE)).collect(), ms)
+        };
+        // text over a picture
+        let images = match r.backdrop.as_deref().filter(|b| !b.is_empty() && (has_text || has_icon)) {
+            Some(b) => {
+                let (picture, bg) = (decode_source(&b64(b)?)?, card_for(&r)?.bg);
+                images.iter().map(|img| text::over_backdrop(img, &picture, bg)).collect()
+            }
+            None => images,
         };
         let pl: Placement = r.placement.unwrap_or_default().into();
         let secs = r.show_seconds.unwrap_or(0.0).max(0.0);

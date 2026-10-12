@@ -148,6 +148,24 @@ first one that can make pictures is used. The panel's Media tab has the same as 
 **AI picture** box. It needs `homeassistant_api` (on by default) and Home Assistant on port 8123
 with plain http on the same machine, where the add-on fetches the finished picture.
 
+With `text` (or `icon`), the AI makes a **background** instead: calm and dark in the middle,
+the theme around the edge. The text is then written over it by the add-on, sharp and with a
+dark edge, with the same `color`, `icon`, `font_size` and `value` / `value_min` / `value_max`
+as `show_text`. The same prompt again reuses the picture made before (the last 8 are kept
+while the add-on runs), so an automation that updates a price every quarter of an hour pays
+for a background only when its prompt changes; `fresh: true` always makes a new one.
+
+```yaml
+action: p56_pov.show_ai
+data:
+  prompt: >
+    {{ 'sunny green energy' if states('sensor.electricity_price') | float < 0.25 else 'red warning, expensive power' }}
+  text: "€ {{ states('sensor.electricity_price') }}"
+  value: "{{ states('sensor.electricity_price') }}"
+  value_min: 0.1
+  value_max: 0.4
+```
+
 `p56_pov.play_file` and `p56_pov.delete_file` take a device and a `slot` or `name`.
 `show_text` and `show_image` return the result (slot, file name) as a response.
 

@@ -162,7 +162,7 @@ data:
 | --- | --- |
 | `p56_pov.show_text` | `text`, `style`, `icon`, `value` + `value_min` + `value_max`, `color`, `background`, `icon_color`, `ring`, `font_size`, `show_seconds`, `mode`, `name`, `device_id` |
 | `p56_pov.show_image` | one of `path` / `url` / `camera` / `media` (pictures, GIFs, videos), plus `show_seconds`, `mode`, `name`, `fps`, `max_frames`, `scale`, `x_offset`, `y_offset`, `mirror`, `device_id` |
-| `p56_pov.show_ai` | `prompt`, plus `kind` (`still` / `spin` / `anim`), `entity_id` (an AI Task; default the first that makes pictures), `show_seconds`, `mode`, `name`, `device_id` |
+| `p56_pov.show_ai` | `prompt`, plus `kind` (`still` / `spin` / `anim`), `entity_id` (an AI Task; default the first that makes pictures), `text` (written over an AI background, with `color`, `icon`, `font_size`, `value` + `value_min` + `value_max`), `fresh`, `show_seconds`, `mode`, `name`, `device_id` |
 | `p56_pov.play_file` | `device_id` and `slot` or `name` |
 | `p56_pov.delete_file` | `device_id` and `slot` or `name` |
 

@@ -205,6 +205,49 @@ show_ai:
       selector:
         entity:
           domain: ai_task
+    text:
+      example: "{{ states('sensor.electricity_price') }} €"
+      selector:
+        text:
+    color:
+      selector:
+        text:
+    icon:
+      example: mdi:flash
+      selector:
+        icon:
+    value:
+      advanced: true
+      selector:
+        number:
+          mode: box
+          step: any
+    value_min:
+      advanced: true
+      selector:
+        number:
+          mode: box
+          step: any
+    value_max:
+      advanced: true
+      selector:
+        number:
+          mode: box
+          step: any
+    invert_colors:
+      advanced: true
+      selector:
+        boolean:
+    font_size:
+      advanced: true
+      selector:
+        number:
+          min: 0
+          max: 400
+    fresh:
+      advanced: true
+      selector:
+        boolean:
     show_seconds:
       selector:
         number:

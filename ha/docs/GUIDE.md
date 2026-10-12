@@ -143,6 +143,19 @@ data:
   show_seconds: 60
 ```
 
+**Text over an AI background**, for example the electricity price: add `text`. The AI then draws
+a background with a calm middle, and the price is written over it, sharp and readable. The
+same prompt reuses the background made before, so updating the price often does not cost
+a new picture each time; let the prompt change only with the mood (cheap or expensive).
+
+```yaml
+action: p56_pov.show_ai
+data:
+  prompt: >
+    {{ 'sunny green energy' if states('sensor.electricity_price') | float < 0.25 else 'red warning, expensive power' }}
+  text: "€ {{ states('sensor.electricity_price') }}"
+```
+
 The same box and action also appear in P56 Studio on a phone or computer that goes through
 Home Assistant ([section 8](#8-your-phone-and-computer-through-home-assistant)).
 

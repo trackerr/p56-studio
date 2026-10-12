@@ -4,6 +4,15 @@ P56 Studio (Windows, Linux, Android), `p56` (CLI), `p56-sim` and `p56-server`.
 The Home Assistant add-on and integration have their own changelog in
 [`ha/p56_pov_display/CHANGELOG.md`](ha/p56_pov_display/CHANGELOG.md).
 
+## 0.3.11 — 2026-10-12
+
+### Added
+- `p56-server`: `show_ai` with `text` (or `icon`): the AI makes a background with a calm middle
+  and the text is written over it, sharp and with a dark edge. The same prompt reuses the picture
+  made before (`fresh` makes a new one), so a price updated every quarter of an hour does not pay
+  for a new picture each time.
+- `/api/show`: `backdrop`, a picture behind the text.
+
 ## 0.3.10 — 2026-10-12
 
 ### Changed

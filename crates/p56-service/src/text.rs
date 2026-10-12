@@ -12,6 +12,49 @@ static ICON_NAMES: &str = include_str!("../assets/mdi-names.txt");
 /// Side of the square picture the text is drawn on (the transcoder maps it onto the disc).
 pub const SIDE: u32 = 720;
 
+/// Text drawn on `bg` (a card or ticker frame) laid over a picture: the picture fills the square,
+/// dimmed, and is darker still around every letter, so the text stays readable on a busy picture.
+pub fn over_backdrop(text: &RgbImage, picture: &RgbImage, bg: [u8; 3]) -> RgbImage {
+    let (w, h) = text.dimensions();
+    let s = picture.width().min(picture.height());
+    let sq = image::imageops::crop_imm(picture, (picture.width() - s) / 2, (picture.height() - s) / 2, s, s).to_image();
+    let mut out = image::imageops::resize(&sq, w, h, image::imageops::FilterType::Triangle);
+    let ink: Vec<bool> = text.pixels().map(|p| p.0 != bg).collect();
+    let near = dilate(&ink, w as usize, h as usize, (w as usize / 90).max(2));
+    for (i, (p, t)) in out.pixels_mut().zip(text.pixels()).enumerate() {
+        if ink[i] {
+            *p = *t;
+        } else {
+            let f = if near[i] { 0.15 } else { 0.6 };
+            p.0 = p.0.map(|c| (c as f32 * f) as u8);
+        }
+    }
+    out
+}
+
+/// Every pixel within `r` (a square) of a set one.
+fn dilate(set: &[bool], w: usize, h: usize, r: usize) -> Vec<bool> {
+    let pass = |src: &[bool], along: usize, across: usize, at: &dyn Fn(usize, usize) -> usize| {
+        let mut out = vec![false; src.len()];
+        for b in 0..across {
+            // running count of set pixels in the window [a - r, a + r]
+            let mut count = (0..r.min(along)).filter(|&a| src[at(a, b)]).count();
+            for a in 0..along {
+                if a + r < along && src[at(a + r, b)] {
+                    count += 1;
+                }
+                if a > r && src[at(a - r - 1, b)] {
+                    count -= 1;
+                }
+                out[at(a, b)] = count > 0;
+            }
+        }
+        out
+    };
+    let rows = pass(set, w, h, &|a, b| b * w + a);
+    pass(&rows, h, w, &|a, b| a * w + b)
+}
+
 /// Default colours for [`color_scale`]: green → yellow → red.
 pub const SCALE_GREEN_RED: [[u8; 3]; 3] = [[48, 209, 88], [255, 214, 10], [255, 59, 48]];
 
@@ -482,6 +525,22 @@ mod motion_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn text_over_a_picture_stays_readable() {
+        let picture = RgbImage::from_pixel(100, 50, Rgb([200, 200, 200]));
+        let mut text = RgbImage::from_pixel(90, 90, Rgb([0, 0, 0]));
+        for y in 40..50 {
+            for x in 40..50 {
+                text.put_pixel(x, y, Rgb([255, 0, 0]));
+            }
+        }
+        let out = over_backdrop(&text, &picture, [0, 0, 0]);
+        assert_eq!(out.dimensions(), (90, 90));
+        assert_eq!(out.get_pixel(45, 45).0, [255, 0, 0], "the text itself");
+        assert_eq!(out.get_pixel(38, 45).0, [30, 30, 30], "dark right around the text");
+        assert_eq!(out.get_pixel(5, 5).0, [120, 120, 120], "the picture, dimmed");
+    }
 
     fn lit_outside(img: &RgbImage, radius_frac: f64) -> (usize, usize) {
         let c = SIDE as f64 / 2.0;

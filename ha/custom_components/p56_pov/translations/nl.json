@@ -373,6 +373,42 @@
           "name": "AI Task",
           "description": "Welke AI het plaatje maakt (leeg: de eerste die het kan)."
         },
+        "text": {
+          "name": "Tekst",
+          "description": "Tekst over het plaatje heen, bijvoorbeeld een prijs. De AI maakt dan een achtergrond met een rustig midden in plaats van een onderwerp."
+        },
+        "color": {
+          "name": "Tekstkleur",
+          "description": "Kleur van de tekst (een naam, #rrggbb of r,g,b)."
+        },
+        "icon": {
+          "name": "Icoon",
+          "description": "Icoon boven de tekst, bijvoorbeeld mdi:flash."
+        },
+        "value": {
+          "name": "Waarde",
+          "description": "Kleur de tekst naar deze waarde: groen bij het minimum, rood bij het maximum."
+        },
+        "value_min": {
+          "name": "Minimum",
+          "description": "Waarde die groen is."
+        },
+        "value_max": {
+          "name": "Maximum",
+          "description": "Waarde die rood is."
+        },
+        "invert_colors": {
+          "name": "Kleuren omdraaien",
+          "description": "Rood bij het minimum en groen bij het maximum."
+        },
+        "font_size": {
+          "name": "Lettergrootte",
+          "description": "Grootste lettergrootte in pixels (0: zo groot als past)."
+        },
+        "fresh": {
+          "name": "Nieuw plaatje",
+          "description": "Altijd een nieuw plaatje laten maken; anders hergebruikt dezelfde opdracht het eerder gemaakte plaatje (scheelt kosten)."
+        },
         "show_seconds": {
           "name": "Duur",
           "description": "Na zoveel seconden weer weghalen (0: laten staan)."
