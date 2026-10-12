@@ -934,7 +934,12 @@ impl Service {
         let l = self.link()?;
         match action {
             "on" => l.on(id),
-            "off" => l.off(id),
+            "off" => {
+                // switched off by hand: a running cast (e.g. rotating pages) stops too, or its
+                // next session would switch the fan on again
+                self.cast_session.fetch_add(1, Ordering::SeqCst);
+                l.off(id)
+            }
             "play" => l.play(id),
             "pause" => l.pause(id),
             "refresh" => l.refresh(id),
@@ -1367,6 +1372,12 @@ impl Service {
         if ids.is_empty() {
             return Err("no fan connected".into());
         }
+        // something that comes round again anyway (rotating pages) does not wake a fan that was
+        // switched off; a message does
+        let off = |i: &u32| l.device(*i).and_then(|d| d.status).is_some_and(|s| !s.power);
+        if r.queue == Some(false) && ids.iter().all(off) {
+            return Ok(json!({ "success": true, "skipped": true }));
+        }
         // a temporary message waits for a more important one, or interrupts a less important one
         let message = match r.show_seconds.filter(|s| *s > 0.0) {
             Some(secs) => match self.message_gate(&l, &ids, &r, secs) {
@@ -1570,6 +1581,9 @@ impl Service {
             });
             return Ok(json!({ "success": true, "mode": "cast", "seconds": dur, "fans": fans, "frames": n, "results": results }));
         }
+        // a running cast (e.g. rotating pages) ends now: a fan in live mode does not store a file
+        // (the upload itself waits until the fan has left live mode)
+        self.cast_session.fetch_add(1, Ordering::SeqCst);
         for id in ids {
             let ft = match self.fan_type_for(Some(id)) {
                 Ok(f) => f,

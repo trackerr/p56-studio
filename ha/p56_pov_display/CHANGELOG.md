@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- A message from an automation is stored also while something is cast live, and the panel's
+  power button works while pages are shown (pages leave a switched-off fan alone).
+
 ## 2.1.16
 
 p56-server 0.3.16.

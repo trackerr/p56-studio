@@ -810,6 +810,12 @@ impl Link {
         let name = proto::mp4_name(name);
         let tx = self.tx(id).ok_or(Error::NotConnected)?;
         let _g = tx.lock().unwrap();
+        // a fan in live mode does not store a file: wait until a cast is over (up to 10 s). With
+        // the link held no new cast frame can slip in meanwhile.
+        let quiet_by = Instant::now() + Duration::from_secs(10);
+        while self.casting(id) && Instant::now() < quiet_by {
+            thread::sleep(Duration::from_millis(100));
+        }
         // Let late answers to earlier commands arrive first, so they are not counted below.
         self.quiesce(id, Duration::from_millis(150), Duration::from_secs(2));
         let start = self.packet_seq(id);

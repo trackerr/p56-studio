@@ -1121,6 +1121,12 @@ fn handle(sh: &Shared, out: &mut Out, pkt: &[u8], ft: u8, just_uploaded: &mut bo
                 sh.err(format!("filename {name:?} does not end in .mp4"));
             }
             long_name(sh, &name);
+            // a real P56 in live mode does not store a file (seen 2026-10-12: an upload while
+            // pages were cast was never listed)
+            if live(sh) {
+                sh.err(format!("upload of {name} during live mode: the cast must be over first"));
+                return None;
+            }
             let (full, dup) = {
                 let g = sh.state.lock().unwrap();
                 (g.files.len() >= sh.cfg.max_files, g.files.iter().any(|f| f.name == name))

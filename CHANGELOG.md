@@ -4,6 +4,15 @@ P56 Studio (Windows, Linux, Android), `p56` (CLI), `p56-sim` and `p56-server`.
 The Home Assistant add-on and integration have their own changelog in
 [`ha/p56_pov_display/CHANGELOG.md`](ha/p56_pov_display/CHANGELOG.md).
 
+## Unreleased
+
+### Fixed
+- **An upload during a live cast was not stored** (a real P56 in live mode stores nothing): the
+  server now stops a running cast first, and the upload waits until the fan has left live mode.
+  The simulator refuses an upload during live mode, like the fan.
+- **Switching the fan off while something is cast** (e.g. rotating pages) works: the cast stops,
+  and pages no longer switch a fan on that was switched off (they are skipped; messages may).
+
 ## 0.3.16 — 2026-10-12
 
 ### Fixed

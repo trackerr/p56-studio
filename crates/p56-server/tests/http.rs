@@ -952,3 +952,54 @@ fn a_message_shows_even_when_the_fan_misses_the_first_select() {
     // that a playlist would flash past
     assert!(st.files.iter().all(|f| f.frames == 1), "{:?}", st.files.iter().map(|f| (&f.name, f.frames)).collect::<Vec<_>>());
 }
+
+/// A message that is uploaded while pages are cast: the cast stops, the fan leaves live mode, and
+/// the file is stored and shown (a real P56 in live mode stores nothing).
+#[test]
+fn an_upload_while_pages_are_cast_is_stored() {
+    let s = start_env(false, &[], &[]);
+    let pc = std::net::SocketAddr::from((Ipv4Addr::LOCALHOST, s.tcp));
+    let fan = p56_sim::Sim::start(p56_sim::SimConfig { name: "FAN".into(), udp_port: 0, pc: Some(pc), ..Default::default() }).unwrap();
+    s.wait("fan", |v| v["devices"].as_array().is_some_and(|d| d.len() == 1 && d[0]["status"].is_object()));
+    let (_, v) = s.post("/api/show", json!({ "text": "clock", "name": "p56 page", "mode": "cast", "show_seconds": 30, "priority": -10, "queue": false }));
+    assert_eq!(v["success"], true, "{v}");
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while fan.state().cast_ok < 5 {
+        assert!(Instant::now() < deadline, "the page was not cast");
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let (_, v) = s.post("/api/show", json!({ "text": "€ 0.35", "name": "price", "show_seconds": 5, "priority": 5 }));
+    assert_eq!(v["success"], true, "{v}");
+    let st = fan.state();
+    assert!(st.files.iter().any(|f| f.name == "price.mp4"), "{:?}", st.files);
+    assert!(st.protocol_errors.is_empty(), "{:?}", st.protocol_errors);
+}
+
+/// Switching the fan off while pages are cast: the cast stops and the next page does not switch
+/// the fan on again (it is skipped); a message still may.
+#[test]
+fn pages_leave_a_switched_off_fan_alone() {
+    let s = start_env(false, &[], &[]);
+    let pc = std::net::SocketAddr::from((Ipv4Addr::LOCALHOST, s.tcp));
+    let fan = p56_sim::Sim::start(p56_sim::SimConfig { name: "FAN".into(), udp_port: 0, pc: Some(pc), ..Default::default() }).unwrap();
+    s.wait("fan", |v| v["devices"].as_array().is_some_and(|d| d.len() == 1 && d[0]["status"].is_object()));
+    let page = |text: &str| {
+        let (_, v) = s.post("/api/show", json!({ "text": text, "name": "p56 page", "mode": "cast", "show_seconds": 30, "priority": -10, "queue": false }));
+        v
+    };
+    assert_eq!(page("clock")["success"], true);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while fan.state().cast_ok < 5 {
+        assert!(Instant::now() < deadline, "the page was not cast");
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    s.call("control", json!({ "id": 1, "action": "off" }));
+    s.wait("fan off", |v| v["devices"][0]["status"]["power"] == false);
+    std::thread::sleep(Duration::from_millis(800));
+    let cast = fan.state().cast_ok;
+    std::thread::sleep(Duration::from_secs(1));
+    assert_eq!(fan.state().cast_ok, cast, "the cast stopped");
+    assert_eq!(page("price")["skipped"], true);
+    std::thread::sleep(Duration::from_millis(500));
+    assert!(!fan.state().power, "the page did not switch the fan on");
+}
