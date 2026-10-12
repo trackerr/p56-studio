@@ -63,7 +63,7 @@ window.$type = (id, v) => { const e = $t(id); Object.getOwnPropertyDescriptor(HT
 true`;
 
 /** Load the UI at a size, run `steps` (page JS), then save a screenshot. */
-async function shot(name, { width, height, scale = 1, mobile = false, lang = 'en', steps = [], wait = 900, jpeg = true }) {
+async function shot(name, { width, height, scale = 1, mobile = false, lang = 'en', steps = [], wait = 900, jpeg = true, file }) {
   await cdp('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: scale, mobile });
   await cdp('Page.navigate', { url });
   await sleep(1500);
@@ -76,7 +76,7 @@ async function shot(name, { width, height, scale = 1, mobile = false, lang = 'en
   await js(`document.activeElement?.blur(); true`);
   await sleep(wait);
   const r = await cdp('Page.captureScreenshot', jpeg ? { format: 'jpeg', quality: 88 } : { format: 'png' });
-  const file = join(out, `${name}.${jpeg ? 'jpg' : 'png'}`);
+  file ??= join(out, `${name}.${jpeg ? 'jpg' : 'png'}`);
   writeFileSync(file, Buffer.from(r.result.data, 'base64'));
   console.log('  ✔', file);
 }
@@ -90,5 +90,7 @@ await shot('fan', { ...desktop });
 await shot('media', { ...desktop, steps: [`$tab('media')`, 300, `$type('text-input', 'Welcome home!')`, 100, `$click('text-make')`] });
 await shot('cast', { ...desktop, steps: [`$tab('cast')`, 300, `$click('src-test')`, `$click('cast-start')`] });
 await shot('phone', { width: 390, height: 844, scale: 2, mobile: true, jpeg: false });
+// the Home Assistant README (ha/): the app as the panel shows it
+if (outIdx < 0) await shot('panel', { ...desktop, file: join(root, 'ha', 'docs', 'panel.jpg') });
 proc.kill();
 process.exit(0);

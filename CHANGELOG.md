@@ -4,6 +4,15 @@ P56 Studio (Windows, Linux, Android), `p56` (CLI), `p56-sim` and `p56-server`.
 The Home Assistant add-on and integration have their own changelog in
 [`ha/p56_pov_display/CHANGELOG.md`](ha/p56_pov_display/CHANGELOG.md).
 
+## 0.3.6 — 2026-10-12
+
+### Fixed
+- **Files with long names broke the fan's memory card** (the real cause of the failed gallery
+  videos, which have long names). A real P56 stores names of at most 24 characters; 25–27 are
+  silently not stored, and 28 (the limit this app used) also breaks the card's file list, so
+  every later upload fails until it is formatted. Names are now cut at 24 characters, and the
+  simulator refuses longer names like a real fan.
+
 ## 0.3.5 — 2026-10-12
 
 ### Changed

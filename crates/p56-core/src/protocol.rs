@@ -245,9 +245,11 @@ pub fn ascii(s: &str) -> String {
     s.chars().map(|c| if c.is_ascii() && !c.is_ascii_control() { c } else { '_' }).collect()
 }
 
-/// Longest file name stem sent to the fan, in bytes, so that `<stem>.mp4` fits the 32-byte name
-/// fields Holoscope uses (its own UI allows only 12).
-pub const MAX_NAME_STEM: usize = 28;
+/// Longest file name stem sent to the fan, in bytes (before `.mp4`). Measured on a real P56: it
+/// stores names up to 24 bytes; 25–27 are silently not stored, and from 28 on the upload also
+/// breaks the card's file list (every later upload fails until it is formatted). Holoscope's own
+/// UI allows only 12.
+pub const MAX_NAME_STEM: usize = 24;
 
 /// A safe file name for the fan, ending in `.mp4` (the firmware only lists `.mp4` names).
 /// Only letters, digits, space, `-`, `_`, `.`, `(` and `)` are kept, anything else becomes `_`

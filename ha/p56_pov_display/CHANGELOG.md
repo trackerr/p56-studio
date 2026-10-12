@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.1.6
+
+p56-server 0.3.6.
+
+- **Files with long names broke the fan's memory card**, the real cause of the failed gallery
+  videos (their file names are long). A real P56 stores names of at most 24 characters; longer
+  names are now cut to 24. If your fan answers every upload with "not confirmed", format its card
+  once (panel → Fan → Format).
+- New screenshot of the panel in the README.
+
 ## 2.1.5
 
 p56-server 0.3.5.

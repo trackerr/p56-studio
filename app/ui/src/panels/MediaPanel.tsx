@@ -264,7 +264,7 @@ export function MediaPanel() {
         <Section title={t('media.toFan')}>
           <div className="grid gap-3 sm:grid-cols-[1fr_110px_130px]">
             <div className="space-y-1.5"><Label className="orbit-label" htmlFor="up-name">{t('media.nameOnFan')}</Label>
-              <Input id="up-name" data-testid="up-name" maxLength={28} value={name} placeholder={t('media.fileName')} onChange={(e) => setName(e.target.value)} /></div>
+              <Input id="up-name" data-testid="up-name" maxLength={24} value={name} placeholder={t('media.fileName')} onChange={(e) => setName(e.target.value)} /></div>
             <div className="space-y-1.5"><Label className="orbit-label" htmlFor="up-slot">{t('media.showSlot')}</Label>
               <Input id="up-slot" type="number" min={1} max={255} value={slot} onChange={(e) => setSlot(Number(e.target.value) || 1)} /></div>
             <div className="space-y-1.5"><Label className="orbit-label" htmlFor="up-max">{t('common.maxFrames')}</Label>

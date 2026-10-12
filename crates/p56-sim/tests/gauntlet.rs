@@ -204,6 +204,19 @@ fn upload_on_a_fan_that_answers_like_the_real_p56() {
     r.clean();
 }
 
+/// A real P56 stores names of at most 24 bytes before `.mp4` (from 28 on an upload breaks its
+/// file list): a long name is cut to 24, and the file arrives.
+#[test]
+fn long_names_are_cut_to_what_a_real_fan_stores() {
+    let r = rig();
+    let long = "86aaee2d02eb493631dda9651cc59809_20221207171536A343";
+    let o = r.link.upload(r.id, &[r.jpeg()], long, None).unwrap();
+    assert!(o.listed, "{o:?}");
+    r.wait_sim(|s| s.file_names() == vec![format!("{}.mp4", &long[..24])]);
+    assert!(r.sim.state().protocol_errors.is_empty(), "{:?}", r.sim.state().protocol_errors);
+    r.clean();
+}
+
 #[test]
 fn upload_refuses_an_incomplete_jpeg() {
     let r = rig();

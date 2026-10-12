@@ -61,9 +61,11 @@ are sometimes padded to 5 (Holoscope.exe: `3E`, Holoscope.apk: `00`).
 
 32-byte fields are zero padded and hold at most 31 bytes of text (Holoscope keeps a terminating
 zero); the xor for `89/8A/8B` covers byte 2 up to and including len−3.
-Names: ASCII (the firmware knows GB2312 and local 8-bit; ASCII is the same in both). File names
-fit the 32-byte name fields with `.mp4` (Holoscope's own UI allows 12 bytes); P56 Studio keeps
-letters, digits, space and `-_.()` and at most 28 bytes before `.mp4`.
+Names: ASCII (the firmware knows GB2312 and local 8-bit; ASCII is the same in both). **File
+names: at most 24 bytes before `.mp4`** (measured on a real P56). With 25–27 bytes the fan answers
+normally but does not store the file; from 28 bytes on it also breaks its file list, and every
+later upload fails until the card is formatted. Holoscope's own UI allows 12 bytes. P56 Studio
+keeps letters, digits, space and `-_.()` and at most 24 bytes before `.mp4`.
 **Correction to the first analysis:** `8A` was built as `len + ssid\0pw` — wrong; and `8A`
 sets the fan's *hotspot*, not a router (that is `8B`). `83` takes a slot number, not the old name.
 

@@ -811,6 +811,15 @@ impl Shared {
     }
 }
 
+/// A real P56 stores names of at most 24 bytes before `.mp4`: longer ones are not stored, and from
+/// 28 bytes on they break its file list (measured).
+fn long_name(sh: &Shared, name: &str) {
+    let stem = name.strip_suffix(".mp4").unwrap_or(name).len();
+    if stem > 24 {
+        sh.err(format!("file name {name:?}: {stem} bytes before .mp4, a real P56 stores at most 24"));
+    }
+}
+
 /// How long live mode lasts without a cast frame (longer than the link's own session pause).
 const LIVE_TIMEOUT: Duration = Duration::from_millis(1500);
 
@@ -1077,6 +1086,7 @@ fn handle(sh: &Shared, out: &mut Out, pkt: &[u8], ft: u8, just_uploaded: &mut bo
             if xor_ok(pkt, "rename") {
                 let slot = pkt[2];
                 let name = String::from_utf8_lossy(&pkt[4..4 + pkt[3] as usize]).to_string();
+                long_name(sh, &name);
                 if !name.ends_with(".mp4") {
                     sh.err(format!("rename: name {name:?} does not end in .mp4"));
                 }
@@ -1140,6 +1150,7 @@ fn handle(sh: &Shared, out: &mut Out, pkt: &[u8], ft: u8, just_uploaded: &mut bo
             if !name.ends_with(".mp4") {
                 sh.err(format!("filename {name:?} does not end in .mp4"));
             }
+            long_name(sh, &name);
             let (full, dup) = {
                 let g = sh.state.lock().unwrap();
                 (g.files.len() >= sh.cfg.max_files, g.files.iter().any(|f| f.name == name))
