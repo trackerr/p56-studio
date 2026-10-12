@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+p56-server with the discovery fixes of the next release.
+
+- **A fan that joins the network later is picked up** without restarting the add-on (it could
+  stay unconnected when the add-on started while the fan was away). The server looks up the
+  address it advertises again while running, also calls fans it has seen before directly, and
+  restarts its discovery by itself if that ever stops.
+- The log shows when a fan answers the discovery (`… answered the discovery`) and when the
+  advertised address changes, which helps when a fan does not connect.
+
 ## 2.1.14
 
 p56-server 0.3.14.

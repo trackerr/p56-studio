@@ -37,6 +37,7 @@ fn start_link_allow(targets: Vec<SocketAddr>, fan_udp: u16, allow: Vec<std::net:
         udp_port: 0,
         fan_udp_port: fan_udp,
         broadcast_interval: Duration::from_millis(200),
+        broadcast: true,
         heartbeat: true,
         targets,
         allow,
@@ -438,6 +439,100 @@ fn reconnects_after_drop() {
     r.link.brightness(id, 9).unwrap();
     r.wait_sim(|s| s.brightness == 9);
     r.clean();
+}
+
+/// Discovery rounds of the real 3 s that make two hours.
+const TWO_HOURS: u64 = 2 * 3600 / 3;
+
+/// A link whose discovery rounds run every millisecond instead of every 3 s, so hours pass in
+/// seconds. No broadcasts: thousands a second must not reach the real network.
+fn fast_link(targets: Vec<SocketAddr>, fan_udp: u16) -> (Link, Receiver<Event>) {
+    Link::start(Config {
+        tcp_port: 0,
+        udp_port: 0,
+        fan_udp_port: fan_udp,
+        broadcast_interval: Duration::from_millis(1),
+        broadcast: false,
+        targets,
+        ..Default::default()
+    })
+    .expect("link start")
+}
+
+/// Wait until the link has sent `n` more discovery rounds; returns how long they took.
+fn rounds(link: &Link, n: u64) -> Duration {
+    let (start, from) = (std::time::Instant::now(), link.discovery_rounds());
+    while link.discovery_rounds() < from + n {
+        assert!(start.elapsed() < Duration::from_secs(120), "discovery stalled after {} rounds", link.discovery_rounds());
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    start.elapsed()
+}
+
+/// A simulated fan on `udp_port`, which an earlier socket or simulator just let go of.
+fn sim_on(udp_port: u16, pc_port: u16, name: &str) -> Sim {
+    for _ in 0..50 {
+        if let Ok(s) = Sim::start(SimConfig { udp_port, pc_port, name: name.into(), ..Default::default() }) {
+            return s;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    panic!("UDP port {udp_port} stayed in use");
+}
+
+/// Field report: the server started without a fan; the fan came on the network two hours
+/// later and was never picked up until a restart. Discovery must keep its pace for hours
+/// and a late fan must connect at once.
+#[test]
+fn late_fan_is_found_after_hours_without_fans() {
+    // the fan's UDP port, held empty until the fan shows up
+    let empty = std::net::UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).unwrap();
+    empty.set_read_timeout(Some(Duration::from_millis(500))).unwrap();
+    let port = empty.local_addr().unwrap().port();
+    let (link, _rx) = fast_link(vec![SocketAddr::from((Ipv4Addr::LOCALHOST, port))], port);
+    let first = rounds(&link, 200);
+    rounds(&link, TWO_HOURS - 400);
+    let late = rounds(&link, 200);
+    // no backing off: the rounds after "two hours" come about as fast as the first ones
+    assert!(late < first * 5 + Duration::from_millis(500), "discovery slowed down: first 200 rounds {first:?}, after two hours {late:?}");
+    // and they still reach the fan's port
+    let mut buf = [0u8; 64];
+    let n = empty.recv(&mut buf).expect("no discovery packet after two hours");
+    assert_eq!(&buf[..n], b"127.0.0.1HS");
+    assert!(link.ids().is_empty());
+    drop(empty);
+    let sim = sim_on(port, link.tcp_port, "LATE");
+    assert!(link.wait_connected(T), "the late fan was not picked up");
+    assert!(sim.wait_until(T, |s| s.connected));
+    sim.stop();
+    link.shutdown();
+}
+
+/// A fan that was connected once gets the discovery packet directly when it comes back, also
+/// when broadcasts do not reach it and its address is not configured.
+#[test]
+fn fan_seen_before_is_called_directly() {
+    let a = Sim::start(SimConfig { udp_port: 0, name: "FIRST".into(), ..Default::default() }).unwrap();
+    let port = a.udp_port;
+    let (link, _rx) = fast_link(Vec::new(), port);
+    // the first time the fan found the link by itself (as from a broadcast)
+    a.connect_to(SocketAddr::from((Ipv4Addr::LOCALHOST, link.tcp_port)));
+    assert!(link.wait_connected(T), "fan did not connect");
+    // Wi-Fi drops, the fan is away for an hour
+    a.stop();
+    drop(a);
+    let deadline = std::time::Instant::now() + T;
+    while !link.ids().is_empty() {
+        assert!(std::time::Instant::now() < deadline, "the link did not notice the fan leaving");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    rounds(&link, TWO_HOURS / 2);
+    // back on the network, waiting for a discovery packet on its own port
+    let b = sim_on(port, link.tcp_port, "BACK");
+    assert!(link.wait_connected(T), "the fan seen before was not called directly");
+    assert!(b.wait_until(T, |s| s.connected));
+    b.stop();
+    link.shutdown();
 }
 
 #[test]

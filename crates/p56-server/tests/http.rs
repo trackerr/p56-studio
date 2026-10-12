@@ -2,28 +2,30 @@
 //! against its built-in simulated fan.
 
 use std::io::{BufRead, BufReader, Read, Write};
-use std::net::{Ipv4Addr, TcpListener, TcpStream, UdpSocket};
-use std::process::{Child, Command, Stdio};
+use std::net::{Ipv4Addr, TcpStream, UdpSocket};
+use std::path::PathBuf;
+use std::process::{Child, Command};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
-
-fn free_tcp() -> u16 {
-    TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap().local_addr().unwrap().port()
-}
-fn free_udp() -> u16 {
-    UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap().local_addr().unwrap().port()
-}
 
 struct Srv {
     child: Child,
     base: String,
     http: u16,
     tcp: u16,
+    /// everything the server printed, shown when the test fails
+    log: PathBuf,
 }
 impl Drop for Srv {
     fn drop(&mut self) {
         let _ = self.child.kill();
+        let _ = self.child.wait();
+        if std::thread::panicking() {
+            eprintln!("---- p56-server on :{} ----\n{}", self.http, std::fs::read_to_string(&self.log).unwrap_or_default());
+        }
+        let _ = std::fs::remove_file(&self.log);
     }
 }
 
@@ -35,32 +37,47 @@ fn start_with(simulate: bool, extra: &[&str]) -> Srv {
     start_env(simulate, extra, &[])
 }
 
+/// The server opens free ports itself (port 0) and writes them to a file: a port picked here
+/// could be taken by another test before the server opens it.
 fn start_env(simulate: bool, extra: &[&str], envs: &[(&str, &str)]) -> Srv {
-    let (http, tcp) = (free_tcp(), free_tcp());
-    let mut args = vec!["--http-port".to_string(), http.to_string(), "--tcp-port".into(), tcp.to_string()];
+    static N: AtomicUsize = AtomicUsize::new(0);
+    let tmp = std::env::temp_dir().join(format!("p56-server-{}-{}", std::process::id(), N.fetch_add(1, Ordering::SeqCst)));
+    let (ports, log) = (tmp.with_extension("ports"), tmp.with_extension("log"));
+    let _ = std::fs::remove_file(&ports);
+    let mut args = vec!["--http-port", "0", "--tcp-port", "0", "--sim-udp-port", "0", "--ports-file", ports.to_str().unwrap()];
     if simulate {
-        args.extend(["--simulate".into(), "--sim-udp-port".into(), free_udp().to_string()]);
+        args.push("--simulate");
     }
-    args.extend(extra.iter().map(|s| s.to_string()));
+    args.extend(extra);
+    let out = std::fs::File::create(&log).unwrap();
     let child = Command::new(env!("CARGO_BIN_EXE_p56-server"))
         .args(&args)
-        .env("RUST_LOG", "warn")
+        .env("RUST_LOG", "info")
         .env_remove("P56_API_TOKEN")
         .env_remove("SUPERVISOR_TOKEN")
         .env_remove("P56_HA_URL")
         .env_remove("P56_HA_TOKEN")
         .envs(envs.iter().copied())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stdout(out.try_clone().unwrap())
+        .stderr(out)
         .spawn()
         .unwrap();
-    let base = format!("http://127.0.0.1:{http}");
+    let mut s = Srv { child, base: String::new(), http: 0, tcp: 0, log };
     let deadline = Instant::now() + Duration::from_secs(10);
-    while ureq::get(&format!("{base}/api/ping")).call().is_err() {
+    let p: Value = loop {
+        if let Some(p) = std::fs::read(&ports).ok().and_then(|b| serde_json::from_slice(&b).ok()) {
+            break p;
+        }
+        if let Some(exit) = s.child.try_wait().unwrap() {
+            panic!("server stopped: {exit}");
+        }
         assert!(Instant::now() < deadline, "server did not start");
-        std::thread::sleep(Duration::from_millis(100));
-    }
-    Srv { child, base, http, tcp }
+        std::thread::sleep(Duration::from_millis(50));
+    };
+    let _ = std::fs::remove_file(&ports);
+    (s.http, s.tcp) = (p["http"].as_u64().unwrap() as u16, p["tcp"].as_u64().unwrap() as u16);
+    s.base = format!("http://127.0.0.1:{}", s.http);
+    s
 }
 
 impl Srv {
@@ -219,22 +236,7 @@ fn virtual_fan_follows_the_options_file() {
     std::fs::create_dir_all(&dir).unwrap();
     let opts = dir.join("options.json");
     std::fs::write(&opts, r#"{"simulate": false}"#).unwrap();
-    let (http, tcp) = (free_tcp(), free_tcp());
-    let child = Command::new(env!("CARGO_BIN_EXE_p56-server"))
-        .args(["--http-port", &http.to_string(), "--tcp-port", &tcp.to_string(), "--sim-udp-port", &free_udp().to_string()])
-        .arg("--options-file")
-        .arg(&opts)
-        .env("RUST_LOG", "warn")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .unwrap();
-    let s = Srv { child, base: format!("http://127.0.0.1:{http}"), http, tcp };
-    let deadline = Instant::now() + Duration::from_secs(10);
-    while ureq::get(&format!("{}/api/ping", s.base)).call().is_err() {
-        assert!(Instant::now() < deadline, "server did not start");
-        std::thread::sleep(Duration::from_millis(100));
-    }
+    let s = start_with(false, &["--options-file", opts.to_str().unwrap()]);
     std::thread::sleep(Duration::from_secs(3));
     assert_eq!(s.get("/api/state")["connected"], false, "no virtual fan while the option is off");
     std::fs::write(&opts, r#"{"simulate": true, "log_level": "info"}"#).unwrap();
@@ -248,7 +250,7 @@ fn virtual_fan_follows_the_options_file() {
 
 #[test]
 fn virtual_fan_follows_the_supervisor_options() {
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
     // fake Supervisor: answers /addons/self/info like Home Assistant, only with the right token
     let simulate = Arc::new(AtomicBool::new(false));
@@ -268,24 +270,8 @@ fn virtual_fan_follows_the_supervisor_options() {
     std::fs::create_dir_all(&dir).unwrap();
     let opts = dir.join("options.json");
     std::fs::write(&opts, r#"{"simulate": false}"#).unwrap();
-    let (http, tcp) = (free_tcp(), free_tcp());
-    let child = Command::new(env!("CARGO_BIN_EXE_p56-server"))
-        .args(["--http-port", &http.to_string(), "--tcp-port", &tcp.to_string(), "--sim-udp-port", &free_udp().to_string()])
-        .arg("--options-file")
-        .arg(&opts)
-        .args(["--options-url", &format!("http://127.0.0.1:{sup_port}/addons/self/info")])
-        .env("SUPERVISOR_TOKEN", "test-token")
-        .env("RUST_LOG", "warn")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .unwrap();
-    let s = Srv { child, base: format!("http://127.0.0.1:{http}"), http, tcp };
-    let deadline = Instant::now() + Duration::from_secs(10);
-    while ureq::get(&format!("{}/api/ping", s.base)).call().is_err() {
-        assert!(Instant::now() < deadline, "server did not start");
-        std::thread::sleep(Duration::from_millis(100));
-    }
+    let url = format!("http://127.0.0.1:{sup_port}/addons/self/info");
+    let s = start_env(false, &["--options-file", opts.to_str().unwrap(), "--options-url", &url], &[("SUPERVISOR_TOKEN", "test-token")]);
     std::thread::sleep(Duration::from_secs(3));
     assert_eq!(s.get("/api/state")["connected"], false);
     simulate.store(true, Ordering::SeqCst);

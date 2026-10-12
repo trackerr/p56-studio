@@ -31,10 +31,10 @@ static UI: &str = include_str!("../../../app/src/index.html");
 #[derive(Parser, Clone)]
 #[command(name = "p56-server", version, about = "P56 server: HTTP API, live events and web UI")]
 struct Args {
-    /// HTTP port (API + web UI; also the ingress port in Home Assistant).
+    /// HTTP port (API + web UI; also the ingress port in Home Assistant). 0: any free port.
     #[arg(long, default_value_t = 8765)]
     http_port: u16,
-    /// TCP port the fan connects to (the real fan always uses 6666).
+    /// TCP port the fan connects to (the real fan always uses 6666). 0: any free port.
     #[arg(long, default_value_t = 6666)]
     tcp_port: u16,
     /// IP to advertise in the broadcast (default: every network card its own).
@@ -55,9 +55,14 @@ struct Args {
     /// options file when the add-on starts, so this is what makes changes apply at once.
     #[arg(long)]
     options_url: Option<String>,
-    /// UDP port of the simulated fan.
+    /// UDP port of the simulated fan. 0: any free port; the simulated fan then connects
+    /// straight to this server instead of waiting for its broadcast.
     #[arg(long, default_value_t = 18988)]
     sim_udp_port: u16,
+    /// Write the HTTP and TCP ports in use to this file ({"http": …, "tcp": …}) once both are
+    /// open: how tests find the ports that port 0 picked.
+    #[arg(long, hide = true)]
+    ports_file: Option<std::path::PathBuf>,
     /// Announce this server to Home Assistant (Supervisor discovery) when running as an add-on.
     #[arg(long)]
     discovery: bool,
@@ -232,15 +237,21 @@ fn main() {
         eprintln!("cannot open HTTP port {}: {e}", args.http_port);
         std::process::exit(1)
     });
-    log::info!("HTTP API and web UI on :{}", args.http_port);
+    let http_port = server.server_addr().to_ip().map_or(args.http_port, |a| a.port());
+    log::info!("HTTP API and web UI on :{http_port}");
+    if let Some(path) = &args.ports_file {
+        let tcp_port = svc.link().map_or(args.tcp_port, |l| l.tcp_port);
+        if let Err(e) = std::fs::write(path, json!({ "http": http_port, "tcp": tcp_port }).to_string()) {
+            log::error!("cannot write {}: {e}", path.display());
+        }
+    }
     match (args.lan, args.token()) {
         (false, _) => log::info!("API limited to this machine and Home Assistant (--lan opens it to the network)"),
         (true, Some(_)) => log::info!("API open to the network, with an API token"),
         (true, None) => log::warn!("API open to the whole network WITHOUT a token: anyone on it can control the fans; set an API token"),
     }
     if args.discovery {
-        let port = args.http_port;
-        thread::spawn(move || announce(port));
+        thread::spawn(move || announce(http_port));
     }
     let token = args.token().map(str::to_string);
     for req in server.incoming_requests() {
@@ -299,7 +310,7 @@ fn start_service(args: &Args, subs: Subscribers) -> Arc<Service> {
         subs.lock().unwrap().retain(|s| s.send(line.clone()).is_ok());
     });
     let mut targets = args.fans.clone();
-    if args.simulate || args.options_file.is_some() {
+    if (args.simulate || args.options_file.is_some()) && args.sim_udp_port != 0 {
         targets.push(format!("127.0.0.1:{}", args.sim_udp_port));
     }
     let svc = Service::new(
@@ -318,11 +329,13 @@ fn start_service(args: &Args, subs: Subscribers) -> Arc<Service> {
             },
         },
     );
-    match svc.start_link(None, None, None) {
-        Ok(ip) => log::info!("fan link started on TCP {} (advertising {ip})", args.tcp_port),
+    let started = svc.start_link(None, None, None);
+    let tcp_port = svc.link().map_or(args.tcp_port, |l| l.tcp_port);
+    match started {
+        Ok(ip) => log::info!("fan link started on TCP {tcp_port} (advertising {ip})"),
         Err(e) => log::error!("fan link not started: {e}"),
     }
-    let virtual_fan = Arc::new(VirtualFan { udp_port: args.sim_udp_port, tcp_port: args.tcp_port, sim: Mutex::new(None) });
+    let virtual_fan = Arc::new(VirtualFan { udp_port: args.sim_udp_port, tcp_port, sim: Mutex::new(None) });
     if args.options_file.is_some() || args.options_url.is_some() {
         let vf = virtual_fan.clone();
         let (file, url) = (args.options_file.clone(), args.options_url.clone());
@@ -527,7 +540,9 @@ impl VirtualFan {
         }
         // the UDP port of a just-stopped simulator can take a moment to be released
         for attempt in 0..10 {
-            let cfg = p56_sim::SimConfig { name: "VIRTUAL-P56".into(), udp_port: self.udp_port, pc_port: self.tcp_port, ..Default::default() };
+            // without a fixed UDP port nothing broadcasts to it, so it connects straight away
+            let pc = (self.udp_port == 0).then(|| std::net::SocketAddr::from((Ipv4Addr::LOCALHOST, self.tcp_port)));
+            let cfg = p56_sim::SimConfig { name: "VIRTUAL-P56".into(), udp_port: self.udp_port, pc, pc_port: self.tcp_port, ..Default::default() };
             match p56_sim::Sim::start(cfg) {
                 Ok(s) => {
                     log::info!("virtual fan started");

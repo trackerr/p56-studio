@@ -1121,9 +1121,10 @@ fn handle(sh: &Shared, out: &mut Out, pkt: &[u8], ft: u8, just_uploaded: &mut bo
         op::CAST_FRAME => {
             // A real P56 shows cast frames only in live mode, which 0x26 starts and which ends
             // when no frame comes for a while; outside it the frames are answered but not shown.
+            // The error goes in before the count: whoever waits for `cast_bad` must find it.
             if !live(sh) {
-                set(&|g| g.cast_bad += 1);
                 sh.err("cast frame outside live mode: send 5A 26 26 F5 first (a real P56 keeps playing its playlist)".into());
+                set(&|g| g.cast_bad += 1);
                 if !sh.state.lock().unwrap().cast_mute {
                     out.ready();
                 }
@@ -1150,8 +1151,8 @@ fn handle(sh: &Shared, out: &mut Out, pkt: &[u8], ft: u8, just_uploaded: &mut bo
                     });
                 }
                 Err(e) => {
-                    set(&|g| g.cast_bad += 1);
                     sh.err(e);
+                    set(&|g| g.cast_bad += 1);
                 }
             }
             if !sh.state.lock().unwrap().cast_mute {

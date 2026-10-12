@@ -833,7 +833,7 @@ impl Service {
     fn link_info(&self) -> Result<Value, String> {
         let l = self.link()?;
         let ifs: Vec<String> = p56_core::net::interfaces().into_iter().map(|(ip, bc)| format!("{ip} (broadcast {bc})")).collect();
-        Ok(json!({ "ip": l.local_ip.to_string(), "port": l.tcp_port, "interfaces": ifs,
+        Ok(json!({ "ip": l.advertised().to_string(), "port": l.tcp_port, "interfaces": ifs,
             "discovered": l.discovered().iter().map(|i| i.to_string()).collect::<Vec<_>>() }))
     }
 

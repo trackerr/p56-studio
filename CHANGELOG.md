@@ -4,6 +4,23 @@ P56 Studio (Windows, Linux, Android), `p56` (CLI), `p56-sim` and `p56-server`.
 The Home Assistant add-on and integration have their own changelog in
 [`ha/p56_pov_display/CHANGELOG.md`](ha/p56_pov_display/CHANGELOG.md).
 
+## Unreleased
+
+### Fixed
+- **A fan that comes on the network late is picked up** (field report: the Home Assistant
+  add-on started without a fan, and the fan that joined two hours later was only connected after
+  a restart). Discovery is made sturdier:
+  - the address advertised in the discovery packet is looked up again while running (at most
+    once a second), so an address picked while the network was still coming up, or before it
+    changed, no longer sends the fan somewhere it cannot connect to; a change shows in the log;
+  - a fan that connected or answered before gets the discovery packet directly every round as
+    well (with the address this machine has towards it), also when broadcasts do not reach it;
+  - discovery starts again by itself if its UDP socket fails or its thread stops, and a send that
+    hangs can no longer hold it up; the rounds keep their 3 s pace for as long as no fan shows up;
+  - an address that answers the discovery is logged ("… answered the discovery"), so the log
+    shows whether a fan that does not connect hears the server at all.
+- `/api/call/link_info` shows the address advertised now instead of the one from the start.
+
 ## 0.3.14 — 2026-10-12
 
 ### Added

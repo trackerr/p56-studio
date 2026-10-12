@@ -4,7 +4,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::io::{Read, Write};
 use std::net::{IpAddr, Ipv4Addr, Shutdown, SocketAddr, TcpListener, TcpStream, UdpSocket};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
@@ -79,11 +79,33 @@ const CAST_SESSION: Duration = Duration::from_millis(1000);
 const CAST_QUIET: Duration = Duration::from_millis(2000);
 /// How long the fan may take to answer the cast start with `5A 29 29 F5`.
 const CAST_START_ACK: Duration = Duration::from_millis(1000);
+/// Fan addresses remembered for directed discovery (the most recent ones).
+const KNOWN_FANS: usize = 16;
+/// Discovery rounds in a row in which nothing could be sent, after which the UDP socket is
+/// opened again.
+const UDP_FAILED_ROUNDS: u32 = 10;
+/// An answer to the discovery after this much silence from that address is logged again.
+const ANSWER_AGAIN: Duration = Duration::from_secs(60);
+/// How often discovery reads the network cards and the address to advertise again.
+const IFS_REFRESH: Duration = Duration::from_secs(1);
 
 struct Inner {
     conns: HashMap<u32, Conn>,
     next_id: u32,
     seen: HashMap<IpAddr, Instant>,
+    /// Fans that connected or answered the discovery, most recent last: they also get the
+    /// discovery packet directly, in case broadcasts do not reach them.
+    known: Vec<IpAddr>,
+}
+
+impl Inner {
+    fn remember(&mut self, ip: IpAddr) {
+        self.known.retain(|k| *k != ip);
+        self.known.push(ip);
+        if self.known.len() > KNOWN_FANS {
+            self.known.remove(0);
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -96,7 +118,11 @@ pub struct Config {
     pub udp_port: u16,
     /// UDP port the fan listens on.
     pub fan_udp_port: u16,
+    /// Time between discovery rounds; it stays the same however long no fan shows up.
     pub broadcast_interval: Duration,
+    /// Broadcast the discovery packet. Off, only the targets and the fans seen before get it,
+    /// directly (tests use this to model a network that drops broadcasts).
+    pub broadcast: bool,
     pub heartbeat: bool,
     /// Extra unicast discovery targets (a fan whose IP is known, or a simulator).
     pub targets: Vec<SocketAddr>,
@@ -115,6 +141,7 @@ impl Default for Config {
             udp_port: UDP_PORT,
             fan_udp_port: UDP_PORT,
             broadcast_interval: Duration::from_secs(3),
+            broadcast: true,
             heartbeat: true,
             targets: Vec::new(),
             allow: Vec::new(),
@@ -128,7 +155,13 @@ pub struct Link {
     events: Sender<Event>,
     connected: Arc<(Mutex<()>, Condvar)>,
     stop: Arc<AtomicBool>,
-    /// Address shown to the user (first private IPv4, or the configured one).
+    /// Address advertised now: looked up again during discovery (at most once a second), as the network can
+    /// change after the start.
+    advertised: Arc<Mutex<Ipv4Addr>>,
+    /// Discovery rounds sent so far.
+    rounds: Arc<AtomicU64>,
+    /// Address advertised at the start (first private IPv4, or the configured one); see
+    /// [`Link::advertised`] for the current one.
     pub local_ip: Ipv4Addr,
     pub tcp_port: u16,
 }
@@ -157,20 +190,27 @@ pub fn interfaces() -> Vec<(Ipv4Addr, Ipv4Addr)> {
 
 /// Best-effort local IPv4 as seen from the fan's network (default AP is 192.168.4.1).
 pub fn local_ip() -> Ipv4Addr {
-    let ifs = interfaces();
+    local_ip_of(&interfaces())
+}
+
+fn local_ip_of(ifs: &[(Ipv4Addr, Ipv4Addr)]) -> Ipv4Addr {
     if let Some((ip, _)) = ifs.iter().find(|(ip, _)| ip.octets()[..3] == [192, 168, 4]) {
         return *ip;
     }
-    if let Ok(s) = UdpSocket::bind("0.0.0.0:0") {
-        if s.connect("192.168.4.1:1").is_ok() {
-            if let Ok(SocketAddr::V4(a)) = s.local_addr() {
-                if !a.ip().is_loopback() && !a.ip().is_unspecified() {
-                    return *a.ip();
-                }
-            }
-        }
+    if let Some(ip) = source_ip(Ipv4Addr::new(192, 168, 4, 1)).filter(|ip| !ip.is_loopback()) {
+        return ip;
     }
     ifs.first().map(|(ip, _)| *ip).unwrap_or(Ipv4Addr::new(192, 168, 4, 2))
+}
+
+/// The local address this machine sends from to reach `to` (nothing is sent).
+pub fn source_ip(to: Ipv4Addr) -> Option<Ipv4Addr> {
+    let s = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).ok()?;
+    s.connect((to, 1)).ok()?;
+    match s.local_addr() {
+        Ok(SocketAddr::V4(a)) if !a.ip().is_unspecified() => Some(*a.ip()),
+        _ => None,
+    }
 }
 
 fn fresh_ack_window(dur: u64) -> Duration {
@@ -186,10 +226,12 @@ impl Link {
         let tcp_port = listener.local_addr().map(|a| a.port()).unwrap_or(cfg.tcp_port);
         let ip = cfg.local_ip.unwrap_or_else(local_ip);
         let link = Link {
-            inner: Arc::new(Mutex::new(Inner { conns: HashMap::new(), next_id: 1, seen: HashMap::new() })),
+            inner: Arc::new(Mutex::new(Inner { conns: HashMap::new(), next_id: 1, seen: HashMap::new(), known: Vec::new() })),
             events: tx,
             connected: Arc::new((Mutex::new(()), Condvar::new())),
             stop: Arc::new(AtomicBool::new(false)),
+            advertised: Arc::new(Mutex::new(ip)),
+            rounds: Arc::new(AtomicU64::new(0)),
             local_ip: ip,
             tcp_port,
         };
@@ -202,7 +244,7 @@ impl Link {
         {
             let l = link.clone();
             let c = cfg.clone();
-            thread::spawn(move || l.udp_loop(c));
+            thread::spawn(move || l.discovery(c));
         }
         if cfg.heartbeat {
             let l = link.clone();
@@ -229,49 +271,132 @@ impl Link {
         let _ = self.events.send(Event::Log(s));
     }
 
-    fn udp_loop(&self, cfg: Config) {
-        let Ok(sock) = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, cfg.udp_port)).or_else(|_| UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0))) else { return };
+    /// Keep discovery going for as long as the link runs: the UDP loop starts again when it
+    /// stops (its socket failed or could not be opened, or it panicked), so a fan that shows up
+    /// hours later is still found.
+    fn discovery(&self, cfg: Config) {
+        while !self.stop.load(Ordering::SeqCst) {
+            let run = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.udp_loop(&cfg)));
+            if self.stop.load(Ordering::SeqCst) {
+                break;
+            }
+            if run.is_err() {
+                self.log("discovery stopped unexpectedly; starting it again".into());
+            }
+            thread::sleep(cfg.broadcast_interval.min(Duration::from_secs(1)));
+        }
+    }
+
+    fn udp_loop(&self, cfg: &Config) {
+        let Ok(sock) = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, cfg.udp_port)).or_else(|_| UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0))) else {
+            log::warn!("discovery: no UDP socket; trying again");
+            return;
+        };
+        let me = sock.local_addr().map(|a| a.port()).unwrap_or(0);
         let _ = sock.set_broadcast(true);
-        let _ = sock.set_read_timeout(Some(Duration::from_millis(300)));
-        let mut last = Instant::now() - cfg.broadcast_interval;
+        // rounds keep their pace: a short interval (tests) is not stretched by the coarse read
+        // timeout of some systems, and a send that cannot go out (a stuck network card) does
+        // not hold discovery up
+        let poll = cfg.broadcast_interval < Duration::from_millis(20);
+        if poll {
+            let _ = sock.set_nonblocking(true);
+        } else {
+            let _ = sock.set_read_timeout(Some(cfg.broadcast_interval.min(Duration::from_millis(300))));
+            let _ = sock.set_write_timeout(Some(Duration::from_millis(500)));
+        }
+        let mut last = Instant::now().checked_sub(cfg.broadcast_interval).unwrap_or_else(Instant::now);
         let mut buf = [0u8; 512];
-        let mut own: Vec<IpAddr> = vec![IpAddr::V4(self.local_ip)];
+        let mut adv = self.advertised();
+        let mut ifs = Vec::new();
+        let mut own: Vec<IpAddr> = vec![IpAddr::V4(adv)];
+        let mut refreshed: Option<Instant> = None;
+        let mut failed = 0u32;
         while !self.stop.load(Ordering::SeqCst) {
             if last.elapsed() >= cfg.broadcast_interval {
                 last = Instant::now();
-                let ifs = interfaces();
-                own = ifs.iter().map(|(ip, _)| IpAddr::V4(*ip)).chain([IpAddr::V4(self.local_ip)]).collect();
-                let mut sent = Vec::new();
-                match cfg.local_ip {
-                    Some(ip) => {
-                        let msg = format!("{ip}HS");
-                        let _ = sock.send_to(msg.as_bytes(), (Ipv4Addr::BROADCAST, cfg.fan_udp_port));
-                        for (_, bc) in &ifs {
-                            let _ = sock.send_to(msg.as_bytes(), (*bc, cfg.fan_udp_port));
-                        }
+                // looked up again every round (at most every second): an address picked while
+                // the network was still coming up, or before it changed, sends the fan somewhere
+                // it cannot connect to
+                if refreshed.is_none_or(|t| t.elapsed() >= IFS_REFRESH) {
+                    refreshed = Some(Instant::now());
+                    ifs = interfaces();
+                    adv = cfg.local_ip.unwrap_or_else(|| local_ip_of(&ifs));
+                    let was = std::mem::replace(&mut *self.advertised.lock().unwrap(), adv);
+                    if was != adv {
+                        self.log(format!("advertising {adv} now (was {was})"));
                     }
-                    None => {
-                        for (ip, bc) in &ifs {
-                            let msg = format!("{ip}HS");
-                            if sock.send_to(msg.as_bytes(), (*bc, cfg.fan_udp_port)).is_ok() {
-                                sent.push(*ip);
+                    own = ifs.iter().map(|(ip, _)| IpAddr::V4(*ip)).chain([IpAddr::V4(adv)]).collect();
+                }
+                let (mut tried, mut sent) = (0u32, 0u32);
+                let mut send = |msg: String, to: SocketAddr| {
+                    tried += 1;
+                    if sock.send_to(msg.as_bytes(), to).is_ok() {
+                        sent += 1;
+                    }
+                };
+                if cfg.broadcast {
+                    match cfg.local_ip {
+                        Some(ip) => {
+                            send(format!("{ip}HS"), SocketAddr::from((Ipv4Addr::BROADCAST, cfg.fan_udp_port)));
+                            for (_, bc) in &ifs {
+                                send(format!("{ip}HS"), SocketAddr::from((*bc, cfg.fan_udp_port)));
                             }
                         }
-                        let _ = sock.send_to(format!("{}HS", self.local_ip).as_bytes(), (Ipv4Addr::BROADCAST, cfg.fan_udp_port));
+                        None => {
+                            for (ip, bc) in &ifs {
+                                send(format!("{ip}HS"), SocketAddr::from((*bc, cfg.fan_udp_port)));
+                            }
+                            send(format!("{adv}HS"), SocketAddr::from((Ipv4Addr::BROADCAST, cfg.fan_udp_port)));
+                        }
                     }
                 }
-                for t in &cfg.targets {
+                // directly to the targets and to fans seen before that are not connected now
+                let (known, connected) = {
+                    let g = self.inner.lock().unwrap();
+                    (g.known.clone(), g.conns.values().filter_map(|c| c.dev.ip).collect::<Vec<_>>())
+                };
+                let seen_before = known
+                    .into_iter()
+                    .filter(|ip| !connected.contains(ip) && !cfg.targets.iter().any(|t| t.ip() == *ip))
+                    // never this machine's own discovery port
+                    .filter(|ip| !(cfg.fan_udp_port == me && (ip.is_loopback() || own.contains(ip))))
+                    .map(|ip| SocketAddr::from((ip, cfg.fan_udp_port)));
+                for t in cfg.targets.iter().copied().chain(seen_before) {
+                    // the address this machine has towards that fan
                     let ip = match t.ip() {
                         IpAddr::V4(v) if v.is_loopback() => Ipv4Addr::LOCALHOST,
-                        _ => cfg.local_ip.unwrap_or(self.local_ip),
+                        IpAddr::V4(v) => cfg.local_ip.or_else(|| source_ip(v)).unwrap_or(adv),
+                        IpAddr::V6(_) => cfg.local_ip.unwrap_or(adv),
                     };
-                    let _ = sock.send_to(format!("{ip}HS").as_bytes(), t);
+                    send(format!("{ip}HS"), t);
+                }
+                self.rounds.fetch_add(1, Ordering::SeqCst);
+                failed = if tried > 0 && sent == 0 { failed + 1 } else { 0 };
+                if failed >= UDP_FAILED_ROUNDS {
+                    log::warn!("discovery: nothing could be sent for {failed} rounds; opening the UDP socket again");
+                    return;
                 }
             }
-            if let Ok((n, from)) = sock.recv_from(&mut buf) {
+            let got = sock.recv_from(&mut buf);
+            if poll && got.is_err() {
+                thread::sleep(Duration::from_millis(1));
+            }
+            if let Ok((n, from)) = got {
                 let d = &buf[..n];
-                if d.ends_with(b"HS") && !own.contains(&from.ip()) && d.first().is_some_and(|c| c.is_ascii_digit()) {
-                    let fresh = self.inner.lock().unwrap().seen.insert(from.ip(), Instant::now()).is_none();
+                let mine = own.contains(&from.ip()) || (from.ip().is_loopback() && from.port() == me);
+                if d.ends_with(b"HS") && !mine && d.first().is_some_and(|c| c.is_ascii_digit()) {
+                    let (fresh, again) = {
+                        let mut g = self.inner.lock().unwrap();
+                        g.remember(from.ip());
+                        match g.seen.insert(from.ip(), Instant::now()) {
+                            None => (true, true),
+                            Some(t) => (false, t.elapsed() >= ANSWER_AGAIN),
+                        }
+                    };
+                    // in the log, so it shows whether a fan that does not connect hears us at all
+                    if again {
+                        self.log(format!("{} answered the discovery", from.ip()));
+                    }
                     if fresh {
                         let _ = self.events.send(Event::Discovered { ip: from.ip() });
                     }
@@ -308,6 +433,9 @@ impl Link {
                 let mut g = self.inner.lock().unwrap();
                 let id = g.next_id;
                 g.next_id += 1;
+                if let Some(p) = peer_v4 {
+                    g.remember(p);
+                }
                 g.conns.insert(
                     id,
                     Conn {
@@ -425,6 +553,16 @@ impl Link {
 
     pub fn discovered(&self) -> Vec<IpAddr> {
         self.inner.lock().unwrap().seen.keys().copied().collect()
+    }
+
+    /// The address advertised in the discovery packet now.
+    pub fn advertised(&self) -> Ipv4Addr {
+        *self.advertised.lock().unwrap()
+    }
+
+    /// Discovery rounds sent since the start.
+    pub fn discovery_rounds(&self) -> u64 {
+        self.rounds.load(Ordering::SeqCst)
     }
 
     /// Block until at least one fan is connected.

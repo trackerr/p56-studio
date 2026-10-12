@@ -17,9 +17,13 @@ struct Cli {
     /// IP to advertise in the broadcast (default: each network adapter its own IP).
     #[arg(long, global = true)]
     ip: Option<std::net::Ipv4Addr>,
-    /// TCP port the fan connects to (the real fan always uses 6666).
+    /// TCP port the fan connects to (the real fan always uses 6666). 0: any free port.
     #[arg(long, default_value_t = 6666, global = true)]
     port: u16,
+    /// Write the TCP port in use to this file once it is open: how tests find the port that
+    /// port 0 picked.
+    #[arg(long, hide = true, global = true)]
+    port_file: Option<PathBuf>,
     /// Extra address to send the broadcast to, e.g. 192.168.4.1:8988 or the simulator.
     #[arg(long, global = true)]
     target: Vec<SocketAddr>,
@@ -235,6 +239,10 @@ fn main() {
 
     let cfg = Config { local_ip: cli.ip, tcp_port: cli.port, targets: cli.target.clone(), ..Default::default() };
     let (link, rx) = Link::start(cfg).unwrap_or_else(|e| die(e));
+    if let Some(path) = &cli.port_file {
+        // the newline ends the number, so a reader never takes a half-written file for a port
+        std::fs::write(path, format!("{}\n", link.tcp_port)).unwrap_or_else(|e| die(format!("cannot write {}: {e}", path.display())));
+    }
     std::thread::spawn(move || {
         for ev in rx {
             match ev {
@@ -245,7 +253,7 @@ fn main() {
         }
     });
     if !link.wait_connected(Duration::from_secs(cli.wait)) {
-        die(format!("no fan connected within {} s (Holoscope closed? same Wi-Fi as the fan? firewall: TCP {} + UDP 8988)", cli.wait, cli.port));
+        die(format!("no fan connected within {} s (Holoscope closed? same Wi-Fi as the fan? firewall: TCP {} + UDP 8988)", cli.wait, link.tcp_port));
     }
     // give other fans and the first status a moment
     std::thread::sleep(Duration::from_millis(if cli.all { 1500 } else { 400 }));
