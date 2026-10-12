@@ -10,5 +10,5 @@
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/trackerr/home-assistant-p56/issues",
   "requirements": [],
-  "version": "2.1.1"
+  "version": "2.10.0"
 }
