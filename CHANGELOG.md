@@ -4,9 +4,13 @@ P56 Studio (Windows, Linux, Android), `p56` (CLI), `p56-sim` and `p56-server`.
 The Home Assistant add-on and integration have their own changelog in
 [`ha/p56_pov_display/CHANGELOG.md`](ha/p56_pov_display/CHANGELOG.md).
 
-## Unreleased
+## 0.3.8 — 2026-10-12
 
 ### Changed
+- **Android: new signing key.** Remove P56 Studio from the phone once and install this version
+  (an update over an older version is refused because the key changed); settings such as the
+  server address have to be entered again.
+- The Windows installer's publisher is the project's GitHub name.
 - Live cast runs at **25 frames per second** by default (was 15): on a real P56 it looks
   smoother than 15 or 20, and casting through Home Assistant keeps up.
 

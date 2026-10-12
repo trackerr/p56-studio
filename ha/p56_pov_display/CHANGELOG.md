@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.1.8
+
+p56-server 0.3.8.
+
+- Live cast from the panel runs at 25 frames per second by default (smoother on a P56).
+
 ## 2.1.7
 
 p56-server 0.3.7.
