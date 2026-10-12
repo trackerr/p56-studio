@@ -182,9 +182,10 @@ class P56OptionsFlow(OptionsFlow):
 
 
 def _number(minimum: float, maximum: float, step: float | str = 1, unit: str | None = None) -> NumberSelector:
-    return NumberSelector(
-        NumberSelectorConfig(min=minimum, max=maximum, step=step, mode=NumberSelectorMode.BOX, unit_of_measurement=unit)
-    )
+    config = NumberSelectorConfig(min=minimum, max=maximum, step=step, mode=NumberSelectorMode.BOX)
+    if unit:
+        config["unit_of_measurement"] = unit
+    return NumberSelector(config)
 
 
 PAGE_SCHEMA = vol.Schema(
