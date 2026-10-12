@@ -366,6 +366,8 @@ struct Messages {
     /// By fan key: the message showing there.
     showing: HashMap<String, Showing>,
     waiting: Vec<Waiting>,
+    /// Fans (by key) that were off when a message came: they go off again after the last one.
+    woke: Vec<String>,
 }
 
 struct Showing {
@@ -1435,6 +1437,13 @@ impl Service {
                 }
             }
         }
+        // a fan that is off now goes off again once the messages are over
+        for (&i, k) in ids.iter().zip(&keys) {
+            let off = l.device(i).and_then(|d| d.status).is_some_and(|s| !s.power);
+            if off && !m.woke.contains(k) {
+                m.woke.push(k.clone());
+            }
+        }
         m.next += 1;
         let message = m.next;
         // until it really shows, an upload may take a minute: `ends` is set again then
@@ -1468,7 +1477,19 @@ impl Service {
             };
             // the most important first, then the one that waits longest
             let best = m.waiting.iter().enumerate().filter(|(_, w)| free(w)).max_by_key(|(i, w)| (w.priority, std::cmp::Reverse(*i))).map(|(i, _)| i);
-            best.map(|i| m.waiting.remove(i))
+            let next = best.map(|i| m.waiting.remove(i));
+            // fans a message switched on, with nothing more to show: off again
+            let coming: Vec<String> = next.iter().flat_map(|w| Self::targets(&l, w.req.id, w.req.mac.as_deref())).map(|i| Self::fan_key(&l, i)).collect();
+            let showing: Vec<String> = m.showing.keys().cloned().collect();
+            let (done, still): (Vec<String>, Vec<String>) = m.woke.drain(..).partition(|k| !showing.contains(k) && !coming.contains(k));
+            m.woke = still;
+            for k in done {
+                if let Some(id) = l.ids().into_iter().find(|&i| Self::fan_key(&l, i) == k) {
+                    log::info!("fan #{id} was off before the message: off again");
+                    let _ = l.off(id);
+                }
+            }
+            next
         };
         if let Some(w) = next {
             let me = self.clone();

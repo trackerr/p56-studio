@@ -4,7 +4,12 @@ P56 Studio (Windows, Linux, Android), `p56` (CLI), `p56-sim` and `p56-server`.
 The Home Assistant add-on and integration have their own changelog in
 [`ha/p56_pov_display/CHANGELOG.md`](ha/p56_pov_display/CHANGELOG.md).
 
-## Unreleased
+## 0.3.17 — 2026-10-12
+
+### Added
+- **A fan that was off goes off again after a message**: a temporary message (stored or cast)
+  switches the fan on, and after the last message it is switched off again; a fan that was on
+  stays on. Tested on a real P56.
 
 ### Fixed
 - **An upload during a live cast was not stored** (a real P56 in live mode stores nothing): the

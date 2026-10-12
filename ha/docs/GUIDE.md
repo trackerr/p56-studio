@@ -103,7 +103,9 @@ data:
 ```
 
 With `show_seconds` the message stays on until its time is up (the fan repeats only that one
-meanwhile), then the fan goes back to what it played before. Using the same `name` again
+meanwhile), then the fan goes back to what it played before. If the fan was off, it switches on
+for the message and off again afterwards, so a fan that is normally off only lights up for
+messages. Using the same `name` again
 replaces the earlier picture instead of adding a new one.
 
 **Important messages first.** Give a message with `show_seconds` a `priority` (default 0). A
@@ -241,4 +243,5 @@ own Wi-Fi) and later return to the server.
 | The **AI picture** box is missing on the Media tab | Set up an AI that can make pictures ([section 7](#7-pictures-made-by-ai)) and update the add-on to 2.1.9 or later. |
 | "the AI made no picture" | The message after it comes from the AI; often the key has no billing or hit its limit. |
 | The fan falls off Wi-Fi and keeps showing its own hotspot | Do not pair a Bluetooth receiver or speaker to the fan: Wi-Fi and Bluetooth share one radio, and the fan cannot rejoin Wi-Fi while Bluetooth is connected. Disconnect the speaker or switch the fan's Bluetooth off. P56 Studio does not use Bluetooth. |
+| Four blue lights blink on the fan | Its card is empty. Keep one black picture on it (upload a black image named for example `zwart`): the fan then shows nothing, and messages return to it. |
 | Something else | Open the add-on's **Log** tab; the last lines usually say what is going on. |

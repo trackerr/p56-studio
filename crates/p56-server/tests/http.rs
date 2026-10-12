@@ -1003,3 +1003,37 @@ fn pages_leave_a_switched_off_fan_alone() {
     std::thread::sleep(Duration::from_millis(500));
     assert!(!fan.state().power, "the page did not switch the fan on");
 }
+
+/// A fan that is off shows a message and goes off again afterwards (stored or cast); one that
+/// was on stays on.
+#[test]
+fn a_fan_that_was_off_goes_off_again_after_a_message() {
+    let s = start_env(false, &[], &[]);
+    let pc = std::net::SocketAddr::from((Ipv4Addr::LOCALHOST, s.tcp));
+    let fan = p56_sim::Sim::start(p56_sim::SimConfig { name: "FAN".into(), udp_port: 0, pc: Some(pc), ..Default::default() }).unwrap();
+    s.wait("fan", |v| v["devices"].as_array().is_some_and(|d| d.len() == 1 && d[0]["status"].is_object()));
+    let wait = |what: &str, cond: &dyn Fn() -> bool| {
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while !cond() {
+            assert!(Instant::now() < deadline, "{what}");
+            std::thread::sleep(Duration::from_millis(200));
+        }
+    };
+    for mode in ["upload", "cast"] {
+        s.call("control", json!({ "id": 1, "action": "off" }));
+        wait("off", &|| !fan.state().power);
+        let (_, v) = s.post("/api/show", json!({ "text": "INTRUDER", "name": "alarm", "mode": mode, "show_seconds": 3, "priority": 10 }));
+        assert_eq!(v["success"], true, "{mode}: {v}");
+        wait("on for the message", &|| fan.state().power);
+        wait("off again afterwards", &|| !fan.state().power && !fan.state().files.iter().any(|f| f.name == "alarm.mp4"));
+    }
+    // a fan that was on stays on
+    s.call("control", json!({ "id": 1, "action": "on" }));
+    wait("on", &|| fan.state().power);
+    let (_, v) = s.post("/api/show", json!({ "text": "hello", "name": "hello", "show_seconds": 2 }));
+    assert_eq!(v["success"], true, "{v}");
+    wait("message gone", &|| !fan.state().files.iter().any(|f| f.name == "hello.mp4"));
+    std::thread::sleep(Duration::from_millis(800));
+    assert!(fan.state().power, "it was on before, so it stays on");
+    assert!(fan.state().protocol_errors.is_empty(), "{:?}", fan.state().protocol_errors);
+}

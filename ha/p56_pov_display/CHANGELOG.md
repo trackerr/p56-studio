@@ -1,7 +1,11 @@
 # Changelog
 
-## Unreleased
+## 2.1.17
 
+p56-server 0.3.17.
+
+- **A fan that was off goes off again after a message** (doorbell, alarm, price…): it switches
+  on for the message and off again afterwards. A fan that was on stays on.
 - A message from an automation is stored also while something is cast live, and the panel's
   power button works while pages are shown (pages leave a switched-off fan alone).
 
