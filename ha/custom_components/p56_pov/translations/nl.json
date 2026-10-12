@@ -111,6 +111,9 @@
       },
       "master": {
         "name": "Master"
+      },
+      "pages": {
+        "name": "Pagina's"
       }
     },
     "select": {
@@ -151,6 +154,9 @@
       },
       "last_activity": {
         "name": "Laatste activiteit"
+      },
+      "page": {
+        "name": "Pagina"
       }
     },
     "button": {
@@ -488,6 +494,87 @@
           "name": "Naam",
           "description": "Bestandsnaam op de fan."
         }
+      }
+    }
+  },
+  "config_subentries": {
+    "page": {
+      "entry_type": "Pagina",
+      "initiate_flow": {
+        "user": "Pagina toevoegen"
+      },
+      "step": {
+        "user": {
+          "title": "Pagina",
+          "description": "Een pagina wisselt af met de andere pagina's op de fans zolang de schakelaar Pagina's aan staat. Meldingen gaan altijd voor.",
+          "data": {
+            "name": "Naam",
+            "text": "Tekst",
+            "icon": "Icoon",
+            "style": "Stijl",
+            "color": "Tekstkleur",
+            "value": "Waarde",
+            "value_min": "Minimum",
+            "value_max": "Maximum",
+            "invert_colors": "Kleuren omdraaien",
+            "gauge": "Meterring",
+            "show_if": "Tonen als",
+            "seconds": "Duur",
+            "order": "Volgorde"
+          },
+          "data_description": {
+            "name": "Zichtbaar in de paginasensor.",
+            "text": "Mag een template zijn, bv. {{ states('sensor.stroomprijs') }} €.",
+            "icon": "Boven de tekst.",
+            "style": "Een kant-en-klaar uiterlijk (kleuren, icoon, ring).",
+            "color": "Een naam, #rrggbb of r,g,b.",
+            "value": "Een template met een getal: kleurt de tekst (groen bij het minimum, rood bij het maximum).",
+            "value_min": "Waarde die groen is.",
+            "value_max": "Waarde die rood is.",
+            "invert_colors": "Rood bij het minimum en groen bij het maximum.",
+            "gauge": "Een ring langs de rand die volloopt van minimum tot maximum.",
+            "show_if": "Een template; de pagina verschijnt alleen zolang die waar is. Leeg: altijd.",
+            "seconds": "Hoe lang de pagina per beurt staat.",
+            "order": "Pagina's komen van laag naar hoog aan de beurt (daarna op naam)."
+          }
+        },
+        "reconfigure": {
+          "title": "Pagina",
+          "description": "Een pagina wisselt af met de andere pagina's op de fans zolang de schakelaar Pagina's aan staat. Meldingen gaan altijd voor.",
+          "data": {
+            "name": "Naam",
+            "text": "Tekst",
+            "icon": "Icoon",
+            "style": "Stijl",
+            "color": "Tekstkleur",
+            "value": "Waarde",
+            "value_min": "Minimum",
+            "value_max": "Maximum",
+            "invert_colors": "Kleuren omdraaien",
+            "gauge": "Meterring",
+            "show_if": "Tonen als",
+            "seconds": "Duur",
+            "order": "Volgorde"
+          },
+          "data_description": {
+            "name": "Zichtbaar in de paginasensor.",
+            "text": "Mag een template zijn, bv. {{ states('sensor.stroomprijs') }} €.",
+            "icon": "Boven de tekst.",
+            "style": "Een kant-en-klaar uiterlijk (kleuren, icoon, ring).",
+            "color": "Een naam, #rrggbb of r,g,b.",
+            "value": "Een template met een getal: kleurt de tekst (groen bij het minimum, rood bij het maximum).",
+            "value_min": "Waarde die groen is.",
+            "value_max": "Waarde die rood is.",
+            "invert_colors": "Rood bij het minimum en groen bij het maximum.",
+            "gauge": "Een ring langs de rand die volloopt van minimum tot maximum.",
+            "show_if": "Een template; de pagina verschijnt alleen zolang die waar is. Leeg: altijd.",
+            "seconds": "Hoe lang de pagina per beurt staat.",
+            "order": "Pagina's komen van laag naar hoog aan de beurt (daarna op naam)."
+          }
+        }
+      },
+      "abort": {
+        "reconfigure_successful": "De pagina is gewijzigd."
       }
     }
   }

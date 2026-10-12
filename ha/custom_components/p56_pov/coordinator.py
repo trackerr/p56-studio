@@ -107,6 +107,8 @@ class P56Coordinator(DataUpdateCoordinator[P56Data]):
         self.live = False
         self.shown_at: dict[str, datetime] = {}
         self.server_device_id: str = ""
+        # set in async_setup_entry (pages.P56Pages)
+        self.pages: Any = None
 
     async def _async_update_data(self) -> P56Data:
         try:

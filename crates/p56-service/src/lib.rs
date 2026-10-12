@@ -320,6 +320,11 @@ pub struct ShowRequest {
     /// equal one replaces it. Default 0.
     #[serde(default)]
     pub priority: Option<i32>,
+    /// `false`: a message that would have to wait (a more important one shows) is skipped instead,
+    /// and is not brought back when a more important one interrupts it. For things that come
+    /// round again anyway, such as rotating pages.
+    #[serde(default)]
+    pub queue: Option<bool>,
     /// A ring along the rim filled like a meter: the share of `color_scale`'s value between its
     /// min and max, clockwise from the top, in the text's colour.
     #[serde(default)]
@@ -349,6 +354,13 @@ struct Waiting {
     priority: i32,
     req: ShowRequest,
     since: Instant,
+}
+
+/// What becomes of a temporary message: it shows now (with this id), waits, or is skipped.
+enum Gate {
+    Show(u64),
+    Queued,
+    Skipped,
 }
 
 /// A waiting message that could not be shown within this time is dropped.
@@ -1330,8 +1342,9 @@ impl Service {
         // a temporary message waits for a more important one, or interrupts a less important one
         let message = match r.show_seconds.filter(|s| *s > 0.0) {
             Some(secs) => match self.message_gate(&l, &ids, &r, secs) {
-                Some(m) => Some(m),
-                None => return Ok(json!({ "success": true, "queued": true })),
+                Gate::Show(m) => Some(m),
+                Gate::Queued => return Ok(json!({ "success": true, "queued": true })),
+                Gate::Skipped => return Ok(json!({ "success": true, "skipped": true })),
             },
             None => None,
         };
@@ -1345,28 +1358,37 @@ impl Service {
         result
     }
 
-    /// Whether a temporary message for these fans may show now: `Some(its id)`, or `None` when a
-    /// more important message shows there (then it waits). A less important message showing
-    /// there is interrupted and waits to come back for the time it had left.
-    fn message_gate(&self, l: &Link, ids: &[u32], r: &ShowRequest, secs: f64) -> Option<u64> {
+    /// Whether a temporary message for these fans may show now, or waits (or is skipped, with
+    /// `queue: false`) because a more important message shows there. A less important message
+    /// showing there is interrupted and waits to come back for the time it had left; when it was
+    /// cast, its cast stops at once.
+    fn message_gate(&self, l: &Link, ids: &[u32], r: &ShowRequest, secs: f64) -> Gate {
         let keys: Vec<String> = ids.iter().map(|&i| Self::fan_key(l, i)).collect();
         let priority = r.priority.unwrap_or(0);
         let now = Instant::now();
         let mut m = self.messages.lock().unwrap();
         m.showing.retain(|_, s| s.ends > now);
         if keys.iter().filter_map(|k| m.showing.get(k)).any(|s| s.priority > priority) {
+            if r.queue == Some(false) {
+                return Gate::Skipped;
+            }
             log::info!("message waits for a more important one (priority {priority})");
             m.waiting.push(Waiting { priority, req: r.clone(), since: now });
-            return None;
+            return Gate::Queued;
         }
         // interrupted by a more important message: comes back afterwards (not when merely
         // replaced by an equal one, e.g. a price that updates)
         let mut interrupted: Vec<u64> = Vec::new();
         for k in &keys {
             if let Some(s) = m.showing.remove(k) {
+                // a cast message would otherwise keep casting over what comes now
+                if s.req.mode.as_deref() == Some("cast") && !interrupted.contains(&s.message) {
+                    self.cast_session.fetch_add(1, Ordering::SeqCst);
+                }
                 let left = if s.shown { s.ends.saturating_duration_since(now).as_secs_f64() } else { s.req.show_seconds.unwrap_or(0.0) };
                 let same = s.req.name.is_some() && s.req.name == r.name;
-                if s.priority < priority && !same && left >= MESSAGE_RESUME_MIN && !interrupted.contains(&s.message) {
+                let comes_back = s.req.queue != Some(false);
+                if s.priority < priority && !same && comes_back && left >= MESSAGE_RESUME_MIN && !interrupted.contains(&s.message) {
                     interrupted.push(s.message);
                     let mut back = s.req.clone();
                     back.show_seconds = Some(left);
@@ -1381,7 +1403,7 @@ impl Service {
         for k in keys {
             m.showing.insert(k, Showing { message, priority, req: r.clone(), ends, shown: false });
         }
-        Some(message)
+        Gate::Show(message)
     }
 
     /// A temporary message really shows now: it ends `secs` from now.

@@ -6,6 +6,11 @@ The Home Assistant add-on and integration have their own changelog in
 
 ## Unreleased
 
+### Added
+- `/api/show`: `queue: false` — a message that would have to wait is skipped (`skipped: true`)
+  and does not come back after an interruption; a cast message that is interrupted stops at
+  once. For the Home Assistant pages.
+
 ### Removed
 - **Bluetooth**: P56 Studio, `p56`, `p56-server` and the simulator no longer use the fan's
   Bluetooth. The Bluetooth section on the Network tab, `p56 ble`, and the `ble_on`, `ble_off`,

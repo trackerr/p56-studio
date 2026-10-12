@@ -906,3 +906,38 @@ fn messages_wait_or_interrupt_by_priority() {
     let base_slot = base[0].as_u64().or(base["slot"].as_u64()).unwrap_or(99);
     assert_eq!(playing, base_slot, "{d}");
 }
+
+/// Rotating pages (cast, lowest priority, `queue: false`): a message interrupts a page and stops
+/// its cast, a page that comes while a message shows is skipped, and an interrupted page does
+/// not come back afterwards.
+#[test]
+fn pages_make_way_for_messages() {
+    let s = start(true);
+    s.wait("virtual fan", |v| v["devices"].as_array().is_some_and(|d| !d.is_empty() && d[0]["status"].is_object()));
+    let page = |text: &str, secs: f64| {
+        let (_, v) = s.post("/api/show", json!({ "text": text, "name": "page", "mode": "cast", "show_seconds": secs, "priority": -10, "queue": false }));
+        v
+    };
+    assert_eq!(page("weather", 20.0)["success"], true);
+    // a message interrupts the page
+    let (_, msg) = s.post("/api/show", json!({ "text": "door", "name": "door", "show_seconds": 3, "priority": 5 }));
+    assert_eq!(msg["success"], true, "{msg}");
+    assert!(msg["queued"].is_null(), "{msg}");
+    // the next page while the message shows: skipped, not queued
+    let next = page("price", 5.0);
+    assert_eq!(next["skipped"], true, "{next}");
+    // after the message the interrupted page does not come back by itself
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        let st = s.get("/api/state");
+        let files = st["devices"][0]["files"].as_array().cloned().unwrap_or_default();
+        if !files.iter().any(|f| f[1] == "door.mp4") {
+            break;
+        }
+        assert!(Instant::now() < deadline, "the message was not removed");
+        std::thread::sleep(Duration::from_millis(300));
+    }
+    std::thread::sleep(Duration::from_secs(2));
+    // a page can show again now
+    assert_eq!(page("price", 2.0)["success"], true);
+}

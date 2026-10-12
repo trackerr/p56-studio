@@ -111,6 +111,9 @@
       },
       "master": {
         "name": "Master"
+      },
+      "pages": {
+        "name": "Pages"
       }
     },
     "select": {
@@ -151,6 +154,9 @@
       },
       "last_activity": {
         "name": "Last activity"
+      },
+      "page": {
+        "name": "Page"
       }
     },
     "button": {
@@ -488,6 +494,87 @@
           "name": "Name",
           "description": "File name on the fan."
         }
+      }
+    }
+  },
+  "config_subentries": {
+    "page": {
+      "entry_type": "Page",
+      "initiate_flow": {
+        "user": "Add page"
+      },
+      "step": {
+        "user": {
+          "title": "Page",
+          "description": "A page takes turns with the other pages on the fans while the Pages switch is on. Messages always go first.",
+          "data": {
+            "name": "Name",
+            "text": "Text",
+            "icon": "Icon",
+            "style": "Style",
+            "color": "Text colour",
+            "value": "Value",
+            "value_min": "Minimum",
+            "value_max": "Maximum",
+            "invert_colors": "Reverse colours",
+            "gauge": "Meter ring",
+            "show_if": "Show if",
+            "seconds": "Duration",
+            "order": "Order"
+          },
+          "data_description": {
+            "name": "Shown in the page sensor.",
+            "text": "May be a template, e.g. {{ states('sensor.electricity_price') }} €.",
+            "icon": "Above the text.",
+            "style": "A ready-made look (colours, icon, ring).",
+            "color": "A name, #rrggbb or r,g,b.",
+            "value": "A template giving a number: colours the text (green at the minimum, red at the maximum).",
+            "value_min": "Value that is green.",
+            "value_max": "Value that is red.",
+            "invert_colors": "Red at the minimum and green at the maximum.",
+            "gauge": "A ring along the rim fills from the minimum to the maximum.",
+            "show_if": "A template; the page only shows while it is true. Empty: always.",
+            "seconds": "How long the page shows each turn.",
+            "order": "Pages take turns from low to high (then by name)."
+          }
+        },
+        "reconfigure": {
+          "title": "Page",
+          "description": "A page takes turns with the other pages on the fans while the Pages switch is on. Messages always go first.",
+          "data": {
+            "name": "Name",
+            "text": "Text",
+            "icon": "Icon",
+            "style": "Style",
+            "color": "Text colour",
+            "value": "Value",
+            "value_min": "Minimum",
+            "value_max": "Maximum",
+            "invert_colors": "Reverse colours",
+            "gauge": "Meter ring",
+            "show_if": "Show if",
+            "seconds": "Duration",
+            "order": "Order"
+          },
+          "data_description": {
+            "name": "Shown in the page sensor.",
+            "text": "May be a template, e.g. {{ states('sensor.electricity_price') }} €.",
+            "icon": "Above the text.",
+            "style": "A ready-made look (colours, icon, ring).",
+            "color": "A name, #rrggbb or r,g,b.",
+            "value": "A template giving a number: colours the text (green at the minimum, red at the maximum).",
+            "value_min": "Value that is green.",
+            "value_max": "Value that is red.",
+            "invert_colors": "Red at the minimum and green at the maximum.",
+            "gauge": "A ring along the rim fills from the minimum to the maximum.",
+            "show_if": "A template; the page only shows while it is true. Empty: always.",
+            "seconds": "How long the page shows each turn.",
+            "order": "Pages take turns from low to high (then by name)."
+          }
+        }
+      },
+      "abort": {
+        "reconfigure_successful": "The page was changed."
       }
     }
   }

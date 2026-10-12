@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Added
+- **Pages that take turns**: add pages to the P56 server on the integration page (text with
+  templates, icon, style, colour by value, meter ring, a condition and a duration) and turn on
+  the switch **Pages**. They take turns on the fans, live and without storing anything;
+  messages always go first. The sensor **Page** shows which page is on.
+
 ### Removed
 - **Bluetooth**: the P56 POV panel no longer has a Bluetooth section on the Network tab, and the
   server no longer accepts the Bluetooth commands. On the P56, Wi-Fi and Bluetooth share one

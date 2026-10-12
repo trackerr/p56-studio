@@ -133,6 +133,16 @@ Everything a style sets can be overridden: `color`, `background`, `icon`, `icon_
 `gauge: true` (with `value`, `value_min`, `value_max`) turns the ring into a meter: filled
 clockwise from the top as far as the value is between min and max, the rest a dim track.
 
+#### Pages
+
+Pages are sub-entries of the server entry (**Add page** on the integration page): a `text`
+(template), `icon`, `style`, `color`, a `value` template with `value_min` / `value_max`
+(colour by value, `gauge` for a meter ring), a `show_if` template, a duration in `seconds` and
+an `order`. While the server's switch **Pages** is on they take turns on all fans of that server:
+each is cast for its duration at priority −10 with `queue: false`, so any message interrupts it
+and a page that comes round during a message is skipped. Changed values are sent at once. The
+sensor **Page** shows the page that is on.
+
 #### Priority of messages
 
 A message with `show_seconds` can have a `priority` (default 0, from −100 to 100). While a
@@ -141,7 +151,8 @@ afterwards, the most important and then the oldest first; an equally important o
 a more important one interrupts it, and the interrupted message comes back afterwards for the
 time it had left. At the end the fan returns to the file it played before the first message.
 `show_text`, `show_image` and `show_ai` all take `priority`; a waiting message answers with
-`queued: true`.
+`queued: true`. With `queue: false` (in `/api/show`) a message that would have to wait is
+skipped instead (`skipped: true`), and it does not come back after an interruption.
 
 #### Animations: GIF and video
 
@@ -187,7 +198,7 @@ data:
 | Method + path | Body / answer |
 | --- | --- |
 | `GET /api/state` | `{connected, fan_ip, playlist:[{slot,name}], devices:[…], last_activity, version}` |
-| `POST /api/show` | `{text \| icon \| data (base64; GIF keeps all frames) \| path (only under /media or /share) \| frames:[base64,…], style, icon, icon_color, color_scale:{value,min,max,colors?,invert?}, gauge, ring, color, background, font_size, show_seconds, priority, mode, name, max_frames, frame_ms, mac \| id, placement:{x,y,scale,mirror}}` |
+| `POST /api/show` | `{text \| icon \| data (base64; GIF keeps all frames) \| path (only under /media or /share) \| frames:[base64,…], style, icon, icon_color, color_scale:{value,min,max,colors?,invert?}, gauge, ring, color, background, font_size, show_seconds, priority, queue, mode, name, max_frames, frame_ms, mac \| id, placement:{x,y,scale,mirror}}` |
 | `POST /api/call/<cmd>` | every command of the web app, e.g. `control {id, action:"on"\|"off"\|"play"\|"pause"\|…}`, `set_value {id, what:"brightness"\|"angle"\|"volume"\|"select"\|"delete", value}` → `{ok, result \| error}` |
 | `GET /api/events` | live events (server-sent events) |
 | `GET /api/shown/<mac>` | PNG of what was last sent to that fan |

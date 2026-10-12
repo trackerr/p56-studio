@@ -12,6 +12,7 @@ from .api import P56Api
 from .const import DEFAULT_HOST, DEFAULT_PORT, DOMAIN, LOGGER
 from .coordinator import P56ConfigEntry, P56Coordinator
 from .entity import server_device_info
+from .pages import P56Pages
 from .services import async_setup_services
 
 PLATFORMS: list[Platform] = [
@@ -43,6 +44,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: P56ConfigEntry) -> bool:
     coordinator = P56Coordinator(hass, entry, api)
     await coordinator.async_config_entry_first_refresh()
     entry.runtime_data = coordinator
+    coordinator.pages = P56Pages(hass, coordinator)
+    entry.async_on_unload(coordinator.pages.stop)
     server = dr.async_get(hass).async_get_or_create(config_entry_id=entry.entry_id, **server_device_info(coordinator))
     coordinator.server_device_id = server.id
     entry.async_create_background_task(hass, coordinator.async_listen(), f"{DOMAIN} events {api.base}")
