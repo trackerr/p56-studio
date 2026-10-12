@@ -367,7 +367,7 @@
         },
         "kind": {
           "name": "Soort",
-          "description": "Een stilstaand plaatje, het plaatje dat ronddraait, of een animatie die de AI tekent."
+          "description": "Een stilstaand plaatje, het object dat om zijn eigen as draait (als op een draaiplateau), of een animatie waarin het op de plek beweegt."
         },
         "entity_id": {
           "name": "AI Task",

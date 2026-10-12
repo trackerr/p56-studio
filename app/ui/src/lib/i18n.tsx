@@ -209,6 +209,8 @@ const en = {
   'media.preview': 'as the fan sees it · {size} · JPEG {kb} kB · quality {q}',
   'media.previewLoading': 'loading preview…',
   'media.frame': 'frame',
+  'media.play': 'Play',
+  'media.pause': 'Pause',
   'media.layoutTitle': 'The JPEG image as the fan receives it (arms side by side)',
 
   // cast
@@ -500,6 +502,8 @@ const nl: Record<Key, Entry> = {
   'media.preview': 'zo ziet de fan het · {size} · JPEG {kb} kB · kwaliteit {q}',
   'media.previewLoading': 'voorbeeld laden…',
   'media.frame': 'frame',
+  'media.play': 'Afspelen',
+  'media.pause': 'Pauze',
   'media.layoutTitle': 'Het JPEG-beeld zoals de fan het ontvangt (armen naast elkaar)',
 
   'cast.pickMediaFirst': 'Kies eerst media op het tabblad Media',

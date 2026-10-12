@@ -117,8 +117,8 @@ times a second until you press stop; the fan then returns to its playlist.
 
 ## 7. Pictures made by AI
 
-Type what you want to see, and an AI draws it for the fan: a still picture, the picture turning
-round, or a short animation it draws frame by frame.
+Type what you want to see, and an AI draws it for the fan: a still picture, an object turning
+round its own axis (as on a turntable), or a short animation in which it moves on the spot.
 
 **What you need:** an AI in Home Assistant that can make pictures, for example **Google
 Generative AI** (Gemini). Set it up under **Settings → Devices & services → Add integration**
@@ -129,7 +129,8 @@ provider (with Google it needs billing turned on for the key).
 **From the panel:** open **P56 POV → Media**. When an AI is available, an **AI picture** box
 appears: describe the picture (for example *a neon jellyfish*), choose **Still**, **Turning** or
 **Animation** and press **Make**. After 5–30 seconds it is in the preview, ready for **Upload**
-or the **Cast** tab like any other picture. A black background and one bold subject in the
+or the **Cast** tab like any other picture; an animation plays in the preview (pause it with
+the button next to the frame slider). A black background and one bold subject in the
 middle are asked for automatically, because that looks best on the fan.
 
 **From an automation:**
@@ -138,7 +139,7 @@ middle are asked for automatically, because that looks best on the fan.
 action: p56_pov.show_ai
 data:
   prompt: a neon jellyfish
-  kind: anim          # still, spin (turning) or anim (animation)
+  kind: spin          # still, spin (turning round its own axis) or anim (moving on the spot)
   show_seconds: 60
 ```
 

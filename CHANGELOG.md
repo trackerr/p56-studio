@@ -4,6 +4,20 @@ P56 Studio (Windows, Linux, Android), `p56` (CLI), `p56-sim` and `p56-server`.
 The Home Assistant add-on and integration have their own changelog in
 [`ha/p56_pov_display/CHANGELOG.md`](ha/p56_pov_display/CHANGELOG.md).
 
+## 0.3.10 — 2026-10-12
+
+### Changed
+- **AI pictures, Turning:** the object turns round its own upright axis, as on a turntable,
+  instead of the whole picture turning round on the display.
+
+### Fixed
+- **AI animations:** a white margin the AI sometimes draws round the frames becomes black, the
+  frames are cut where the AI really drew them (not blindly in 16 equal parts), and every frame is
+  centred, so the subject stays in place. The AI is asked more clearly for frames that differ and
+  for a subject that moves on the spot.
+- The preview in the Media tab plays animations (with a pause button), instead of showing one
+  frame.
+
 ## 0.3.9 — 2026-10-12
 
 ### Added

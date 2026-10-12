@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { IconFilm, IconImage, IconRings, IconRotate, IconSparkle, IconType, IconUpload, IconX } from '@/components/icons';
+import { IconFilm, IconImage, IconPause, IconPlay, IconRings, IconRotate, IconSparkle, IconType, IconUpload, IconX } from '@/components/icons';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -108,17 +108,36 @@ export function MediaPanel() {
     finally { setBusy(null); }
   }
 
+  // an animation plays in the preview; its frames are kept, so after one round it runs smoothly
+  const [playing, setPlaying] = useState(true);
+  const frames = useRef<{ key: string; pv: Map<number, Preview> }>({ key: '', pv: new Map() });
+  const pvKey = JSON.stringify([media?.id, media?.frames, placement, fan?.id, fan?.status?.fan_type]);
+  if (frames.current.key !== pvKey) frames.current = { key: pvKey, pv: new Map() };
+  useEffect(() => { setPlaying(true); }, [media?.id]);
+
   // preview on every change
   useEffect(() => {
     let alive = true;
+    const kept = frames.current.pv.get(frame);
+    if (kept) { setPv(kept); setPvErr(''); return; }
+    const store = frames.current.pv;
     const timer = setTimeout(async () => {
       try {
         const p = await invoke<Preview>('preview', { media: media?.id ?? 0, frame, placement, id: fan?.id ?? null });
+        // kept only for short animations (a long video would fill the memory)
+        if ((media?.frames ?? 1) <= 64) store.set(frame, p);
         if (alive) { setPv(p); setPvErr(''); }
       } catch (e) { if (alive) setPvErr(String(e)); }
-    }, 120);
+    }, playing && (media?.frames ?? 1) > 1 ? 0 : 120);
     return () => { alive = false; clearTimeout(timer); };
-  }, [media?.id, media?.frames, frame, placement, fan?.id, fan?.status?.fan_type]);
+  }, [pvKey, frame]);
+
+  // the next frame once this one is shown (8 per second, like an AI animation)
+  useEffect(() => {
+    if (!playing || (media?.frames ?? 1) < 2 || !pv) return;
+    const timer = setTimeout(() => setFrame((f) => (f + 1) % (media?.frames ?? 1)), 125);
+    return () => clearTimeout(timer);
+  }, [pv, playing, media?.frames]);
 
   useEffect(() => onEvent((e) => {
     if (e.type === 'progress') {
@@ -349,8 +368,11 @@ export function MediaPanel() {
           pv ? t('media.preview', { size: `${pv.width}×${pv.height}`, kb: (pv.jpeg_bytes / 1024).toFixed(1), q: pv.quality }) : t('media.previewLoading')} />
         {n > 1 && (
           <div className="flex items-center gap-4">
+            <Button size="sm" variant="secondary" data-testid="preview-play" aria-label={playing ? t('media.pause') : t('media.play')} title={playing ? t('media.pause') : t('media.play')} onClick={() => setPlaying(!playing)}>
+              {playing ? <IconPause /> : <IconPlay />}
+            </Button>
             <span className="orbit-label">{t('media.frame')}</span>
-            <Slider value={[frame]} min={0} max={n - 1} step={1} aria-label={t('media.frame')} onValueChange={([f]) => setFrame(f)} />
+            <Slider value={[frame]} min={0} max={n - 1} step={1} aria-label={t('media.frame')} onValueChange={([f]) => { setPlaying(false); setFrame(f); }} />
             <span className="orbit-value w-16 text-right text-xs">{frame + 1}/{n}</span>
           </div>
         )}

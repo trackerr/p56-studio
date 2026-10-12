@@ -48,5 +48,5 @@ BRIGHTNESS_MAX: Final = 16
 ANGLE_MIN: Final = -180
 ANGLE_MAX: Final = 180
 
-# p56_pov.show_ai: a still, the picture turning round, or an animation drawn by the AI
+# p56_pov.show_ai: a still, the object turning round its own axis, or an animation drawn by the AI
 AI_KINDS = ["still", "spin", "anim"]

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.1.10
+
+p56-server 0.3.10.
+
+- AI pictures: **Turning** turns the object round its own axis (as on a turntable) instead of
+  turning the whole picture; animations no longer get a white edge or jump about, and the AI is
+  asked for frames that really move.
+- The panel's preview plays animations.
+
 ## 2.1.9
 
 p56-server 0.3.9.

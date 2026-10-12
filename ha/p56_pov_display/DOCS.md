@@ -140,8 +140,10 @@ default 100). The fan plays it in a loop; with `mode: cast` it plays live for `s
 
 `p56_pov.show_ai` has an AI Task of Home Assistant draw a picture from `prompt` (the add-on
 adds a black background and asks for one bold subject in the middle). `kind: still` (default)
-shows it as it is, `spin` turns it round once every 3.6 s, and `anim` asks the AI for a 4×4
-sheet of 16 frames and plays them as an animation. `entity_id` picks the AI Task; by default the
+shows it as it is, `spin` turns the object round its own upright axis (as on a turntable, one
+turn in 2.4 s), and `anim` asks the AI for a 4×4 sheet of 16 frames in which the subject moves
+on the spot, and plays them as an animation. White margins the AI sometimes adds become black,
+and every frame is centred so the subject stays put. `entity_id` picks the AI Task; by default the
 first one that can make pictures is used. The panel's Media tab has the same as an
 **AI picture** box. It needs `homeassistant_api` (on by default) and Home Assistant on port 8123
 with plain http on the same machine, where the add-on fetches the finished picture.

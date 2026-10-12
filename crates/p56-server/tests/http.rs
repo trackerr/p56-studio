@@ -644,7 +644,7 @@ fn ai_pictures_through_home_assistant() {
     let anim = s.call("ai_image", json!({ "prompt": "a red fox", "kind": "anim", "name": "fox" }));
     assert_eq!(anim["frames"], 16, "{anim}");
     let spin = s.call("ai_image", json!({ "prompt": "a red fox", "kind": "spin" }));
-    assert_eq!(spin["frames"], 36, "{spin}");
+    assert_eq!(spin["frames"], 24, "{spin}");
     for bad in [json!({ "prompt": "" }), json!({ "prompt": "fox", "kind": "video" }), json!({ "prompt": "fox", "entity_id": "light.kitchen" })] {
         let (_, v) = s.post("/api/call/ai_image", bad.clone());
         assert_eq!(v["ok"], false, "{bad}: {v}");

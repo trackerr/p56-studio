@@ -367,7 +367,7 @@
         },
         "kind": {
           "name": "Kind",
-          "description": "A still picture, the picture turning round, or an animation drawn by the AI."
+          "description": "A still picture, the object turning round its own axis (as on a turntable), or an animation in which it moves on the spot."
         },
         "entity_id": {
           "name": "AI Task",
