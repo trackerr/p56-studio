@@ -4,7 +4,7 @@ P56 Studio (Windows, Linux, Android), `p56` (CLI), `p56-sim` and `p56-server`.
 The Home Assistant add-on and integration have their own changelog in
 [`ha/p56_pov_display/CHANGELOG.md`](ha/p56_pov_display/CHANGELOG.md).
 
-## Unreleased
+## 0.3.14 — 2026-10-12
 
 ### Added
 - `/api/show`: `queue: false` — a message that would have to wait is skipped (`skipped: true`)

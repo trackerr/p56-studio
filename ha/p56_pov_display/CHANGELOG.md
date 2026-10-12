@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 2.1.14
+
+p56-server 0.3.14.
 
 ### Added
 - **Pages that take turns**: add pages to the P56 server on the integration page (text with
