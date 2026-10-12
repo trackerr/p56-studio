@@ -98,6 +98,19 @@ fn at_fan_rate<T: Clone>(frames: Vec<(T, u32)>, max: usize) -> Vec<T> {
 /// The newest picture of a cast source in the fan's layout, with its JPEG quality.
 type Newest = Arc<Mutex<Option<(Vec<u8>, u8)>>>;
 
+/// Delete the file called `name` (`<stem>.mp4`) from fan `id`, if there is one, and wait until the
+/// fan no longer lists it, so a new file can take that name.
+fn remove_named(l: &Link, id: u32, name: &str) {
+    if let Some(old) = l.device(id).and_then(|d| d.files.iter().find(|(_, n)| *n == name).map(|(s, _)| *s)) {
+        let _ = l.delete(id, old);
+        let deadline = Instant::now() + Duration::from_secs(4);
+        while Instant::now() < deadline && l.device(id).is_some_and(|d| d.files.iter().any(|(_, n)| *n == name)) {
+            let _ = l.refresh(id);
+            thread::sleep(Duration::from_millis(250));
+        }
+    }
+}
+
 /// The windows that can be cast instead of the whole screen: visible, with a title, not tiny.
 fn desktop_windows() -> Value {
     #[cfg(any(target_os = "windows", target_os = "macos"))]
@@ -988,6 +1001,10 @@ impl Service {
             (v, md.name.rsplit_once('.').map(|(a, _)| a.to_string()).unwrap_or(md.name.clone()))
         };
         let name = arg::<String>(&a, "name").filter(|n| !n.trim().is_empty()).unwrap_or(default_name);
+        // "replace": a file with this name on the fan is deleted first (the user chose to overwrite it)
+        if arg::<bool>(&a, "replace").unwrap_or(false) {
+            remove_named(&l, id, &p56_core::protocol::mp4_name(&name));
+        }
         let progress = |stage: &str, done: usize, total: usize| self.emit("progress", json!({ "stage": stage, "done": done, "total": total }));
         let frames: Vec<Vec<u8>> = if src.is_empty() {
             vec![transcode::encode_upload(&transcode::test_card(), &ft, &pl).jpeg]
@@ -1319,14 +1336,7 @@ impl Service {
             // makes the timer of an earlier upload with this name stale before the file is touched
             let (key, generation, _) = self.new_upload(&l, id, &name, secs > 0.0, playing);
             // same name again (e.g. a text entity that keeps updating): replace instead of adding
-            if let Some(old) = l.device(id).and_then(|d| d.files.iter().find(|(_, n)| *n == name).map(|(s, _)| *s)) {
-                let _ = l.delete(id, old);
-                let deadline = Instant::now() + Duration::from_secs(4);
-                while Instant::now() < deadline && l.device(id).is_some_and(|d| d.files.iter().any(|(_, n)| *n == name)) {
-                    let _ = l.refresh(id);
-                    thread::sleep(Duration::from_millis(250));
-                }
-            }
+            remove_named(&l, id, &name);
             let outcome = match l.upload(id, &jpegs, &name, None) {
                 Ok(o) => o,
                 Err(e) => {

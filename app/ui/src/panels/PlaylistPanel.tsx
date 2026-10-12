@@ -49,7 +49,7 @@ export function PlaylistPanel() {
                     onClick={() => run(t('playlist.show'), (i) => invoke('set_value', { id: i, what: 'select', value: n }))}><IconEye /></Button>
                   <Button size="icon" variant="ghost" title={t('playlist.rename')} aria-label={t('playlist.rename')} data-testid={`rename-${n}`}
                     onClick={() => setEdit({ slot: n, name: name.replace(/\.mp4$/i, '') })}><IconPencil /></Button>
-                  <Confirm title={t('playlist.deleteTitle', { name })} action={t('playlist.delete')} body={t('playlist.deleteBody')}
+                  <Confirm title={t('playlist.deleteTitle', { name: stem(name) })} action={t('playlist.delete')} body={t('playlist.deleteBody')}
                     onConfirm={() => run(t('playlist.delete'), (i) => invoke('set_value', { id: i, what: 'delete', value: n }))}
                     trigger={(open) => <Button size="icon" variant="ghost" className="hover:text-destructive" title={t('playlist.delete')} aria-label={t('playlist.delete')} data-testid={`delete-${n}`} onClick={open}><IconTrash /></Button>} />
                 </div>

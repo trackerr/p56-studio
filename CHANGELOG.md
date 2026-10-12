@@ -4,6 +4,16 @@ P56 Studio (Windows, Linux, Android), `p56` (CLI), `p56-sim` and `p56-server`.
 The Home Assistant add-on and integration have their own changelog in
 [`ha/p56_pov_display/CHANGELOG.md`](ha/p56_pov_display/CHANGELOG.md).
 
+## 0.3.7 — 2026-10-12
+
+### Added
+- **Overwrite**: when the fan already has a file with that name, the app asks whether to
+  overwrite it and then replaces it (upload takes `replace`).
+
+### Fixed
+- Dialogs: a long file name (in "Delete …?") wraps instead of pushing the dialog off the screen
+  on a phone.
+
 ## 0.3.6 — 2026-10-12
 
 ### Fixed

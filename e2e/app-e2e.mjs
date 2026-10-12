@@ -254,7 +254,22 @@ async function main() {
     await shot('03-media');
   });
 
+  await test('the same name again: asks to overwrite, then replaces the file', async () => {
+    // the previous upload finishes first (the button is disabled meanwhile)
+    const ready = Date.now() + 15000;
+    while (await js(`$t('upload').disabled`)) { if (Date.now() > ready) throw new Error('upload stays disabled'); await sleep(200); }
+    const before = (await sim()).uploads;
+    await js(`$click('upload')`);
+    const end = Date.now() + 15000;
+    while (!(await js(`!!$t('overwrite-ok')`))) { if (Date.now() > end) throw new Error('no overwrite question'); await sleep(200); }
+    await js(`$click('overwrite-ok')`);
+    await waitSim('zon.mp4 replaced', (s) => s.uploads === before + 1 && s.files.filter((f) => f.name === 'zon.mp4').length === 1, 20000);
+  });
+
   await test('moving text: a ticker uploaded as an animation', async () => {
+    // an upload from the test before may still be finishing: the app is busy until then
+    const idle = Date.now() + 20000;
+    while (await js(`!!$t('busy') || $t('upload').disabled`)) { if (Date.now() > idle) throw new Error('the app stays busy'); await sleep(200); }
     await js(`$type('text-input', 'Lichtkrant')`); await sleep(100);
     await js(`$click('motion-scroll')`); await sleep(100);
     await js(`$click('text-make')`);

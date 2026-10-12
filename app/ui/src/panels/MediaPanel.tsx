@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { IconFilm, IconImage, IconRings, IconRotate, IconType, IconUpload, IconX } from '@/components/icons';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
@@ -191,12 +192,20 @@ export function MediaPanel() {
       if (id === null) return;
       mediaId = id;
     }
+    await send(mediaId, upName);
+  }
+
+  // a file with this name is already on the fan: ask whether to overwrite it
+  const [overwrite, setOverwrite] = useState<{ media: number; name: string } | null>(null);
+  async function send(mediaId: number, upName: string, replace = false) {
+    if (!fan) return;
     setBusy({ step: 'preparing' }); setProg(0);
     try {
-      const r = await invoke<string>('upload', { args: { id: fan.id, media: mediaId, name: upName || null, slot, placement, max_frames: maxFrames, sound } });
+      const r = await invoke<string>('upload', { args: { id: fan.id, media: mediaId, name: upName || null, slot, placement, max_frames: maxFrames, sound, replace } });
       toast.success(t('media.uploaded'), { description: r });
       addLog(t('media.logUpload', { result: r }));
     } catch (e) {
+      if (!replace && /already exists/i.test(String(e))) { setOverwrite({ media: mediaId, name: upName }); return; }
       toast.error(t('media.uploadFailed'), { description: String(e) });
       addLog(t('media.logUploadError', { error: String(e) }));
     } finally { setBusy(null); setProg(null); }
@@ -212,6 +221,18 @@ export function MediaPanel() {
   ] as const;
   return (
     <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_380px] lg:gap-12">
+      <Dialog open={!!overwrite} onOpenChange={(o) => !o && setOverwrite(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('media.overwriteTitle', { name: overwrite?.name || t('media.thisFile') })}</DialogTitle>
+            <DialogDescription>{t('media.overwriteBody')}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" data-testid="overwrite-cancel" onClick={() => setOverwrite(null)}>{t('common.cancel')}</Button>
+            <Button data-testid="overwrite-ok" onClick={() => { const o = overwrite!; setOverwrite(null); send(o.media, o.name, true); }}>{t('media.overwrite')}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <div className="min-w-0 space-y-8">
         <Section title={t('common.source')} className="border-t-0 pt-0">
           <div className="flex flex-wrap gap-2">

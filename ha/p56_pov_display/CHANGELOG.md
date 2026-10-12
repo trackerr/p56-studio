@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.1.7
+
+p56-server 0.3.7.
+
+- Panel: when the fan already has a file with that name, it asks whether to overwrite it.
+- Panel: a long file name in "Delete …?" wraps inside the dialog on a phone.
+
 ## 2.1.6
 
 p56-server 0.3.6.

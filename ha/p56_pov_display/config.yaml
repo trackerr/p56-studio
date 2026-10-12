@@ -1,5 +1,5 @@
 name: P56 POV Display
-version: "2.1.6"
+version: "2.1.7"
 slug: p56_pov_display
 description: Holoscope/P56 POV fans in Home Assistant, without the vendor app
 url: https://github.com/trackerr/home-assistant-p56/tree/main/p56_pov_display
