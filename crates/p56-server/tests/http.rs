@@ -927,3 +927,25 @@ fn pages_make_way_for_messages() {
     // a page can show again now
     assert_eq!(page("price", 2.0)["success"], true);
 }
+
+/// A real P56 switches itself off and on after an upload, starts at the first file and misses a
+/// select sent right then. A temporary message must still end up showing (and repeating only
+/// itself), not the first file of the playlist.
+#[test]
+fn a_message_shows_even_when_the_fan_misses_the_first_select() {
+    let s = start_env(false, &[], &[]);
+    let pc = std::net::SocketAddr::from((Ipv4Addr::LOCALHOST, s.tcp));
+    let fan = p56_sim::Sim::start(p56_sim::SimConfig { name: "FAN".into(), udp_port: 0, pc: Some(pc), ..Default::default() }).unwrap();
+    s.wait("fan", |v| v["devices"].as_array().is_some_and(|d| d.len() == 1 && d[0]["status"].is_object()));
+    for name in ["spider", "photo"] {
+        let (_, v) = s.post("/api/show", json!({ "text": name, "name": name }));
+        assert_eq!(v["success"], true, "{v}");
+    }
+    fan.modify(|st| st.slow_start = true);
+    let (_, v) = s.post("/api/show", json!({ "text": "€ 0.45", "name": "price", "show_seconds": 8 }));
+    assert_eq!(v["success"], true, "{v}");
+    let st = fan.state();
+    let slot = st.files.iter().position(|f| f.name == "price.mp4").map(|i| i as u8 + 1).expect("price stored");
+    assert_eq!(st.current, slot, "the fan shows the message, not the first file");
+    assert!(!st.repeat_all, "and repeats only the message");
+}

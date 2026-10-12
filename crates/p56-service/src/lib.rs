@@ -101,6 +101,34 @@ fn at_fan_rate<T: Clone>(frames: Vec<(T, u32)>, max: usize) -> Vec<T> {
 /// The newest picture of a cast source in the fan's layout, with its JPEG quality.
 type Newest = Arc<Mutex<Option<(Vec<u8>, u8)>>>;
 
+/// Whether fan `id` plays slot `slot` now (as it last reported).
+fn plays(l: &Link, id: u32, slot: u8) -> bool {
+    l.device(id).and_then(|d| d.status).is_some_and(|s| s.play_index == slot)
+}
+
+/// Show `slot` and wait until the fan reports that it plays it: right after an upload the fan
+/// switches itself off and on and starts at the first file, and can miss a select sent then.
+/// The select is sent again every 1.5 s; true once the fan plays the slot (at most 5 s).
+fn select_and_confirm(l: &Link, id: u32, slot: u8) -> bool {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut sent: Option<Instant> = None;
+    loop {
+        if sent.is_none_or(|t| t.elapsed() >= Duration::from_millis(1500)) {
+            let _ = l.select(id, slot);
+            sent = Some(Instant::now());
+        }
+        thread::sleep(Duration::from_millis(300));
+        let _ = l.refresh(id);
+        thread::sleep(Duration::from_millis(200));
+        if plays(l, id, slot) {
+            return true;
+        }
+        if Instant::now() >= deadline {
+            return false;
+        }
+    }
+}
+
 /// Delete the file called `name` (`<stem>.mp4`) from fan `id`, if there is one, and wait until the
 /// fan no longer lists it, so a new file can take that name.
 fn remove_named(l: &Link, id: u32, name: &str) {
@@ -1583,10 +1611,16 @@ impl Service {
                 results.push(json!({ "id": id, "success": false, "error": "upload sent but not found in the playlist" }));
                 continue;
             }
-            let _ = l.select(id, slot);
-            // a temporary file stays on until its time is up: repeat only this one meanwhile
+            if !select_and_confirm(&l, id, slot) {
+                log::warn!("fan #{id} did not switch to {name}");
+            }
+            // a temporary file stays on until its time is up: repeat only this one meanwhile (the
+            // fan repeats what plays at that moment, so make sure that is still the message)
             if secs > 0.0 {
                 let _ = l.repeat(id, false);
+                if !plays(&l, id, slot) {
+                    select_and_confirm(&l, id, slot);
+                }
             }
             self.remember(&[id], &jpegs[0], &ft);
             self.keep_thumb(&l, id, &name, &jpegs[0], &ft);

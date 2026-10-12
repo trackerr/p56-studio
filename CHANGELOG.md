@@ -4,9 +4,16 @@ P56 Studio (Windows, Linux, Android), `p56` (CLI), `p56-sim` and `p56-server`.
 The Home Assistant add-on and integration have their own changelog in
 [`ha/p56_pov_display/CHANGELOG.md`](ha/p56_pov_display/CHANGELOG.md).
 
-## Unreleased
+## 0.3.15 — 2026-10-12
 
 ### Fixed
+- **A message showed only for a moment, then the first file stayed on** (e.g. the electricity
+  price flashed by and a picture from the playlist stuck). After an upload the fan switches
+  itself off and on, starts at its first file and can miss the select sent right then; the
+  server then set "repeat one" on that first file. The server now waits until the fan really
+  plays the new file (and selects it again if needed) before it repeats only that one. The
+  simulator can miss a select the same way (`slow_start`).
+- AI pictures right after Home Assistant restarts: listing its entities is tried once more.
 - **A fan that comes on the network late is picked up** (field report: the Home Assistant
   add-on started without a fan, and the fan that joined two hours later was only connected after
   a restart). Discovery is made sturdier:

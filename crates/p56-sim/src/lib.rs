@@ -94,6 +94,11 @@ pub struct SimState {
     pub cast_bad: u64,
     /// Fault injection: take cast frames but never acknowledge them (a stalled fan).
     pub cast_mute: bool,
+    /// Behave like a real P56 switched on: it starts at the first file and misses the next
+    /// select (seen 2026-10-12 right after an upload, which switches the fan off and on).
+    pub slow_start: bool,
+    /// Selects still to be missed after switching on (with `slow_start`).
+    pub missed_selects: u8,
     /// Behave like a real P56 seen on 2026-10-11: no 0E after the file data (a 29 instead) and
     /// no playlist after storing a file unless it is asked for (1C).
     pub quiet_upload: bool,
@@ -139,6 +144,8 @@ impl SimState {
             cast_ok: 0,
             cast_bad: 0,
             cast_mute: false,
+            slow_start: false,
+            missed_selects: 0,
             quiet_upload: false,
             formats: 0,
             resets: 0,
@@ -861,7 +868,13 @@ fn handle(sh: &Shared, out: &mut Out, pkt: &[u8], ft: u8, just_uploaded: &mut bo
     };
     match o {
         op::ON => {
-            set(&|g| g.power = true);
+            set(&|g| {
+                g.power = true;
+                if g.slow_start && !g.files.is_empty() {
+                    g.current = 1;
+                    g.missed_selects = 1;
+                }
+            });
             out.ready();
             out.send(&status(sh));
         }
@@ -984,7 +997,14 @@ fn handle(sh: &Shared, out: &mut Out, pkt: &[u8], ft: u8, just_uploaded: &mut bo
                     let g = sh.state.lock().unwrap();
                     i >= 1 && (i as usize) <= g.files.len()
                 };
-                if ok {
+                // a fan just switched on (with `slow_start`) misses this select
+                let missed = {
+                    let mut g = sh.state.lock().unwrap();
+                    let m = g.missed_selects > 0;
+                    g.missed_selects = g.missed_selects.saturating_sub(1);
+                    m
+                };
+                if ok && !missed {
                     set(&|g| {
                         g.current = i;
                         g.playing = true;

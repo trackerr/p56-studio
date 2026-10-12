@@ -1,8 +1,12 @@
 # Changelog
 
-## Unreleased
+## 2.1.15
 
-p56-server with the discovery fixes of the next release.
+p56-server 0.3.15.
+
+- **Messages stay on for real**: a message (e.g. the electricity price) could flash by while a
+  picture from the playlist stayed on. The fan now really switches to the message before it
+  repeats only that one.
 
 - **A fan that joins the network later is picked up** without restarting the add-on (it could
   stay unconnected when the add-on started while the fan was away). The server looks up the

@@ -111,7 +111,12 @@ pub fn instructions(prompt: &str, kind: Kind, style: Option<&str>) -> String {
 
 /// The AI Task entities that can make pictures: `[{entity_id, name}]`.
 pub fn entities(base: &str, token: &str) -> Result<Vec<Value>, String> {
-    let states = crate::http_get(&format!("{base}/states"), Some(token), "application/json").and_then(|b| serde_json::from_slice::<Value>(&b).ok());
+    // right after Home Assistant restarts its API can fail for a moment: try once more
+    let fetch = || crate::http_get(&format!("{base}/states"), Some(token), "application/json").and_then(|b| serde_json::from_slice::<Value>(&b).ok());
+    let states = fetch().or_else(|| {
+        std::thread::sleep(Duration::from_secs(3));
+        fetch()
+    });
     let states = states.as_ref().and_then(|v| v.as_array()).ok_or("Home Assistant did not list its entities (is homeassistant_api on?)")?;
     Ok(states
         .iter()
