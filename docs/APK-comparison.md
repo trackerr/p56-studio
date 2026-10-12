@@ -20,8 +20,8 @@ Notation: `X` = XOR checksum. "Us" = `crates/p56-core/src/protocol.rs`.
 | Autostart on / off              | `5A 0B 0B F5` / `5A 0C 0C F5`                      | **missing**                          |
 | Heartbeat                       | `5A 0D 0D F5` (+ pad byte 00)                      | same (pad 3E, Windows variant)       |
 | Cancel transfer                 | `5A 10 10 F5`                                      | enum present, unused                 |
-| Bluetooth scan / disconnect     | `5A 18 18 F5` / `5A 19 19 F5`                      | **missing**                          |
-| Bluetooth on / off              | `5A 1A 1A F5` / `5A 1B 1B F5`                      | **missing**                          |
+| Bluetooth scan / disconnect     | `5A 18 18 F5` / `5A 19 19 F5`                      | not used on purpose (see PROTOCOL.md) |
+| Bluetooth on / off              | `5A 1A 1A F5` / `5A 1B 1B F5`                      | not used on purpose (see PROTOCOL.md) |
 | Request machine info            | `5A 1C 1C F5`                                      | same                                 |
 | Group master on / off           | `5A 1F 1F F5` / `5A 20 20 F5`                      | **missing**                          |
 | Select device in group          | `5A 23 nn F5`                                      | enum present, unused                 |
@@ -36,7 +36,7 @@ Notation: `X` = XOR checksum. "Us" = `crates/p56-core/src/protocol.rs`.
 | Device name                     | `5A 89` + name[32] + `X F5` (36 bytes fixed)       | **missing**                          |
 | Fan hotspot name + password ("Device Set") | `5A 8A` + ssid[32] + pw[32] + `X F5` (68 bytes) | **different**: we send a length prefix + `\0` |
 | Join router ("Router Set")      | `5A 8B` + ssid[32] + pw[32] + `X F5` (68 bytes)    | **missing**                          |
-| Connect Bluetooth device        | `5A 8E i i F5`                                     | **missing**                          |
+| Connect Bluetooth device        | `5A 8E i i F5`                                     | not used on purpose (see PROTOCOL.md) |
 | Volume                          | `5A 90 v v F5`                                     | **missing** (note: 0x90 is our `TransStart`) |
 | Finish upload                   | `5A 91 u32be X F5` (u32 = frames for bin types)    | we always send 1 (fine for JPEG types) |
 
@@ -110,6 +110,6 @@ Unknown types fall back to type 1 (960×192) in our code, so the geometry is wro
 - Camera: take a photo/video and send it straight away.
 - Audio with video (PCM, 8/16 kHz) + volume control.
 - Trim video (start/end time), rotate media.
-- The fan's Bluetooth settings.
+- The fan's Bluetooth settings: left out on purpose (Wi-Fi and Bluetooth share one radio; see PROTOCOL.md).
 - Alarm clock/"Alarm" screen (UI present; packet not found).
 - Firmware update: only strings present, no flash routine found in the C++.

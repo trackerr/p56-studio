@@ -10,10 +10,9 @@ export type Status = {
 export type Device = {
   id: number; ip: string; name: string; mac: string; hotspot: string; router: string;
   status: Status | null; files: [number, string][]; last_error: string | null;
-  ble: Bluetooth | null; model: string | null; support: string;
+  /** Speaker volume (0–10), once the fan reported it. */
+  volume: number | null; model: string | null; support: string;
 };
-/** What the fan reports about its Bluetooth speaker, including the volume (0–10). */
-export type Bluetooth = { on: boolean; connected: boolean; connecting: boolean; volume: number; devices: string[] };
 export type FanTypeInfo = { id: number; model: string | null; angles: number; leds: number; jpeg: string | null; support: string };
 export type Preview = { round: string; layout: string; jpeg_bytes: number; quality: number; width: number; height: number; frames: number };
 export type MediaInfo = { id: number; name: string; frames: number; width: number; height: number; audioMs?: number };
@@ -301,7 +300,7 @@ export function grab(v: HTMLVideoElement, c: HTMLCanvasElement, side = 720): str
 const demoFan: Device = {
   id: 1, ip: '192.168.4.1', name: 'DEMO-P56', mac: '02:e0:e0:56:00:01', hotspot: 'DEMO-P56-AP', router: '',
   status: { power: true, playing: true, repeat_all: true, breath: false, autostart: true, master: false, play_index: 1, brightness: 16, color_mode: 2, angle: 0, fan_type: 8 },
-  files: [[1, t('demo.file1')], [2, 'logo.mp4']], last_error: null, ble: null, model: 'P56', support: 'jpeg',
+  files: [[1, t('demo.file1')], [2, 'logo.mp4']], last_error: null, volume: null, model: 'P56', support: 'jpeg',
 };
 let demoMedia = 0;
 const demoFrames = new Map<number, number>();
@@ -362,10 +361,7 @@ async function demo(cmd: string, a: any): Promise<unknown> {
         repeat_all: () => (s.repeat_all = true), repeat_one: () => (s.repeat_all = false), breath_on: () => (s.breath = true), breath_off: () => (s.breath = false),
         autostart_on: () => (s.autostart = true), autostart_off: () => (s.autostart = false), master_on: () => (s.master = true), master_off: () => (s.master = false),
         color_true: () => (s.color_mode = 1), color_bright: () => (s.color_mode = 2), format: () => (demoFan.files = []), reset: () => { s.brightness = 16; s.angle = 0; },
-        ble_on: () => (demoFan.ble = { on: true, connected: false, connecting: false, volume: 10, devices: [] }),
-        ble_off: () => (demoFan.ble = { on: false, connected: false, connecting: false, volume: demoFan.ble?.volume ?? 10, devices: [] }),
-        ble_scan: () => demoFan.ble?.on && (demoFan.ble.devices = ['BT-Speaker', t('demo.phone')]),
-        ble_disconnect: () => demoFan.ble && (demoFan.ble.connected = false), refresh: () => {},
+        refresh: () => {},
       };
       m[a.action]?.(); st(); return null;
     }
@@ -374,8 +370,7 @@ async function demo(cmd: string, a: any): Promise<unknown> {
       if (a.what === 'angle') s.angle = a.value;
       if (a.what === 'select') s.play_index = a.value;
       if (a.what === 'delete') demoFan.files = demoFan.files.filter(([n]) => n !== a.value).map(([, f], i) => [i + 1, f]);
-      if (a.what === 'ble_connect' && demoFan.ble?.on) demoFan.ble.connected = true;
-      if (a.what === 'volume') demoFan.ble = { on: false, connected: false, connecting: false, devices: [], ...demoFan.ble, volume: a.value };
+      if (a.what === 'volume') demoFan.volume = a.value;
       st(); return null;
     case 'set_text':
       if (a.what === 'name') demoFan.name = a.a;

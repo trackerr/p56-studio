@@ -4,6 +4,17 @@ P56 Studio (Windows, Linux, Android), `p56` (CLI), `p56-sim` and `p56-server`.
 The Home Assistant add-on and integration have their own changelog in
 [`ha/p56_pov_display/CHANGELOG.md`](ha/p56_pov_display/CHANGELOG.md).
 
+## Unreleased
+
+### Removed
+- **Bluetooth**: P56 Studio, `p56`, `p56-server` and the simulator no longer use the fan's
+  Bluetooth. The Bluetooth section on the Network tab, `p56 ble`, and the `ble_on`, `ble_off`,
+  `ble_scan`, `ble_disconnect` and `ble_connect` commands are gone; the device list has `volume`
+  instead of `ble`. Reason: on the P56, Wi-Fi and Bluetooth share one 2.4 GHz radio. With a
+  Bluetooth audio receiver connected, the fan could no longer rejoin the home Wi-Fi and kept
+  falling back to its own hotspot until Bluetooth was switched off. The volume slider still
+  works: the fan's `8F` report is still read for the speaker volume.
+
 ## 0.3.13 — 2026-10-12
 
 ### Added

@@ -74,9 +74,6 @@ fn cli_full_workflow() {
     let t = e.ok(&["cast", "test", "--seconds", "1.5", "--fps", "10"]);
     assert!(t.contains("frames cast"), "{t}");
     e.wait(|s| s.cast_ok >= 5);
-    e.ok(&["ble", "on"]);
-    let t = e.ok(&["ble", "scan"]);
-    assert!(t.contains("BT-Speaker"), "{t}");
     e.ok(&["delete", "1"]);
     e.wait(|s| s.files.is_empty());
     assert!(e.sim.state().protocol_errors.is_empty(), "{:?}", e.sim.state().protocol_errors);

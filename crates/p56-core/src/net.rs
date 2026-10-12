@@ -10,7 +10,7 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::protocol::{self as proto, Bluetooth, ColorMode, FanError, MachineInfo, Packet, Status, MAX_UPLOAD_JPEG, TCP_PORT, UDP_PORT, UPLOAD_CHUNK};
+use crate::protocol::{self as proto, ColorMode, FanError, MachineInfo, Packet, Status, MAX_UPLOAD_JPEG, TCP_PORT, UDP_PORT, UPLOAD_CHUNK};
 use crate::Error;
 
 /// Events emitted by the link, for UIs.
@@ -31,8 +31,8 @@ pub struct Device {
     pub info: Option<MachineInfo>,
     pub files: Vec<(u8, String)>,
     pub last_error: Option<FanError>,
-    /// Latest `8F` report: Bluetooth state, speaker volume and scanned devices.
-    pub bluetooth: Option<Bluetooth>,
+    /// Speaker volume (0–10), from the latest `8F` report (the only place the fan reports it).
+    pub volume: Option<u8>,
     pub last_seen: Option<Instant>,
 }
 
@@ -365,7 +365,7 @@ impl Link {
                             Packet::MachineInfo(i) => c.dev.info = Some(i.clone()),
                             Packet::FileList(f) => c.dev.files = f.clone(),
                             Packet::Error(e) => c.dev.last_error = Some(*e),
-                            Packet::Bluetooth(b) => c.dev.bluetooth = Some(b.clone()),
+                            Packet::Bluetooth(b) => c.dev.volume = Some(b.volume),
                             _ => {}
                         }
                     }
@@ -636,18 +636,6 @@ impl Link {
     }
     pub fn set_router(&self, id: u32, ssid: &str, pw: &str) -> Result<(), Error> {
         self.cmd(id, &proto::router(ssid, pw))
-    }
-    pub fn ble(&self, id: u32, on: bool) -> Result<(), Error> {
-        self.cmd(id, &proto::ble(on))
-    }
-    pub fn ble_scan(&self, id: u32) -> Result<(), Error> {
-        self.cmd(id, &proto::ble_scan())
-    }
-    pub fn ble_connect(&self, id: u32, i: u8) -> Result<(), Error> {
-        self.cmd(id, &proto::ble_connect(i))
-    }
-    pub fn ble_disconnect(&self, id: u32) -> Result<(), Error> {
-        self.cmd(id, &proto::ble_disconnect())
     }
     pub fn format_card(&self, id: u32) -> Result<(), Error> {
         self.cmd(id, &proto::format_card())

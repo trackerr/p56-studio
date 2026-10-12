@@ -33,7 +33,6 @@ export const IconType = icon(<><path d="M5 7V4h14v3" /><path d="M12 4v16" /><pat
 export const IconCamera = icon(<><path d="M3 8h4l2-3h6l2 3h4v11H3z" /><circle cx="12" cy="13.5" r="3.5" /></>);
 export const IconMonitor = icon(<><rect x="3" y="4" width="18" height="12" /><path d="M8 20h8M12 16v4" /></>);
 export const IconCast = icon(<><circle cx="12" cy="12" r="1.5" /><path d="M8.5 15.5a5 5 0 0 1 0-7M15.5 8.5a5 5 0 0 1 0 7M5.6 18.4a9 9 0 0 1 0-12.8M18.4 5.6a9 9 0 0 1 0 12.8" /></>);
-export const IconBluetooth = icon(<path d="M7 7l10 10-5 4V3l5 4L7 17" />);
 export const IconRouter = icon(<><rect x="3" y="13" width="18" height="7" /><path d="M7 16.5h.01M11 16.5h.01" /><path d="M8.5 9.5a5 5 0 0 1 7 0M6 7a8.5 8.5 0 0 1 12 0" /></>);
 export const IconWifi = icon(<><path d="M2 9a14.5 14.5 0 0 1 20 0" /><path d="M5 12.5a10 10 0 0 1 14 0" /><path d="M8.5 16a5 5 0 0 1 7 0" /><path d="M12 19.5h.01" /></>);
 export const IconTag = icon(<><path d="M3 12V3h9l9 9-9 9z" /><circle cx="7.5" cy="7.5" r="1.5" /></>);

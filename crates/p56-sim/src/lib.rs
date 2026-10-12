@@ -83,9 +83,6 @@ pub struct SimState {
     pub volume: u8,
     pub group_device: u8,
     pub angle_align: bool,
-    pub ble_on: bool,
-    pub ble_devices: Vec<String>,
-    pub ble_connected: Option<u8>,
     pub device_name: String,
     pub hotspot: (String, String),
     pub router: (String, String),
@@ -133,9 +130,6 @@ impl SimState {
             volume: 10,
             group_device: 0,
             angle_align: false,
-            ble_on: false,
-            ble_devices: vec!["BT-Speaker".into(), "Phone".into()],
-            ble_connected: None,
             device_name: cfg.name.clone(),
             hotspot: (format!("{}-AP", cfg.name), "12345678".into()),
             router: (String::new(), String::new()),
@@ -506,10 +500,6 @@ fn command_len(b: &[u8]) -> Option<Result<usize, ()>> {
         | op::AUTOSTART_OFF
         | op::HEARTBEAT
         | op::TRANS_CANCEL
-        | op::BLE_SCAN
-        | op::BLE_DISCONNECT
-        | op::BLE_ON
-        | op::BLE_OFF
         | op::GET_MACHINE
         | op::MASTER_ON
         | op::MASTER_OFF
@@ -518,7 +508,7 @@ fn command_len(b: &[u8]) -> Option<Result<usize, ()>> {
         | op::ANGLE_ALIGN_STOP
         | op::COLOR_TRUE
         | op::COLOR_BRIGHT => 4,
-        op::DELETE | op::BRIGHTNESS | op::SELECT | op::BLE_CONNECT | op::VOLUME => 5,
+        op::DELETE | op::BRIGHTNESS | op::SELECT | op::VOLUME => 5,
         op::ANGLE => 6,
         op::COMMIT => 8,
         op::FILE_NAME => 2 + 1 + *b.get(2)? as usize + 2,
@@ -546,10 +536,6 @@ fn op_name(o: u8) -> String {
         op::AUTOSTART_OFF => "autostart_off",
         op::HEARTBEAT => "heartbeat",
         op::TRANS_CANCEL => "cancel",
-        op::BLE_SCAN => "ble_scan",
-        op::BLE_DISCONNECT => "ble_disconnect",
-        op::BLE_ON => "ble_on",
-        op::BLE_OFF => "ble_off",
         op::GET_MACHINE => "get_machine",
         op::MASTER_ON => "master_on",
         op::MASTER_OFF => "master_off",
@@ -568,7 +554,6 @@ fn op_name(o: u8) -> String {
         op::DEVICE_NAME => "device_name",
         op::HOTSPOT => "hotspot",
         op::ROUTER => "router",
-        op::BLE_CONNECT => "ble_connect",
         op::VOLUME => "volume",
         op::COMMIT => "commit",
         other => return format!("op_{other:02x}"),
@@ -611,20 +596,15 @@ fn check_jpeg(jpeg: &[u8], fan_type: u8) -> Result<(u32, u32), String> {
     Ok((w, h))
 }
 
-/// A file has been received: check it like the firmware would, store it and acknowledge.
-/// Returns whether it was stored.
-/// The fan's `8F` report: Bluetooth state, speaker volume and the scanned devices.
-fn bluetooth(sh: &Shared) -> Vec<u8> {
-    let g = sh.state.lock().unwrap();
-    proto::bluetooth_packet(&proto::Bluetooth {
-        on: g.ble_on,
-        connected: g.ble_on && g.ble_connected.is_some(),
-        connecting: false,
-        volume: g.volume,
-        devices: if g.ble_on { g.ble_devices.clone() } else { Vec::new() },
-    })
+/// The fan's `8F` report, the only place it reports the speaker volume. The simulator has no
+/// Bluetooth (P56 Studio does not use it), so it always reports Bluetooth off.
+fn volume_report(sh: &Shared) -> Vec<u8> {
+    let volume = sh.state.lock().unwrap().volume;
+    proto::bluetooth_packet(&proto::Bluetooth { volume, ..Default::default() })
 }
 
+/// A file has been received: check it like the firmware would, store it and acknowledge.
+/// Returns whether it was stored.
 fn finish_upload(sh: &Shared, out: &mut Out, up: Upload, ft: u8) -> bool {
     let name = up.name;
     let mut ok = up.problems.is_empty() && !up.frames.is_empty();
@@ -946,38 +926,6 @@ fn handle(sh: &Shared, out: &mut Out, pkt: &[u8], ft: u8, just_uploaded: &mut bo
             set(&|g| g.cancels += 1);
             out.ready();
         }
-        op::BLE_ON | op::BLE_OFF => {
-            set(&|g| {
-                g.ble_on = o == op::BLE_ON;
-                if !g.ble_on {
-                    g.ble_connected = None;
-                }
-            });
-            out.ready();
-        }
-        op::BLE_SCAN => {
-            out.ready();
-            out.send(&bluetooth(sh));
-        }
-        op::BLE_DISCONNECT => {
-            set(&|g| g.ble_connected = None);
-            out.ready();
-            out.send(&bluetooth(sh));
-        }
-        op::BLE_CONNECT => {
-            if check_dup(pkt, "ble_connect") {
-                let i = pkt[2];
-                let ok = {
-                    let g = sh.state.lock().unwrap();
-                    (i as usize) < g.ble_devices.len() && g.ble_on
-                };
-                if ok {
-                    set(&|g| g.ble_connected = Some(i));
-                }
-                out.ready();
-                out.send(&bluetooth(sh));
-            }
-        }
         op::GET_MACHINE => {
             if live(sh) {
                 sh.err("status poll (1C) during a live cast (Holoscope.exe sends none)".into());
@@ -1067,7 +1015,7 @@ fn handle(sh: &Shared, out: &mut Out, pkt: &[u8], ft: u8, just_uploaded: &mut bo
                 out.ready();
                 out.send(&status(sh));
                 // the volume is only reported in the 8F packet (assumed: sent after a change)
-                out.send(&bluetooth(sh));
+                out.send(&volume_report(sh));
             }
         }
         op::ANGLE => {

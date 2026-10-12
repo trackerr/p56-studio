@@ -33,8 +33,8 @@ are sometimes padded to 5 (Holoscope.exe: `3E`, Holoscope.apk: `00`).
 | 0B / 0C | autostart on / off | `5A 0B 0B F5` / `5A 0C 0C F5` |
 | 0D | heartbeat / request status | `5A 0D 0D F5` |
 | 10 | cancel transfer | `5A 10 10 F5` |
-| 18 / 19 | Bluetooth scan / disconnect | `5A 18 18 F5` / `5A 19 19 F5` |
-| 1A / 1B | Bluetooth on / off | `5A 1A 1A F5` / `5A 1B 1B F5` |
+| 18 / 19 | Bluetooth scan / disconnect | `5A 18 18 F5` / `5A 19 19 F5` — not used by P56 Studio, see below |
+| 1A / 1B | Bluetooth on / off | `5A 1A 1A F5` / `5A 1B 1B F5` — not used by P56 Studio, see below |
 | 1C | request machine info | `5A 1C 1C F5` → `8D` |
 | 1F / 20 | group master on / off | `5A 1F 1F F5` / `5A 20 20 F5` |
 | 23 | select this fan in its group | `5A 23 23 F5`, sent to that fan (`stitchselectdevice`) |
@@ -51,7 +51,7 @@ are sometimes padded to 5 (Holoscope.exe: `3E`, Holoscope.apk: `00`).
 | 89 | device name | `5A 89` + name[32] + xor + `F5` (36 B) |
 | 8A | the fan's hotspot: name + password | `5A 8A` + ssid[32] + pw[32] + xor + `F5` (68 B) |
 | 8B | join a router | `5A 8B` + ssid[32] + pw[32] + xor + `F5` (68 B) |
-| 8E | Bluetooth: connect to entry i | `5A 8E i i F5` |
+| 8E | Bluetooth: connect to entry i | `5A 8E i i F5` — not used by P56 Studio, see below |
 | 90 | volume 0–10 | `5A 90 v v F5` |
 | 91 | finish upload | `5A 91 <u32 be> xor F5`; see §5 |
 | 93 | group: delete a file by name on every fan | `5A 93` + name[32] + xor + `F5` (36 B; ".mp4" appended) — not implemented |
@@ -69,6 +69,13 @@ keeps letters, digits, space and `-_.()` and at most 24 bytes before `.mp4`.
 **Correction to the first analysis:** `8A` was built as `len + ssid\0pw` — wrong; and `8A`
 sets the fan's *hotspot*, not a router (that is `8B`). `83` takes a slot number, not the old name.
 
+**Bluetooth (`18`, `19`, `1A`, `1B`, `8E`) is not used by P56 Studio.** On the P56, Wi-Fi and
+Bluetooth share one 2.4 GHz radio. With a Bluetooth audio receiver connected, a P56 could no
+longer rejoin the home Wi-Fi and kept falling back to its own hotspot until Bluetooth was switched
+off (2026-10-12). P56 Studio, `p56`, `p56-server` and the Home Assistant integration therefore
+never send these commands, and the simulator treats them like any other unknown command. The
+`8F` report is still read, because it is the only place the fan reports the speaker volume.
+
 ## 4. Replies fan → app
 | Op | Meaning | Layout |
 |---|---|---|
@@ -79,7 +86,7 @@ sets the fan's *hotspot*, not a router (that is `8B`). `83` takes a slot number,
 | 85 | error code | `5A 85 c c F5`: `06` name already exists, `0A` too many files, other: transfer failed |
 | 86 | status, 11 B | see below |
 | 8D | machine info, 126 B | group picture width, height, x, y @6–9 (0 when not in a group; earlier read as an IP address), name@14 (32), MAC@46 (6), hotspot@52 (32), router@84 (32), `F5`@125 |
-| 8F | Bluetooth | `5A 8F flags volume <len16> "a/b/c" xor F5`: flags bit 7 on, bit 6 connected, bit 5 connecting; `volume` = speaker volume 0–10 (the only place the fan reports it); up to 8 device names |
+| 8F | Bluetooth report | `5A 8F flags volume <len16> "a/b/c" xor F5`: flags bit 7 on, bit 6 connected, bit 5 connecting; `volume` = speaker volume 0–10 (the only place the fan reports it); up to 8 device names. P56 Studio reads only the volume (it does not use Bluetooth, see §3). |
 
 ### Status `86`
 `5A 86 flags slot brightness (colour<<4 | angle_hi) angle_lo group type extra F5`

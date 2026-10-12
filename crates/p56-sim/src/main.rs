@@ -147,7 +147,7 @@ img{{width:360px;height:360px;border-radius:50%;background:#000;display:block}}p
 <script>setInterval(async()=>{{const s=await (await fetch('/state.json')).json();s.forEach((x,i)=>{{document.getElementById('f'+i).src='/frame/'+i+'.png?'+Date.now();
 document.getElementById('s'+i).textContent=`${{x.device_name}} — ${{x.connected?'connected to '+x.pc:'waiting for pc'}}
 on ${{x.power}} · playing ${{x.playing}} · slot ${{x.current}} · brightness ${{x.brightness}} · angle ${{x.angle}} · colour ${{x.color_mode}}
-breathing ${{x.breath}} · autostart ${{x.autostart}} · master ${{x.master}} · volume ${{x.volume}} · bluetooth ${{x.ble_on}}
+breathing ${{x.breath}} · autostart ${{x.autostart}} · master ${{x.master}} · volume ${{x.volume}}
 hotspot ${{x.hotspot[0]}} · router ${{x.router[0]||'-'}}
 files: ${{x.files.map((f,j)=>(j+1)+' '+f.name+' ('+f.frames+')').join(', ')||'-'}}
 cast frames ${{x.cast_ok}} (bad ${{x.cast_bad}}) · uploads ${{x.uploads}}

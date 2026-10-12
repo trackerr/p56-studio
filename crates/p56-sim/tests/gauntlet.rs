@@ -382,23 +382,25 @@ fn live_cast_frames_are_valid() {
 }
 
 #[test]
-fn bluetooth_scan_connect_disconnect() {
+fn volume_is_reported_back() {
     let r = rig();
-    r.link.ble(r.id, true).unwrap();
-    r.wait_sim(|s| s.ble_on);
-    r.link.ble_scan(r.id).unwrap();
-    r.wait_dev(|d| d.bluetooth.as_ref().is_some_and(|b| b.on && !b.connected && b.devices == vec!["BT-Speaker".to_string(), "Phone".to_string()]));
-    r.link.ble_connect(r.id, 1).unwrap();
-    r.wait_sim(|s| s.ble_connected == Some(1));
-    r.wait_dev(|d| d.bluetooth.as_ref().is_some_and(|b| b.connected));
     r.link.volume(r.id, 6).unwrap();
-    r.wait_dev(|d| d.bluetooth.as_ref().is_some_and(|b| b.volume == 6));
-    r.link.ble_disconnect(r.id).unwrap();
-    r.wait_sim(|s| s.ble_connected.is_none());
-    r.wait_dev(|d| d.bluetooth.as_ref().is_some_and(|b| !b.connected));
-    r.link.ble(r.id, false).unwrap();
-    r.wait_sim(|s| !s.ble_on);
+    r.wait_sim(|s| s.volume == 6);
+    // the fan reports the volume only in its 8F report
+    r.wait_dev(|d| d.volume == Some(6));
     r.clean();
+}
+
+#[test]
+fn bluetooth_commands_are_unknown_to_the_simulator() {
+    // P56 Studio does not use the fan's Bluetooth: the simulator treats its commands
+    // (18, 19, 1A, 1B, 8E) like any other command it does not know.
+    let r = rig();
+    for pkt in [&[0x5A, 0x1A, 0x1A, 0xF5][..], &[0x5A, 0x8E, 0x01, 0x01, 0xF5][..]] {
+        r.link.send_to(r.id, pkt).unwrap();
+    }
+    r.wait_sim(|s| s.protocol_errors.iter().filter(|e| e.starts_with("unknown command")).count() == 2);
+    r.sim.modify(|s| s.protocol_errors.clear());
 }
 
 #[test]

@@ -212,8 +212,8 @@ pub struct DeviceDto {
     pub status: Option<StatusDto>,
     pub files: Vec<(u8, String)>,
     pub last_error: Option<String>,
-    /// Bluetooth state, speaker volume and scanned devices, once the fan reported them.
-    pub ble: Option<p56_core::Bluetooth>,
+    /// Speaker volume (0–10), once the fan reported it.
+    pub volume: Option<u8>,
     /// Model name of the fan type (e.g. "P56").
     pub model: Option<String>,
     pub support: String,
@@ -795,7 +795,7 @@ impl Service {
                             Packet::MachineInfo(_) => "info",
                             Packet::FileList(_) => "files",
                             Packet::Error(_) => "error",
-                            Packet::Bluetooth(_) => "list", // kept: Home Assistant refreshes on it
+                            Packet::Bluetooth(_) => "list", // the 8F report carries the volume; Home Assistant refreshes on it
                             Packet::TransDone => "done",
                             _ => continue,
                         };
@@ -856,7 +856,7 @@ impl Service {
                     files: d.files,
                     last_error: d.last_error.map(|e: FanError| e.to_string()),
                     model: d.status.as_ref().and_then(|s| FanType::model(s.fan_type)).map(str::to_string),
-                    ble: d.bluetooth,
+                    volume: d.volume,
                     support,
                 }
             })
@@ -908,10 +908,6 @@ impl Service {
             "master_off" => l.master(id, false),
             "color_true" => l.color_mode(id, ColorMode::True),
             "color_bright" => l.color_mode(id, ColorMode::Bright),
-            "ble_on" => l.ble(id, true),
-            "ble_off" => l.ble(id, false),
-            "ble_scan" => l.ble_scan(id),
-            "ble_disconnect" => l.ble_disconnect(id),
             "format" => l.format_card(id),
             "reset" => l.factory_reset(id),
             other => Err(p56_core::Error::Invalid(format!("unknown action {other}"))),
@@ -927,7 +923,6 @@ impl Service {
             "volume" => l.volume(id, value.clamp(0, 10) as u8),
             "select" => l.select(id, value.clamp(1, 255) as u8),
             "delete" => l.delete(id, value.clamp(1, 255) as u8),
-            "ble_connect" => l.ble_connect(id, value.clamp(0, 255) as u8),
             other => Err(p56_core::Error::Invalid(format!("unknown setting {other}"))),
         }
         .map_err(err)

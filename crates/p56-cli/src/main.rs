@@ -60,19 +60,6 @@ enum Color {
 }
 
 #[derive(Subcommand)]
-enum Ble {
-    On,
-    Off,
-    /// Scan for Bluetooth devices and show the list
-    Scan,
-    /// Connect to device N from the list (0-based, as the fan reports it)
-    Connect {
-        index: u8,
-    },
-    Disconnect,
-}
-
-#[derive(Subcommand)]
 enum Cmd {
     /// Turn on
     On,
@@ -140,9 +127,6 @@ enum Cmd {
         ssid: String,
         password: String,
     },
-    /// The fan's Bluetooth
-    #[command(subcommand)]
-    Ble(Ble),
     /// Format the memory card (erases all files!)
     Format {
         #[arg(long)]
@@ -398,40 +382,6 @@ fn run(link: &Link, id: u32, ft: FanType, cmd: &Cmd) -> Result<(), String> {
             println!("the fan now looks for router {ssid:?}; after that you will find it on your regular network");
             e(link.set_router(id, ssid, password))
         }
-        Cmd::Ble(b) => match b {
-            Ble::On => e(link.ble(id, true)),
-            Ble::Off => e(link.ble(id, false)),
-            Ble::Disconnect => e(link.ble_disconnect(id)),
-            Ble::Connect { index } => e(link.ble_connect(id, *index)),
-            Ble::Scan => {
-                let seq = link.packet_seq(id);
-                e(link.ble_scan(id))?;
-                match link.wait_packet(id, seq, Duration::from_secs(8), |p| matches!(p, p56_core::Packet::Bluetooth(_))) {
-                    Some(p56_core::Packet::Bluetooth(b)) => {
-                        println!(
-                            "  Bluetooth {}{}, volume {}",
-                            if b.on { "on" } else { "off" },
-                            if b.connected {
-                                ", connected"
-                            } else if b.connecting {
-                                ", connecting"
-                            } else {
-                                ""
-                            },
-                            b.volume
-                        );
-                        for (i, n) in b.devices.iter().enumerate() {
-                            println!("  [{i}] {n}");
-                        }
-                        if b.devices.is_empty() {
-                            println!("  no devices found (is Bluetooth on? `p56 ble on`)");
-                        }
-                        Ok(())
-                    }
-                    _ => Err("no Bluetooth list received".into()),
-                }
-            }
-        },
         Cmd::Format { .. } => e(link.format_card(id)),
         Cmd::Reset { .. } => e(link.factory_reset(id)),
         Cmd::Info => {

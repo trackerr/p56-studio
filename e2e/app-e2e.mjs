@@ -339,16 +339,14 @@ async function main() {
     await shot('04-playlist');
   });
 
-  await test('network: name, router, bluetooth', async () => {
+  await test('network: name, router', async () => {
     await js(`$tab('network')`); await sleep(400);
     await js(`$type('dev-name', 'LivingRoom')`); await js(`$click('dev-name-save')`);
     await waitSim('name', (s) => s.device_name === 'LivingRoom');
     await js(`$type('rt-ssid', 'HomeNet')`); await js(`$type('rt-pw', 'secret')`); await sleep(100); await js(`$click('rt-go')`);
     await waitSim('router', (s) => s.router[0] === 'HomeNet' && s.router[1] === 'secret');
-    await js(`$click('ble-on')`); await waitSim('bt on', (s) => s.ble_on);
-    await sleep(300); await js(`$click('ble-scan')`);
-    const end = Date.now() + 6000;
-    while (!(await js(`$text('ble-list')`)).includes('BT-Speaker')) { if (Date.now() > end) throw new Error('bt list: ' + await js(`$text('ble-list')`)); await sleep(200); }
+    // P56 Studio does not use the fan's Bluetooth: no section for it
+    if (/bluetooth/i.test(await js(`document.body.textContent`))) throw new Error('the network tab still shows Bluetooth');
     await shot('05-network');
   });
 

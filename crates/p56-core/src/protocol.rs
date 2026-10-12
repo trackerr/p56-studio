@@ -55,10 +55,9 @@ pub mod op {
     /// Fan → PC: command / chunk acknowledged.
     pub const READY: u8 = 0x0E;
     pub const TRANS_CANCEL: u8 = 0x10;
-    pub const BLE_SCAN: u8 = 0x18;
-    pub const BLE_DISCONNECT: u8 = 0x19;
-    pub const BLE_ON: u8 = 0x1A;
-    pub const BLE_OFF: u8 = 0x1B;
+    // 18–1B and 8E are the fan's Bluetooth commands. P56 Studio never sends them: Wi-Fi and
+    // Bluetooth share one radio, and with a Bluetooth receiver connected the fan cannot rejoin
+    // the home Wi-Fi (see PROTOCOL.md).
     pub const GET_MACHINE: u8 = 0x1C;
     pub const MASTER_ON: u8 = 0x1F;
     pub const MASTER_OFF: u8 = 0x20;
@@ -92,8 +91,7 @@ pub mod op {
     pub const ROUTER: u8 = 0x8B;
     /// Fan → PC: machine info.
     pub const MACHINE_INFO: u8 = 0x8D;
-    pub const BLE_CONNECT: u8 = 0x8E;
-    /// Fan → PC: list report (devices / Bluetooth).
+    /// Fan → PC: list report (Bluetooth state and the speaker volume).
     pub const LIST: u8 = 0x8F;
     pub const VOLUME: u8 = 0x90;
     pub const COMMIT: u8 = 0x91;
@@ -145,15 +143,6 @@ pub fn autostart(on: bool) -> Vec<u8> {
 }
 pub fn trans_cancel() -> Vec<u8> {
     simple(op::TRANS_CANCEL)
-}
-pub fn ble_scan() -> Vec<u8> {
-    simple(op::BLE_SCAN)
-}
-pub fn ble_disconnect() -> Vec<u8> {
-    simple(op::BLE_DISCONNECT)
-}
-pub fn ble(on: bool) -> Vec<u8> {
-    simple(if on { op::BLE_ON } else { op::BLE_OFF })
 }
 pub fn get_machine() -> Vec<u8> {
     simple(op::GET_MACHINE)
@@ -211,10 +200,6 @@ pub fn brightness(v: u8) -> Vec<u8> {
 /// Volume 0–10.
 pub fn volume(v: u8) -> Vec<u8> {
     with_value(op::VOLUME, v.min(10))
-}
-/// Connect the fan's Bluetooth to entry `i` of its scan list.
-pub fn ble_connect(i: u8) -> Vec<u8> {
-    with_value(op::BLE_CONNECT, i)
 }
 /// Make this fan the selected one of a group: `5A 23 23 F5`, sent to that fan
 /// (Holoscope.apk `DeviceInterface::stitchselectdevice`).
@@ -587,7 +572,8 @@ pub enum Packet {
     FileList(Vec<(u8, String)>),
     Error(FanError),
     /// `5A 8F flags volume len16 "a/b/c" xor F5`: Bluetooth state, speaker volume and the
-    /// devices found by the last scan.
+    /// devices found by the last scan. Still parsed because it is the only place the fan
+    /// reports the speaker volume; P56 Studio does not use the fan's Bluetooth.
     Bluetooth(Bluetooth),
     /// Any other `5A xx … F5` packet.
     Other {
@@ -648,6 +634,7 @@ pub fn filelist_packet(names: &[String]) -> Vec<u8> {
 /// What the fan reports in `5A 8F` (Holoscope.apk `MyTcpServer::ReadData`): byte 2 holds the
 /// Bluetooth state (bit 7 on, bit 6 connected, bit 5 connecting), byte 3 the speaker volume
 /// (0–10), then the names found by the last scan, `/`-separated (at most 8).
+/// Only the volume is used: P56 Studio does not use the fan's Bluetooth.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Bluetooth {
     pub on: bool,
@@ -667,7 +654,7 @@ impl Bluetooth {
     }
 }
 
-/// Bluetooth report packet (used by the simulator).
+/// `8F` report packet (used by the simulator to report the volume).
 pub fn bluetooth_packet(b: &Bluetooth) -> Vec<u8> {
     let text = b.devices.iter().map(|s| ascii(s)).collect::<Vec<_>>().join("/");
     let t = text.as_bytes().get(..2000).unwrap_or(text.as_bytes());
@@ -804,7 +791,6 @@ mod tests {
         assert_eq!(format_card(), [0x5A, 0x07, 0x07, 0xF5]);
         assert_eq!(breath(false), [0x5A, 0x0A, 0x0A, 0xF5]);
         assert_eq!(autostart(true), [0x5A, 0x0B, 0x0B, 0xF5]);
-        assert_eq!(ble(false), [0x5A, 0x1B, 0x1B, 0xF5]);
         assert_eq!(master(true), [0x5A, 0x1F, 0x1F, 0xF5]);
         assert_eq!(color_mode(ColorMode::Bright), [0x5A, 0x2D, 0x2D, 0xF5]);
         assert_eq!(select(3), [0x5A, 0x87, 3, 3, 0xF5]);

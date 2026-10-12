@@ -234,7 +234,7 @@ export function FanPanel() {
                 <Switch id={`sw-${key}`} data-testid={`sw-${key}`} checked={!!on} onCheckedChange={(c) => run(label, (i) => control(i, c ? a : b))} />
               </div>
             ))}
-            <ValueSlider id="sl-volume" label={t('fan.volume')} value={fan.ble?.volume ?? 10} min={0} max={10} onCommit={(v) => run(t('fan.volume'), (i) => setValue(i, 'volume', v))} />
+            <ValueSlider id="sl-volume" label={t('fan.volume')} value={fan.volume ?? 10} min={0} max={10} onCommit={(v) => run(t('fan.volume'), (i) => setValue(i, 'volume', v))} />
             <p className="mt-1 text-xs text-muted-foreground">{t('fan.volumeHint')}</p>
           </Section>
 

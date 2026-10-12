@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Removed
+- **Bluetooth**: the P56 POV panel no longer has a Bluetooth section on the Network tab, and the
+  server no longer accepts the Bluetooth commands. On the P56, Wi-Fi and Bluetooth share one
+  radio: with a Bluetooth receiver connected, the fan could no longer rejoin the home Wi-Fi and
+  kept showing its own hotspot. Do not pair a Bluetooth speaker to the fan. The volume still works.
+
 ## 2.1.13
 
 p56-server 0.3.13.

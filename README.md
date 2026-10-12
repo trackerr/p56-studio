@@ -52,7 +52,7 @@ See exactly what the fan will show, both as the round picture and as the fan's o
 layout, before you send it.
 
 **Network setup**<br>
-Rename the fan, change its hotspot, put it on your Wi-Fi (router mode), manage Bluetooth.
+Rename the fan, change its hotspot, put it on your Wi-Fi (router mode).
 
 **Home Assistant**<br>
 An add-on and integration: text with icons and ready-made styles, notifications, camera

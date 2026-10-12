@@ -8,7 +8,7 @@ for that, see [PROTOCOL.md](../PROTOCOL.md).
 - [3. Putting pictures, GIFs, videos and text on the fan](#3-putting-pictures-gifs-videos-and-text-on-the-fan)
 - [4. The playlist](#4-the-playlist)
 - [5. Casting live](#5-casting-live)
-- [6. Network: Wi-Fi, name and Bluetooth](#6-network-wi-fi-name-and-bluetooth)
+- [6. Network: Wi-Fi and name](#6-network-wi-fi-and-name)
 - [7. Several phones and computers, or Home Assistant, together](#7-several-phones-and-computers-or-home-assistant-together)
 - [8. When something does not work](#8-when-something-does-not-work)
 
@@ -103,7 +103,7 @@ back to its playlist by itself.
 The dial on the Cast tab shows the picture as the fan receives it. Casting switches the fan on if
 it is off.
 
-## 6. Network: Wi-Fi, name and Bluetooth
+## 6. Network: Wi-Fi and name
 
 On the **Network** tab:
 
@@ -111,7 +111,10 @@ On the **Network** tab:
 - **Connect to your router**: put the fan on your home Wi-Fi (see [section 1](#1-getting-connected)).
 - **Fan's own Wi-Fi (hotspot)**: change the name and password of the fan's own Wi-Fi. Write the
   new ones down: the old ones stop working.
-- **Fan's Bluetooth**: connect a Bluetooth speaker (fans with Bluetooth audio).
+
+P56 Studio does not use the fan's Bluetooth. Do not pair a Bluetooth receiver or speaker to the
+fan: Wi-Fi and Bluetooth share one radio, and the fan cannot rejoin your Wi-Fi while Bluetooth is
+connected.
 
 ## 7. Several phones and computers, or Home Assistant, together
 
@@ -150,3 +153,4 @@ away) and the fan connects to the next one within a few seconds.
 | Casting shows nothing | Press the test card first. If the rings do show, the source is the problem (camera permission, a closed window). |
 | A picture is turned the wrong way | Drag the outer ring on the Fan tab, or use **Rotation** under Position & scale before uploading. |
 | The fan stays on its own Wi-Fi after setting the router | Check the Wi-Fi name and password, and set them again from the fan's own Wi-Fi. |
+| The fan falls off Wi-Fi and keeps showing its own hotspot | Do not pair a Bluetooth receiver or speaker to the fan: Wi-Fi and Bluetooth share one radio, and the fan cannot rejoin Wi-Fi while Bluetooth is connected. Disconnect the speaker or switch the fan's Bluetooth off. P56 Studio does not use Bluetooth. |

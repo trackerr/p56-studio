@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { IconBluetooth, IconRouter, IconTag, IconWifi } from '@/components/icons';
-import { Confirm, Notice, Section, Status } from '@/components/bits';
+import { IconRouter, IconTag, IconWifi } from '@/components/icons';
+import { Confirm, Notice, Section } from '@/components/bits';
 import { invoke } from '@/lib/api';
 import { useT } from '@/lib/i18n';
 import { useP56 } from '@/state';
@@ -18,7 +18,6 @@ export function NetworkPanel() {
   useEffect(() => { if (fan) setDevName((n) => n || fan.name); }, [fan?.id]);
   if (!fan) return <NoFan />;
   const text = (label: string, what: string, a: string, b?: string) => run(label, (i) => invoke('set_text', { id: i, what, a, b: b ?? null }));
-  const ble = fan.ble;
   return (
     <div className="grid gap-x-12 gap-y-8 lg:grid-cols-2">
       <Section title={<span className="inline-flex items-center gap-2"><IconTag className="h-3.5 w-3.5" />{t('net.deviceName')}</span>}>
@@ -27,27 +26,6 @@ export function NetworkPanel() {
           <Button type="submit" data-testid="dev-name-save">{t('common.save')}</Button>
         </form>
         <p className="mt-3 text-xs text-muted-foreground">{t('common.current', { value: fan.name })}</p>
-      </Section>
-
-      <Section title={<span className="inline-flex items-center gap-2"><IconBluetooth className="h-3.5 w-3.5" />{t('net.bluetooth')}</span>}>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="secondary" onClick={() => run(t('net.btOn'), (i) => invoke('control', { id: i, action: 'ble_on' }))} data-testid="ble-on">{t('net.on')}</Button>
-          <Button variant="secondary" onClick={() => run(t('net.btOff'), (i) => invoke('control', { id: i, action: 'ble_off' }))}>{t('net.off')}</Button>
-          <Button onClick={() => run(t('net.scan'), (i) => invoke('control', { id: i, action: 'ble_scan' }))} data-testid="ble-scan">{t('net.scan')}</Button>
-          <Button variant="ghost" onClick={() => run(t('net.disconnect'), (i) => invoke('control', { id: i, action: 'ble_disconnect' }))}>{t('net.disconnect')}</Button>
-        </div>
-        <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1 text-xs" data-testid="ble-state">
-          <Status on={!!ble?.on}>{ble?.on ? t('net.btOn') : t('net.btOff')}</Status>
-          {ble?.on && <Status on={ble.connected}>{ble.connected ? t('net.connected') : ble.connecting ? t('net.connecting') : t('net.notConnected')}</Status>}
-        </div>
-        <ul className="mt-3 divide-y divide-border border-y border-border" data-testid="ble-list">
-          {ble?.devices.length ? ble.devices.map((n, i) => (
-            <li key={n + i} className="flex items-center justify-between gap-3 py-1 text-[13px]">
-              <span>{n}</span>
-              <Button size="sm" variant="ghost" onClick={() => run(t('net.connect'), (id) => invoke('set_value', { id, what: 'ble_connect', value: i }))}>{t('net.connect')}</Button>
-            </li>
-          )) : <li className="py-3 text-xs text-muted-foreground">{t('net.noDevices', { scan: t('net.scan') })}</li>}
-        </ul>
       </Section>
 
       <Section title={<span className="inline-flex items-center gap-2"><IconWifi className="h-3.5 w-3.5" />{t('net.hotspot')}</span>}>

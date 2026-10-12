@@ -51,7 +51,7 @@ explains every tab. In short:
   press **Upload & show**.
 - **Playlist**: show, rename or delete files.
 - **Cast**: show something live without storing it, such as one of your cameras.
-- **Network**: the fan's name, Wi-Fi and Bluetooth.
+- **Network**: the fan's name and Wi-Fi.
 
 ## 4. On your dashboard
 
@@ -221,4 +221,5 @@ own Wi-Fi) and later return to the server.
 | "Home Assistant camera" is missing on the Cast tab | Update the add-on to 2.1.1 or later (it needs access to Home Assistant's cameras). |
 | The **AI picture** box is missing on the Media tab | Set up an AI that can make pictures ([section 7](#7-pictures-made-by-ai)) and update the add-on to 2.1.9 or later. |
 | "the AI made no picture" | The message after it comes from the AI; often the key has no billing or hit its limit. |
+| The fan falls off Wi-Fi and keeps showing its own hotspot | Do not pair a Bluetooth receiver or speaker to the fan: Wi-Fi and Bluetooth share one radio, and the fan cannot rejoin Wi-Fi while Bluetooth is connected. Disconnect the speaker or switch the fan's Bluetooth off. P56 Studio does not use Bluetooth. |
 | Something else | Open the add-on's **Log** tab; the last lines usually say what is going on. |
