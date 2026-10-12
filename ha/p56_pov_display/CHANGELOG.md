@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.1.13
+
+p56-server 0.3.13.
+
+- **Important messages first**: `priority` for `show_text`, `show_image` and `show_ai` with a
+  duration. A less important message waits, a more important one interrupts, and the
+  interrupted message comes back afterwards.
+- **Meter ring**: `gauge: true` with `value`, `value_min`, `value_max` fills the ring like a
+  meter (battery, solar power, price).
+- **Messages stay on**: a message with `show_seconds` (energy price, notifications) no longer
+  makes way for the next file of the playlist; the fan repeats only the message until its time
+  is up, then returns to what it played, with the repeat mode from before.
+- After two messages in a row the fan returns to what it played before.
+
 ## 2.1.12
 
 p56-server 0.3.12.

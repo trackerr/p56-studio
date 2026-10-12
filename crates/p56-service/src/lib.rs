@@ -82,6 +82,9 @@ struct NameState {
     generation: u64,
     /// File to switch back to when the temporary file is removed.
     restore: Option<String>,
+    /// The fan's repeat mode before (true = the whole playlist): while a temporary file shows the
+    /// fan repeats only that one, so it does not move on to the next file.
+    repeat_all: Option<bool>,
 }
 
 /// Longest animation uploaded: 60 s at the fan's 20 fps.
@@ -171,6 +174,8 @@ pub struct Service {
     /// Per (fan MAC or id, file name). Also held while an auto-delete timer removes its file,
     /// so a new upload of the same name cannot interleave with that delete.
     names: Mutex<HashMap<(String, String), NameState>>,
+    /// Temporary messages and their priorities.
+    messages: Mutex<Messages>,
     /// Round preview (JPEG) of every file this app uploaded, per (fan MAC or id, file name): the
     /// fan cannot send its files back, so this is how the app shows what a file looks like.
     thumbs: Mutex<HashMap<(String, String), Vec<u8>>>,
@@ -243,7 +248,7 @@ impl From<PlacementDto> for Placement {
 }
 
 /// What to show for `show_text` / `show_image`.
-#[derive(Deserialize, Debug, Default)]
+#[derive(Deserialize, Debug, Default, Clone)]
 pub struct ShowRequest {
     /// Fan id; empty = all connected fans.
     pub id: Option<u32>,
@@ -310,7 +315,46 @@ pub struct ShowRequest {
     /// over it with a dark edge so it stays readable.
     #[serde(default)]
     pub backdrop: Option<String>,
+    /// For a temporary message (`show_seconds`): a lower one waits until the one showing is done,
+    /// a higher one interrupts it (which comes back afterwards for the time it had left), an
+    /// equal one replaces it. Default 0.
+    #[serde(default)]
+    pub priority: Option<i32>,
+    /// A ring along the rim filled like a meter: the share of `color_scale`'s value between its
+    /// min and max, clockwise from the top, in the text's colour.
+    #[serde(default)]
+    pub gauge: Option<bool>,
 }
+
+/// Temporary messages per fan: which one shows, and which wait for it.
+#[derive(Default)]
+struct Messages {
+    next: u64,
+    /// By fan key: the message showing there.
+    showing: HashMap<String, Showing>,
+    waiting: Vec<Waiting>,
+}
+
+struct Showing {
+    message: u64,
+    priority: i32,
+    req: ShowRequest,
+    /// When it ends (generous until it really shows: an upload takes a while).
+    ends: Instant,
+    /// It really shows (so `ends` is exact).
+    shown: bool,
+}
+
+struct Waiting {
+    priority: i32,
+    req: ShowRequest,
+    since: Instant,
+}
+
+/// A waiting message that could not be shown within this time is dropped.
+const MESSAGE_WAIT: Duration = Duration::from_secs(600);
+/// An interrupted message comes back only for at least this long.
+const MESSAGE_RESUME_MIN: f64 = 2.0;
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct ColorScaleDto {
@@ -364,6 +408,12 @@ fn card_for(r: &ShowRequest) -> Result<text::Card, String> {
         text::color_scale(cs.value, cs.min, cs.max, &stops)
     });
     let fg = scaled.unwrap_or_else(|| color(&r.color, st.as_ref().map(|s| s.fg).unwrap_or([255, 255, 255])));
+    // a meter ring: how far the value is between min and max
+    let gauge = match (r.gauge, &r.color_scale) {
+        (Some(true), Some(cs)) if cs.max != cs.min => Some(((cs.value - cs.min) / (cs.max - cs.min)).clamp(0.0, 1.0) as f32),
+        (Some(true), _) => return Err("a gauge needs value, value_min and value_max (different)".into()),
+        _ => None,
+    };
     let bg = color(&r.background, st.as_ref().map(|s| s.bg).unwrap_or([0, 0, 0]));
     let icon_name = match r.icon.as_deref().map(str::trim) {
         Some("") | Some("none") => None,
@@ -391,8 +441,9 @@ fn card_for(r: &ShowRequest) -> Result<text::Card, String> {
         max_size: r.font_size.unwrap_or(0.0),
         icon,
         icon_color: color(&r.icon_color, if scaled.is_some() { fg } else { st.as_ref().and_then(|s| s.ring).unwrap_or(fg) }),
-        ring,
+        ring: if gauge.is_some() { ring.or(Some(fg)) } else { ring },
         ticks: st.as_ref().is_some_and(|s| s.ticks),
+        gauge,
     })
 }
 
@@ -466,6 +517,7 @@ impl Service {
             last_activity: Mutex::new(None),
             shown: Mutex::new(HashMap::new()),
             names: Mutex::new(HashMap::new()),
+            messages: Mutex::new(Messages::default()),
             thumbs: Mutex::new(HashMap::new()),
             next_generation: AtomicU64::new(0),
             media_dirs,
@@ -496,7 +548,7 @@ impl Service {
     /// For a temporary upload, `restore` is the file its own timer switches back to; when that
     /// is the file itself (shown again before its timer ran), the earlier target is kept.
     /// Returns the key, the generation for the new timer and the restore target.
-    fn new_upload(&self, l: &Link, id: u32, name: &str, temporary: bool, restore: Option<String>) -> ((String, String), u64, Option<String>) {
+    fn new_upload(&self, l: &Link, id: u32, name: &str, temporary: bool) -> ((String, String), u64, Option<String>) {
         let key = (Self::fan_key(l, id), name.to_string());
         let generation = self.next_generation.fetch_add(1, Ordering::SeqCst) + 1;
         let mut m = self.names.lock().unwrap();
@@ -504,9 +556,26 @@ impl Service {
             m.remove(&key);
             return (key, generation, None);
         }
+        // what plays now, by name (a slot number shifts when files are deleted), and the repeat
+        // mode: read under the lock, as an expiring message may still be restoring them
+        let restore = l.device(id).and_then(|d| {
+            let s = d.status?.play_index;
+            d.files.iter().find(|(slot, _)| *slot == s).map(|(_, n)| n.clone())
+        });
+        let repeat_all = l.device(id).and_then(|d| d.status).map(|s| s.repeat_all);
+        // what plays is itself a temporary file: go back to what that one would go back to, and
+        // to the repeat mode from before it
+        let (restore, repeat_all) = match restore {
+            Some(r) => match m.get(&(key.0.clone(), r.clone())) {
+                Some(other) => (other.restore.clone(), other.repeat_all),
+                None => (Some(r), repeat_all),
+            },
+            None => (None, repeat_all),
+        };
         let st = m.entry(key.clone()).or_default();
         st.generation = generation;
         st.restore = if restore.as_deref() == Some(name) { st.restore.take() } else { restore };
+        st.repeat_all = repeat_all;
         let restore = st.restore.clone();
         (key, generation, restore)
     }
@@ -516,8 +585,8 @@ impl Service {
     /// before (by name) if the temporary file was still playing.
     fn expire(&self, l: &Link, key: &(String, String), generation: u64) {
         let mut names = self.names.lock().unwrap();
-        let restore = match names.get(key) {
-            Some(st) if st.generation == generation => st.restore.clone(),
+        let (restore, repeat_all) = match names.get(key) {
+            Some(st) if st.generation == generation => (st.restore.clone(), st.repeat_all),
             _ => return, // replaced by a newer upload of this name
         };
         names.remove(key);
@@ -531,19 +600,30 @@ impl Service {
             log::warn!("removing {} from fan #{id}: {e}", key.1);
             return;
         }
-        // keep the lock until the playlist shows the file gone, so a new upload of the same
-        // name cannot pick up the stale slot
+        // keep the lock until the playlist shows the file gone and the fan is back on what it
+        // played, so a new upload cannot pick up the stale slot or the message's repeat mode
         let deadline = Instant::now() + Duration::from_secs(4);
         while Instant::now() < deadline && slot_of(&key.1).is_some() {
             let _ = l.refresh(id);
             thread::sleep(Duration::from_millis(250));
         }
-        drop(names);
         if was_playing {
             if let Some(back) = restore.as_deref().and_then(slot_of) {
                 let _ = l.select(id, back);
             }
+            // the repeat mode from before the message (only while it still showed: a newer
+            // message keeps its own)
+            if repeat_all == Some(true) && l.repeat(id, true).is_ok() {
+                // until the fan reports it, so a message right after this one sees the real mode
+                let deadline = Instant::now() + Duration::from_secs(3);
+                while Instant::now() < deadline && !l.device(id).and_then(|d| d.status).is_some_and(|s| s.repeat_all) {
+                    let _ = l.refresh(id);
+                    thread::sleep(Duration::from_millis(200));
+                }
+            }
         }
+        // only now may a new message for this fan start: it reads the restored mode
+        drop(names);
     }
 
     pub fn link(&self) -> Result<Link, String> {
@@ -1043,7 +1123,7 @@ impl Service {
         };
         progress("sending", 0, frames.len());
         // a pending auto-delete of an earlier show_text/show_image with this name must not remove this file
-        self.new_upload(&l, id, &p56_core::protocol::mp4_name(&name), false, None);
+        self.new_upload(&l, id, &p56_core::protocol::mp4_name(&name), false);
         let audio = audio.filter(|_| frames.len() > 1);
         let outcome = l.upload_with_audio(id, &frames, audio.as_deref(), &name, Some(slot)).map_err(err)?;
         self.remember(&[id], &frames[0], &ft);
@@ -1248,16 +1328,115 @@ impl Service {
     /// (default 10) without storing anything.
     pub fn show(self: &Arc<Self>, r: ShowRequest) -> Result<Value, String> {
         let l = self.link()?;
-        let ids: Vec<u32> = match (r.id, r.mac.as_deref().filter(|m| !m.is_empty())) {
+        let ids = Self::targets(&l, r.id, r.mac.as_deref());
+        if ids.is_empty() {
+            return Err("no fan connected".into());
+        }
+        // a temporary message waits for a more important one, or interrupts a less important one
+        let message = match r.show_seconds.filter(|s| *s > 0.0) {
+            Some(secs) => match self.message_gate(&l, &ids, &r, secs) {
+                Some(m) => Some(m),
+                None => return Ok(json!({ "success": true, "queued": true })),
+            },
+            None => None,
+        };
+        // a message that could not be shown must not keep the others waiting
+        let result = self.show_now(&l, ids, r, message);
+        if result.as_ref().map_or(true, |v| v["success"] != true) {
+            if let Some(m) = message {
+                self.message_done(m);
+            }
+        }
+        result
+    }
+
+    /// Whether a temporary message for these fans may show now: `Some(its id)`, or `None` when a
+    /// more important message shows there (then it waits). A less important message showing
+    /// there is interrupted and waits to come back for the time it had left.
+    fn message_gate(&self, l: &Link, ids: &[u32], r: &ShowRequest, secs: f64) -> Option<u64> {
+        let keys: Vec<String> = ids.iter().map(|&i| Self::fan_key(l, i)).collect();
+        let priority = r.priority.unwrap_or(0);
+        let now = Instant::now();
+        let mut m = self.messages.lock().unwrap();
+        m.showing.retain(|_, s| s.ends > now);
+        if keys.iter().filter_map(|k| m.showing.get(k)).any(|s| s.priority > priority) {
+            log::info!("message waits for a more important one (priority {priority})");
+            m.waiting.push(Waiting { priority, req: r.clone(), since: now });
+            return None;
+        }
+        // interrupted by a more important message: comes back afterwards (not when merely
+        // replaced by an equal one, e.g. a price that updates)
+        let mut interrupted: Vec<u64> = Vec::new();
+        for k in &keys {
+            if let Some(s) = m.showing.remove(k) {
+                let left = if s.shown { s.ends.saturating_duration_since(now).as_secs_f64() } else { s.req.show_seconds.unwrap_or(0.0) };
+                let same = s.req.name.is_some() && s.req.name == r.name;
+                if s.priority < priority && !same && left >= MESSAGE_RESUME_MIN && !interrupted.contains(&s.message) {
+                    interrupted.push(s.message);
+                    let mut back = s.req.clone();
+                    back.show_seconds = Some(left);
+                    m.waiting.push(Waiting { priority: s.priority, req: back, since: now });
+                }
+            }
+        }
+        m.next += 1;
+        let message = m.next;
+        // until it really shows, an upload may take a minute: `ends` is set again then
+        let ends = now + Duration::from_secs_f64(secs + 60.0);
+        for k in keys {
+            m.showing.insert(k, Showing { message, priority, req: r.clone(), ends, shown: false });
+        }
+        Some(message)
+    }
+
+    /// A temporary message really shows now: it ends `secs` from now.
+    fn message_shows(&self, message: u64, secs: f64) {
+        let ends = Instant::now() + Duration::from_secs_f64(secs);
+        for s in self.messages.lock().unwrap().showing.values_mut().filter(|s| s.message == message) {
+            s.ends = ends;
+            s.shown = true;
+        }
+    }
+
+    /// A temporary message is over: show the most important waiting one whose fans are free.
+    fn message_done(self: &Arc<Self>, message: u64) {
+        let Ok(l) = self.link() else { return };
+        let now = Instant::now();
+        let next = {
+            let mut m = self.messages.lock().unwrap();
+            m.showing.retain(|_, s| s.message != message && s.ends > now);
+            m.waiting.retain(|w| now.duration_since(w.since) < MESSAGE_WAIT);
+            let free = |w: &Waiting| {
+                let ids = Self::targets(&l, w.req.id, w.req.mac.as_deref());
+                !ids.is_empty() && ids.iter().all(|&i| !m.showing.contains_key(&Self::fan_key(&l, i)))
+            };
+            // the most important first, then the one that waits longest
+            let best = m.waiting.iter().enumerate().filter(|(_, w)| free(w)).max_by_key(|(i, w)| (w.priority, std::cmp::Reverse(*i))).map(|(i, _)| i);
+            best.map(|i| m.waiting.remove(i))
+        };
+        if let Some(w) = next {
+            let me = self.clone();
+            thread::spawn(move || {
+                if let Err(e) = me.show(w.req) {
+                    log::warn!("waiting message not shown: {e}");
+                }
+            });
+        }
+    }
+
+    /// The fans a request is for: one id, the fan with that MAC, or all.
+    fn targets(l: &Link, id: Option<u32>, mac: Option<&str>) -> Vec<u32> {
+        match (id, mac.filter(|m| !m.is_empty())) {
             (Some(i), _) => vec![i],
             (None, Some(mac)) => {
                 l.ids().into_iter().filter(|i| l.device(*i).and_then(|d| d.info).is_some_and(|inf| inf.mac.eq_ignore_ascii_case(mac))).collect()
             }
             (None, None) => l.ids(),
-        };
-        if ids.is_empty() {
-            return Err("no fan connected".into());
         }
+    }
+
+    fn show_now(self: &Arc<Self>, l: &Link, ids: Vec<u32>, r: ShowRequest, message: Option<u64>) -> Result<Value, String> {
+        let l = l.clone();
         let max_frames = r.max_frames.unwrap_or(200).clamp(1, 600);
         let has_text = r.text.as_deref().is_some_and(|t| !t.trim().is_empty());
         let has_icon = r.icon.as_deref().is_some_and(|i| !i.trim().is_empty() && i.trim() != "none");
@@ -1321,6 +1500,9 @@ impl Service {
             let fans: usize = groups.iter().map(|(_, g, _)| g.len()).sum();
             // a timed cast is a session like any other: it ends the running one and is ended by the next
             let session = self.cast_session.fetch_add(1, Ordering::SeqCst) + 1;
+            if let Some(m) = message {
+                self.message_shows(m, dur);
+            }
             let me = self.clone();
             thread::spawn(move || {
                 if let Ok(l) = me.link() {
@@ -1336,6 +1518,9 @@ impl Service {
                     }
                     i += 1;
                     thread::sleep(period);
+                }
+                if let Some(m) = message {
+                    me.message_done(m);
                 }
             });
             return Ok(json!({ "success": true, "mode": "cast", "seconds": dur, "fans": fans, "frames": n, "results": results }));
@@ -1355,13 +1540,8 @@ impl Service {
                 p56_core::protocol::mp4_name(&r.name.clone().unwrap_or_else(|| {
                     format!("ha_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0))
                 }));
-            // what plays now, by name: a slot number shifts when files are deleted
-            let playing = l.device(id).and_then(|d| {
-                let s = d.status?.play_index;
-                d.files.iter().find(|(slot, _)| *slot == s).map(|(_, n)| n.clone())
-            });
             // makes the timer of an earlier upload with this name stale before the file is touched
-            let (key, generation, _) = self.new_upload(&l, id, &name, secs > 0.0, playing);
+            let (key, generation, _) = self.new_upload(&l, id, &name, secs > 0.0);
             // same name again (e.g. a text entity that keeps updating): replace instead of adding
             remove_named(&l, id, &name);
             let outcome = match l.upload(id, &jpegs, &name, None) {
@@ -1387,14 +1567,24 @@ impl Service {
                 continue;
             }
             let _ = l.select(id, slot);
+            // a temporary file stays on until its time is up: repeat only this one meanwhile
+            if secs > 0.0 {
+                let _ = l.repeat(id, false);
+            }
             self.remember(&[id], &jpegs[0], &ft);
             self.keep_thumb(&l, id, &name, &jpegs[0], &ft);
             if secs > 0.0 {
+                if let Some(m) = message {
+                    self.message_shows(m, secs);
+                }
                 let me = self.clone();
                 let l2 = l.clone();
                 thread::spawn(move || {
                     thread::sleep(Duration::from_secs_f64(secs));
                     me.expire(&l2, &key, generation);
+                    if let Some(m) = message {
+                        me.message_done(m);
+                    }
                 });
             }
             results.push(json!({ "id": id, "success": true, "slot": slot, "name": name, "frames": images.len(), "fan_frames": jpegs.len(), "acknowledged": outcome.acked }));

@@ -129,11 +129,13 @@ pub struct Card {
     pub ring: Option<[u8; 3]>,
     /// Twelve clock ticks inside the ring.
     pub ticks: bool,
+    /// The ring as a meter: filled this share (0–1) clockwise from the top, the rest dim.
+    pub gauge: Option<f32>,
 }
 
 impl Card {
     pub fn text(text: &str, fg: [u8; 3], bg: [u8; 3], max_size: f32) -> Card {
-        Card { text: text.into(), fg, bg, max_size, icon: None, icon_color: fg, ring: None, ticks: false }
+        Card { text: text.into(), fg, bg, max_size, icon: None, icon_color: fg, ring: None, ticks: false, gauge: None }
     }
 }
 
@@ -249,15 +251,33 @@ fn draw_icon(img: &mut RgbImage, icon: char, cx: f32, cy: f32, w: f32, h: f32, c
     draw_glyph(img, &font, id.with_scale_and_position(PxScale::from(scale), point(cx - mx, cy - my)), c);
 }
 
-fn draw_ring(img: &mut RgbImage, c: [u8; 3], ticks: bool) {
+fn draw_ring(img: &mut RgbImage, c: [u8; 3], ticks: bool, gauge: Option<f32>) {
     let side = SIDE as f32;
     let centre = side / 2.0;
-    let (ro, ri) = (side * 0.495, side * 0.46);
+    // a meter ring is a little wider, so it reads at a glance
+    let (ro, ri) = if gauge.is_some() { (side * 0.495, side * 0.44) } else { (side * 0.495, side * 0.46) };
+    let dim = c.map(|v| (v as f32 * 0.22) as u8);
     for y in 0..SIDE {
         for x in 0..SIDE {
-            let r = ((x as f32 + 0.5 - centre).powi(2) + (y as f32 + 0.5 - centre).powi(2)).sqrt();
+            let (dx, dy) = (x as f32 + 0.5 - centre, y as f32 + 0.5 - centre);
+            let r = (dx * dx + dy * dy).sqrt();
             let cov = (ro - r + 0.5).clamp(0.0, 1.0).min((r - ri + 0.5).clamp(0.0, 1.0));
-            blend(img, x as i32, y as i32, c, cov);
+            if cov <= 0.0 {
+                continue;
+            }
+            // clockwise from the top: the filled part in the colour, the rest dim
+            let colour = match gauge {
+                Some(f) => {
+                    let a = dx.atan2(-dy).rem_euclid(std::f32::consts::TAU) / std::f32::consts::TAU;
+                    if a <= f {
+                        c
+                    } else {
+                        dim
+                    }
+                }
+                None => c,
+            };
+            blend(img, x as i32, y as i32, colour, cov);
         }
     }
     if ticks {
@@ -416,7 +436,7 @@ pub fn render_card(c: &Card) -> RgbImage {
     let side = SIDE as f32;
     let mut img = RgbImage::from_pixel(SIDE, SIDE, Rgb(c.bg));
     if let Some(rc) = c.ring {
-        draw_ring(&mut img, rc, c.ticks);
+        draw_ring(&mut img, rc, c.ticks, c.gauge);
     }
     // Content stays inside the disc: a centred box of 80 % × 62 % of the diameter,
     // smaller when a ring takes the rim.
@@ -458,6 +478,21 @@ pub fn render_card(c: &Card) -> RgbImage {
 #[cfg(test)]
 mod motion_tests {
     use super::*;
+
+    #[test]
+    fn a_gauge_ring_fills_clockwise_from_the_top() {
+        let mut card = Card::text("42", [255, 0, 0], [0, 0, 0], 0.0);
+        card.ring = Some([255, 0, 0]);
+        card.gauge = Some(0.25);
+        let img = render_card(&card);
+        let at = |deg: f32| {
+            let (r, a) = (SIDE as f32 * 0.47, deg.to_radians());
+            img.get_pixel((360.0 + r * a.sin()) as u32, (360.0 - r * a.cos()) as u32).0[0]
+        };
+        assert_eq!(at(45.0), 255, "filled: a quarter, from the top clockwise");
+        assert!(at(135.0) < 80 && at(135.0) > 20, "the rest is a dim track");
+        assert!(at(315.0) < 80, "anticlockwise from the top is not filled");
+    }
 
     fn lit(img: &RgbImage) -> Vec<(u32, u32)> {
         img.enumerate_pixels().filter(|(_, _, p)| p[0] > 128).map(|(x, y, _)| (x, y)).collect()
@@ -602,6 +637,7 @@ mod tests {
             icon_color: [0, 200, 255],
             ring: Some([255, 59, 48]),
             ticks: true,
+            gauge: None,
         };
         let img = render_card(&card);
         let (lit, outside) = lit_outside(&img, 0.995);
@@ -629,6 +665,7 @@ mod tests {
             icon_color: [255, 214, 10],
             ring: None,
             ticks: false,
+            gauge: None,
         };
         let (lit, outside) = lit_outside(&render_card(&card), 0.98);
         assert!(lit > 30_000, "big icon: {lit}");

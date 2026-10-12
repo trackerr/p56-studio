@@ -349,12 +349,12 @@ async def test_show_ai_goes_to_the_server(hass: HomeAssistant, p56_server, monke
         await hass.services.async_call(
             DOMAIN,
             "show_ai",
-            {"prompt": "cheap power", "text": "€ 0.21", "value": 0.21, "value_min": 0.1, "value_max": 0.4, "fresh": True},
+            {"prompt": "cheap power", "text": "€ 0.21", "value": 0.21, "value_min": 0.1, "value_max": 0.4, "fresh": True, "gauge": True, "priority": 3},
             blocking=True,
             return_response=True,
         )
     cmd, args = sent[-1]
-    assert args["text"] == "€ 0.21" and args["fresh"] is True
+    assert args["text"] == "€ 0.21" and args["fresh"] is True and args["gauge"] is True and args["priority"] == 3
     assert args["color_scale"] == {"value": 0.21, "min": 0.1, "max": 0.4, "invert": False}
 
 

@@ -102,9 +102,32 @@ data:
   show_seconds: 20
 ```
 
-With `show_seconds` the fan goes back to what it played before. Using the same `name` again
-replaces the earlier picture instead of adding a new one. More examples:
-[examples/automations.yaml](../examples/automations.yaml).
+With `show_seconds` the message stays on until its time is up (the fan repeats only that one
+meanwhile), then the fan goes back to what it played before. Using the same `name` again
+replaces the earlier picture instead of adding a new one.
+
+**Important messages first.** Give a message with `show_seconds` a `priority` (default 0). A
+message that is less important than the one showing waits and comes afterwards; a more
+important one interrupts, and the interrupted message comes back for the time it had left.
+So the doorbell (`priority: 10`) interrupts the weather (`priority: 0`), and an alarm
+(`priority: 20`) is never pushed away by the doorbell.
+
+**A meter ring.** With `gauge: true` and `value`, `value_min`, `value_max`, a ring along the
+rim fills like a meter, clockwise from the top, in the colour of the value: a battery, the
+solar power or the price at a glance.
+
+```yaml
+action: p56_pov.show_text
+data:
+  text: "{{ states('sensor.home_battery') }}%"
+  value: "{{ states('sensor.home_battery') }}"
+  value_min: 0
+  value_max: 100
+  invert_colors: true      # red when empty, green when full
+  gauge: true
+```
+
+More examples: [examples/automations.yaml](../examples/automations.yaml).
 
 ## 6. Your cameras on the fan
 

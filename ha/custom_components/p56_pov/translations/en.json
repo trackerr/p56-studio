@@ -263,6 +263,10 @@
           "name": "Duration",
           "description": "Remove again after this many seconds; the previous file plays again (0: keep)."
         },
+        "priority": {
+          "name": "Priority",
+          "description": "For a message with a duration: a lower one waits until the one showing is done, a higher one interrupts it (that one comes back afterwards). Default 0."
+        },
         "mode": {
           "name": "Mode",
           "description": "Store on the fan, or show live without storing."
@@ -294,6 +298,10 @@
         "invert_colors": {
           "name": "Reverse colours",
           "description": "Red at the minimum and green at the maximum."
+        },
+        "gauge": {
+          "name": "Meter ring",
+          "description": "A ring along the rim filled like a meter, from value_min to value_max."
         },
         "ring": {
           "name": "Ring",
@@ -332,6 +340,10 @@
         "show_seconds": {
           "name": "Duration",
           "description": "Remove again after this many seconds (0: keep)."
+        },
+        "priority": {
+          "name": "Priority",
+          "description": "For a message with a duration: a lower one waits until the one showing is done, a higher one interrupts it (that one comes back afterwards). Default 0."
         },
         "mode": {
           "name": "Mode",
@@ -419,6 +431,10 @@
           "name": "Reverse colours",
           "description": "Red at the minimum and green at the maximum."
         },
+        "gauge": {
+          "name": "Meter ring",
+          "description": "A ring along the rim filled like a meter, from value_min to value_max."
+        },
         "font_size": {
           "name": "Font size",
           "description": "Largest letter size in pixels (0: as large as fits)."
@@ -430,6 +446,10 @@
         "show_seconds": {
           "name": "Duration",
           "description": "Remove again after this many seconds (0: keep)."
+        },
+        "priority": {
+          "name": "Priority",
+          "description": "For a message with a duration: a lower one waits until the one showing is done, a higher one interrupts it (that one comes back afterwards). Default 0."
         },
         "mode": {
           "name": "Mode",

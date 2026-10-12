@@ -130,6 +130,19 @@ data:
 Everything a style sets can be overridden: `color`, `background`, `icon`, `icon_color`,
 `ring` (on/off). An icon alone (no text) is drawn large.
 
+`gauge: true` (with `value`, `value_min`, `value_max`) turns the ring into a meter: filled
+clockwise from the top as far as the value is between min and max, the rest a dim track.
+
+#### Priority of messages
+
+A message with `show_seconds` can have a `priority` (default 0, from −100 to 100). While a
+message shows on a fan, a less important one for that fan waits (at most 10 minutes) and comes
+afterwards, the most important and then the oldest first; an equally important one replaces it;
+a more important one interrupts it, and the interrupted message comes back afterwards for the
+time it had left. At the end the fan returns to the file it played before the first message.
+`show_text`, `show_image` and `show_ai` all take `priority`; a waiting message answers with
+`queued: true`.
+
 #### Animations: GIF and video
 
 `show_image` keeps every frame of an animated GIF, and turns a video (MP4, WebM, MOV, AVI)
@@ -174,7 +187,7 @@ data:
 | Method + path | Body / answer |
 | --- | --- |
 | `GET /api/state` | `{connected, fan_ip, playlist:[{slot,name}], devices:[…], last_activity, version}` |
-| `POST /api/show` | `{text \| icon \| data (base64; GIF keeps all frames) \| path (only under /media or /share) \| frames:[base64,…], style, icon, icon_color, color_scale:{value,min,max,colors?,invert?}, ring, color, background, font_size, show_seconds, mode, name, max_frames, frame_ms, mac \| id, placement:{x,y,scale,mirror}}` |
+| `POST /api/show` | `{text \| icon \| data (base64; GIF keeps all frames) \| path (only under /media or /share) \| frames:[base64,…], style, icon, icon_color, color_scale:{value,min,max,colors?,invert?}, gauge, ring, color, background, font_size, show_seconds, priority, mode, name, max_frames, frame_ms, mac \| id, placement:{x,y,scale,mirror}}` |
 | `POST /api/call/<cmd>` | every command of the web app, e.g. `control {id, action:"on"\|"off"\|"play"\|"pause"\|…}`, `set_value {id, what:"brightness"\|"angle"\|"volume"\|"select"\|"delete", value}` → `{ok, result \| error}` |
 | `GET /api/events` | live events (server-sent events) |
 | `GET /api/shown/<mac>` | PNG of what was last sent to that fan |

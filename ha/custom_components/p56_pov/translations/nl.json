@@ -263,6 +263,10 @@
           "name": "Duur",
           "description": "Na zoveel seconden weer weghalen; het vorige bestand speelt weer (0: laten staan)."
         },
+        "priority": {
+          "name": "Prioriteit",
+          "description": "Voor een melding met een duur: een lagere wacht tot de huidige klaar is, een hogere onderbreekt hem (die komt daarna terug). Standaard 0."
+        },
         "mode": {
           "name": "Modus",
           "description": "Opslaan op de fan, of live tonen zonder opslaan."
@@ -294,6 +298,10 @@
         "invert_colors": {
           "name": "Kleuren omdraaien",
           "description": "Rood bij het minimum en groen bij het maximum."
+        },
+        "gauge": {
+          "name": "Meterring",
+          "description": "Een ring langs de rand die volloopt als een meter, van value_min tot value_max."
         },
         "ring": {
           "name": "Ring",
@@ -332,6 +340,10 @@
         "show_seconds": {
           "name": "Duur",
           "description": "Na zoveel seconden weer weghalen (0: laten staan)."
+        },
+        "priority": {
+          "name": "Prioriteit",
+          "description": "Voor een melding met een duur: een lagere wacht tot de huidige klaar is, een hogere onderbreekt hem (die komt daarna terug). Standaard 0."
         },
         "mode": {
           "name": "Modus",
@@ -419,6 +431,10 @@
           "name": "Kleuren omdraaien",
           "description": "Rood bij het minimum en groen bij het maximum."
         },
+        "gauge": {
+          "name": "Meterring",
+          "description": "Een ring langs de rand die volloopt als een meter, van value_min tot value_max."
+        },
         "font_size": {
           "name": "Lettergrootte",
           "description": "Grootste lettergrootte in pixels (0: zo groot als past)."
@@ -430,6 +446,10 @@
         "show_seconds": {
           "name": "Duur",
           "description": "Na zoveel seconden weer weghalen (0: laten staan)."
+        },
+        "priority": {
+          "name": "Prioriteit",
+          "description": "Voor een melding met een duur: een lagere wacht tot de huidige klaar is, een hogere onderbreekt hem (die komt daarna terug). Standaard 0."
         },
         "mode": {
           "name": "Modus",

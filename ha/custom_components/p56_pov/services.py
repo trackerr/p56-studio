@@ -34,6 +34,7 @@ SHOW_COMMON = {
     vol.Optional("show_seconds"): vol.All(vol.Coerce(float), vol.Range(min=0, max=86400)),
     vol.Optional("mode"): vol.In(MODES),
     vol.Optional("name"): vol.All(cv.string, vol.Length(min=1, max=40)),
+    vol.Optional("priority"): vol.All(vol.Coerce(int), vol.Range(min=-100, max=100)),
 }
 
 COLOR = vol.Any(cv.string, vol.All(vol.ExactSequence([cv.byte, cv.byte, cv.byte])))
@@ -54,6 +55,7 @@ SHOW_TEXT_SCHEMA = vol.All(
             vol.Optional("value_min"): vol.Coerce(float),
             vol.Optional("value_max"): vol.Coerce(float),
             vol.Optional("invert_colors"): cv.boolean,
+            vol.Optional("gauge"): cv.boolean,
         }
     ),
     cv.has_at_least_one_key("text", "icon", "style"),
@@ -92,6 +94,7 @@ SHOW_AI_SCHEMA = vol.Schema(
         vol.Optional("value_min"): vol.Coerce(float),
         vol.Optional("value_max"): vol.Coerce(float),
         vol.Optional("invert_colors"): cv.boolean,
+        vol.Optional("gauge"): cv.boolean,
     }
 )
 
@@ -172,7 +175,7 @@ async def _show_text(call: ServiceCall) -> ServiceResponse:
         payload["color_scale"] = _color_scale(data)
     if "icon_color" in data:
         payload["icon_color"] = color_value(data["icon_color"])
-    for key in ("icon", "style", "ring", "font_size", "show_seconds", "mode", "name"):
+    for key in ("icon", "style", "ring", "gauge", "font_size", "show_seconds", "mode", "name", "priority"):
         if key in data:
             payload[key] = data[key]
     return await _show(call, payload, default_colors=not style)
@@ -200,7 +203,7 @@ async def _show_image(call: ServiceCall) -> ServiceResponse:
         payload["frame_ms"] = round(1000 / fps)
     else:
         payload["data"] = b64(data)
-    for key in ("show_seconds", "mode", "name", "max_frames"):
+    for key in ("show_seconds", "mode", "name", "max_frames", "priority"):
         if key in call.data:
             payload[key] = call.data[key]
     if any(k in call.data for k in ("scale", "x_offset", "y_offset", "mirror")):
@@ -214,7 +217,7 @@ async def _show_image(call: ServiceCall) -> ServiceResponse:
 
 
 async def _show_ai(call: ServiceCall) -> ServiceResponse:
-    keys = ("prompt", "kind", "art_style", "entity_id", "fresh", "text", "icon", "font_size", "show_seconds", "mode", "name")
+    keys = ("prompt", "kind", "art_style", "entity_id", "fresh", "text", "icon", "font_size", "gauge", "show_seconds", "mode", "name", "priority")
     payload = {k: call.data[k] for k in keys if k in call.data}
     if "color" in call.data:
         payload["color"] = color_value(call.data["color"])

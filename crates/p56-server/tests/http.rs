@@ -848,3 +848,61 @@ fn show_reads_files_only_inside_media_dirs() {
     assert!(v["error"].as_str().unwrap_or("").contains("disabled"), "{v}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Temporary messages with a priority: a less important one waits for the one showing, a more
+/// important one interrupts it and the interrupted one comes back for the time it had left; at
+/// the end the fan plays the file it played before.
+#[test]
+fn messages_wait_or_interrupt_by_priority() {
+    let s = start(true);
+    let has =
+        |name: &str| -> bool { s.get("/api/state")["devices"][0]["files"].as_array().is_some_and(|f| f.iter().any(|f| f[1] == name || f["name"] == name)) };
+    let wait = |what: &str, cond: &dyn Fn() -> bool, secs: u64| {
+        let deadline = Instant::now() + Duration::from_secs(secs);
+        while !cond() {
+            assert!(Instant::now() < deadline, "{what}");
+            std::thread::sleep(Duration::from_millis(200));
+        }
+    };
+    let show = |text: &str, prio: i32, secs: f64| {
+        let (_, v) = s.post("/api/show", json!({ "text": text, "name": text, "priority": prio, "show_seconds": secs }));
+        v
+    };
+    wait("virtual fan", &|| s.get("/api/state")["devices"].as_array().is_some_and(|d| !d.is_empty() && d[0]["status"].is_object()), 15);
+    // a file that plays before any message
+    assert_eq!(show("base", 0, 0.0)["success"], true);
+    wait("base", &|| has("base.mp4"), 15);
+
+    // a second file, so a fan that repeats the whole playlist would move on
+    assert_eq!(show("photo", 0, 0.0)["success"], true);
+    wait("photo", &|| has("photo.mp4"), 15);
+    s.call("control", json!({ "id": s.get("/api/state")["devices"][0]["id"], "action": "repeat_all" }));
+    s.call("set_value", json!({ "id": s.get("/api/state")["devices"][0]["id"], "what": "select", "value": 1 }));
+
+    // an alarm, then a doorbell that is less important: it waits
+    assert_eq!(show("alarm", 5, 4.0)["success"], true);
+    // while the alarm shows, the fan repeats only the alarm
+    wait("repeat one during a message", &|| s.get("/api/state")["devices"][0]["status"]["repeat_all"] == false, 10);
+    let door = show("door", 1, 2.0);
+    assert_eq!(door["queued"], true, "{door}");
+    assert!(has("alarm.mp4") && !has("door.mp4"));
+    wait("door after the alarm", &|| !has("alarm.mp4") && has("door.mp4"), 20);
+    wait("door removed", &|| !has("door.mp4"), 15);
+
+    // the weather, interrupted by a more important bell: comes back afterwards
+    assert_eq!(show("weather", 0, 12.0)["success"], true);
+    wait("weather", &|| has("weather.mp4"), 15);
+    let bell = show("bell", 9, 2.0);
+    assert!(bell["queued"].is_null(), "{bell}");
+    wait("bell", &|| has("bell.mp4"), 15);
+    wait("weather back after the bell", &|| !has("bell.mp4") && has("weather.mp4"), 20);
+    wait("weather removed", &|| !has("weather.mp4"), 25);
+    // back to the file that played before the messages, repeating the whole playlist again
+    let st = s.get("/api/state");
+    assert_eq!(st["devices"][0]["status"]["repeat_all"], true, "{st}");
+    let d = &st["devices"][0];
+    let playing = d["status"]["play_index"].as_u64().unwrap_or(0);
+    let base = d["files"].as_array().unwrap().iter().find(|f| f[1] == "base.mp4" || f["name"] == "base.mp4").cloned().unwrap_or_default();
+    let base_slot = base[0].as_u64().or(base["slot"].as_u64()).unwrap_or(99);
+    assert_eq!(playing, base_slot, "{d}");
+}

@@ -4,6 +4,22 @@ P56 Studio (Windows, Linux, Android), `p56` (CLI), `p56-sim` and `p56-server`.
 The Home Assistant add-on and integration have their own changelog in
 [`ha/p56_pov_display/CHANGELOG.md`](ha/p56_pov_display/CHANGELOG.md).
 
+## 0.3.13 — 2026-10-12
+
+### Added
+- **Priority of messages** (`priority` in `/api/show`): while a temporary message shows, a less
+  important one waits and comes afterwards, a more important one interrupts it and the
+  interrupted one comes back for the time it had left.
+- **Meter ring** (`gauge` with `color_scale`): the ring along the rim fills clockwise as far as
+  the value is between min and max.
+
+### Fixed
+- **A temporary message stays on until its time is up**: the fan repeats only that file
+  meanwhile (it moved on to the next file of the playlist), then returns to the file and the
+  repeat mode from before.
+- Two temporary messages after each other: the fan now returns to the file that played before
+  the first one (it could end on nothing).
+
 ## 0.3.12 — 2026-10-12
 
 ### Changed
