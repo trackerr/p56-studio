@@ -70,6 +70,13 @@
         "price": "Price (colour by value)",
         "clock": "Clock"
       }
+    },
+    "ai_kind": {
+      "options": {
+        "still": "Still",
+        "spin": "Turning",
+        "anim": "Animation"
+      }
     }
   },
   "entity": {
@@ -343,6 +350,40 @@
         "fps": {
           "name": "Frames per second",
           "description": "For videos: frames taken per second (default 10)."
+        }
+      }
+    },
+    "show_ai": {
+      "name": "Show AI picture",
+      "description": "Has the AI set up in Home Assistant (AI Task) draw a picture or a short animation and shows it on the fan. Needs the P56 add-on.",
+      "fields": {
+        "device_id": {
+          "name": "Fans",
+          "description": "Fans to show it on (empty: all)."
+        },
+        "prompt": {
+          "name": "Prompt",
+          "description": "What to draw. A black background and a bold, centred subject are asked for by themselves."
+        },
+        "kind": {
+          "name": "Kind",
+          "description": "A still picture, the picture turning round, or an animation drawn by the AI."
+        },
+        "entity_id": {
+          "name": "AI Task",
+          "description": "Which AI makes the picture (empty: the first one that can)."
+        },
+        "show_seconds": {
+          "name": "Duration",
+          "description": "Remove again after this many seconds (0: keep)."
+        },
+        "mode": {
+          "name": "Mode",
+          "description": "Store on the fan, or show live without storing."
+        },
+        "name": {
+          "name": "File name",
+          "description": "Name on the fan; the same name replaces the earlier file."
         }
       }
     },

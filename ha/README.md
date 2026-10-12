@@ -27,6 +27,7 @@ hologram fan, straight from Home Assistant. Local, no vendor app, no cloud.**
 | 🔔 **Notifications** | `notify.send_message` shows a message for 15 seconds, then the playlist resumes |
 | 🎨 **Styles & icons** | Ready-made looks (alert, warning, info, success, price, clock) with a ring along the rim, any Home Assistant icon, and a text colour that follows a value (green → red) |
 | 🖼️ **Pictures & animations** | `p56_pov.show_image` from a file, a URL, the media library or a camera snapshot; animated GIFs and videos play as animations |
+| ✨ **AI pictures** | `p56_pov.show_ai` or the panel's Media tab: describe a picture and the AI you set up in Home Assistant (AI Task, e.g. Google Gemini) draws a still, a turning picture or an animation |
 | 👀 **Preview** | An image entity that shows what the fan is displaying right now |
 | 🖥️ **Web app** | The full P56 Studio app as a sidebar panel: upload photos, GIFs and video, cast live, change Wi-Fi |
 | 🔌 **Self-contained** | Everything runs inside Home Assistant; the fans connect to it on your own network |
@@ -161,6 +162,7 @@ data:
 | --- | --- |
 | `p56_pov.show_text` | `text`, `style`, `icon`, `value` + `value_min` + `value_max`, `color`, `background`, `icon_color`, `ring`, `font_size`, `show_seconds`, `mode`, `name`, `device_id` |
 | `p56_pov.show_image` | one of `path` / `url` / `camera` / `media` (pictures, GIFs, videos), plus `show_seconds`, `mode`, `name`, `fps`, `max_frames`, `scale`, `x_offset`, `y_offset`, `mirror`, `device_id` |
+| `p56_pov.show_ai` | `prompt`, plus `kind` (`still` / `spin` / `anim`), `entity_id` (an AI Task; default the first that makes pictures), `show_seconds`, `mode`, `name`, `device_id` |
 | `p56_pov.play_file` | `device_id` and `slot` or `name` |
 | `p56_pov.delete_file` | `device_id` and `slot` or `name` |
 

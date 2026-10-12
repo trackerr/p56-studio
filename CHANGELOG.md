@@ -4,6 +4,15 @@ P56 Studio (Windows, Linux, Android), `p56` (CLI), `p56-sim` and `p56-server`.
 The Home Assistant add-on and integration have their own changelog in
 [`ha/p56_pov_display/CHANGELOG.md`](ha/p56_pov_display/CHANGELOG.md).
 
+## 0.3.9 — 2026-10-12
+
+### Added
+- **AI pictures** (in Home Assistant): the Media tab gets an **AI picture** box when Home
+  Assistant has an AI that makes pictures (AI Task, e.g. Google Gemini). Describe a picture and
+  choose still, turning or animation; the AI draws it with a black background made for the fan.
+  Also for P56 Studio on a phone or computer that goes through Home Assistant.
+- `p56-server`: the calls `ai_status`, `ai_image` and `show_ai`.
+
 ## 0.3.8 — 2026-10-12
 
 ### Changed

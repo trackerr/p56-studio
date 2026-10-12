@@ -901,6 +901,21 @@ impl Service {
         Ok(json!({ "id": id, "name": name, "frames": n, "width": w, "height": h }))
     }
 
+    /// Pictures made on the server (e.g. by an AI) as a media item: one picture is a still,
+    /// more are an animation with `ms` per frame.
+    pub fn media_images(&self, name: String, images: Vec<image::RgbImage>, ms: u32) -> Result<Value, String> {
+        let first = images.first().ok_or("no picture")?;
+        let (w, h) = first.dimensions();
+        let frames: Vec<(Vec<u8>, u32)> = if images.len() == 1 {
+            vec![(png_bytes(first), 0)]
+        } else {
+            images.into_iter().map(|f| (transcode::jpeg(&transcode::fit(f, MAX_SIDE), 92), ms)).collect()
+        };
+        let n = frames.len();
+        let id = self.store_media(name.clone(), frames);
+        Ok(json!({ "id": id, "name": name, "frames": n, "width": w, "height": h }))
+    }
+
     /// Render text as a media item.
     fn media_text(&self, a: &Value) -> Result<Value, String> {
         let t: String = need(a, "text")?;

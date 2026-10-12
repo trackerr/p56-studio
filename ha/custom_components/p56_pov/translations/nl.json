@@ -70,6 +70,13 @@
         "price": "Prijs (kleur naar waarde)",
         "clock": "Klok"
       }
+    },
+    "ai_kind": {
+      "options": {
+        "still": "Stilstaand",
+        "spin": "Draaiend",
+        "anim": "Animatie"
+      }
     }
   },
   "entity": {
@@ -343,6 +350,40 @@
         "fps": {
           "name": "Beelden per seconde",
           "description": "Voor video's: zoveel beelden per seconde (standaard 10)."
+        }
+      }
+    },
+    "show_ai": {
+      "name": "AI-plaatje tonen",
+      "description": "Laat de AI die in Home Assistant is ingesteld (AI Task) een plaatje of korte animatie tekenen en toont die op de fan. Werkt met de P56-add-on.",
+      "fields": {
+        "device_id": {
+          "name": "Fans",
+          "description": "Fans waarop het verschijnt (leeg: alle)."
+        },
+        "prompt": {
+          "name": "Opdracht",
+          "description": "Wat er getekend moet worden. Een zwarte achtergrond en een groot onderwerp in het midden worden er zelf bij gevraagd."
+        },
+        "kind": {
+          "name": "Soort",
+          "description": "Een stilstaand plaatje, het plaatje dat ronddraait, of een animatie die de AI tekent."
+        },
+        "entity_id": {
+          "name": "AI Task",
+          "description": "Welke AI het plaatje maakt (leeg: de eerste die het kan)."
+        },
+        "show_seconds": {
+          "name": "Duur",
+          "description": "Na zoveel seconden weer weghalen (0: laten staan)."
+        },
+        "mode": {
+          "name": "Modus",
+          "description": "Op de fan opslaan, of live tonen zonder op te slaan."
+        },
+        "name": {
+          "name": "Bestandsnaam",
+          "description": "Naam op de fan; dezelfde naam vervangt het eerdere bestand."
         }
       }
     },

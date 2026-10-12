@@ -40,6 +40,7 @@ export const IconTag = icon(<><path d="M3 12V3h9l9 9-9 9z" /><circle cx="7.5" cy
 export const IconRepeat = icon(<><path d="M17 2l4 4-4 4" /><path d="M3 11V9a3 3 0 0 1 3-3h15" /><path d="M7 22l-4-4 4-4" /><path d="M21 13v2a3 3 0 0 1-3 3H3" /></>);
 export const IconRepeatOne = icon(<><path d="M17 2l4 4-4 4" /><path d="M3 11V9a3 3 0 0 1 3-3h15" /><path d="M7 22l-4-4 4-4" /><path d="M21 13v2a3 3 0 0 1-3 3H3" /><path d="M11 10h1v4" /></>);
 export const IconAlert = icon(<><path d="M12 3l10 18H2z" /><path d="M12 10v5M12 18h.01" /></>);
+export const IconSparkle = icon(<><path d="M11 3l1.8 5.2L18 10l-5.2 1.8L11 17l-1.8-5.2L4 10l5.2-1.8z" /><path d="M19 15v5M16.5 17.5h5" /></>);
 export const IconPlus = icon(<><path d="M12 5v14" /><path d="M5 12h14" /></>);
 export const IconCheck = icon(<path d="M5 12l5 5 9-10" />);
 export const IconChevron = icon(<path d="M6 9l6 6 6-6" />);

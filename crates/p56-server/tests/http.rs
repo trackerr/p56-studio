@@ -201,6 +201,14 @@ fn image_png() -> Vec<u8> {
     v
 }
 
+/// A 4×4 sprite sheet of 400×400: every cell a different shade of red.
+fn sheet_png() -> Vec<u8> {
+    let img = image::RgbImage::from_fn(400, 400, |x, y| image::Rgb([((y / 100 * 4 + x / 100) * 15 + 10) as u8, 0, 0]));
+    let mut v = Vec::new();
+    image::DynamicImage::ImageRgb8(img).write_to(&mut std::io::Cursor::new(&mut v), image::ImageFormat::Png).unwrap();
+    v
+}
+
 fn base64_encode(b: &[u8]) -> String {
     use base64::Engine;
     base64::engine::general_purpose::STANDARD.encode(b)
@@ -551,17 +559,35 @@ fn fake_home_assistant() -> u16 {
     let srv = tiny_http::Server::http("127.0.0.1:0").unwrap();
     let port = srv.server_addr().to_ip().unwrap().port();
     std::thread::spawn(move || {
-        for req in srv.incoming_requests() {
+        for mut req in srv.incoming_requests() {
             let authed = req.headers().iter().any(|h| h.field.equiv("Authorization") && h.value.as_str() == "Bearer test-token");
+            let mut body = String::new();
+            let _ = req.as_reader().read_to_string(&mut body);
             let r = match (authed, req.url()) {
+                // the AI's picture: a signed address, no token
+                (_, "/ai_task/image/p56.png?authSig=signed") => tiny_http::Response::from_data(sheet_png()),
                 (false, _) => tiny_http::Response::from_data(b"401".to_vec()).with_status_code(401),
                 (true, "/states") => tiny_http::Response::from_data(
                     serde_json::to_vec(&json!([
                         { "entity_id": "light.kitchen", "attributes": { "friendly_name": "Kitchen" } },
                         { "entity_id": "camera.front_door", "attributes": { "friendly_name": "Front door" } },
+                        { "entity_id": "ai_task.text_only", "attributes": { "friendly_name": "Text AI", "supported_features": 1 } },
+                        { "entity_id": "ai_task.google_ai_task", "attributes": { "friendly_name": "Google AI Task", "supported_features": 7 } },
                     ]))
                     .unwrap(),
                 ),
+                (true, "/services/ai_task/generate_image?return_response") => {
+                    let b: Value = serde_json::from_str(&body).unwrap_or(Value::Null);
+                    let ok = b["entity_id"] == "ai_task.google_ai_task"
+                        && b["instructions"].as_str().is_some_and(|i| i.contains("black") && i.contains("Subject: a red fox"));
+                    if ok {
+                        tiny_http::Response::from_data(
+                            serde_json::to_vec(&json!({ "changed_states": [], "service_response": { "url": "/ai_task/image/p56.png?authSig=signed", "width": 400, "height": 400 } })).unwrap(),
+                        )
+                    } else {
+                        tiny_http::Response::from_data(serde_json::to_vec(&json!({ "message": format!("bad request: {body}") })).unwrap()).with_status_code(400)
+                    }
+                }
                 (true, "/camera_proxy/camera.front_door") => tiny_http::Response::from_data(image_png()),
                 _ => tiny_http::Response::from_data(b"404".to_vec()).with_status_code(404),
             };
@@ -597,6 +623,39 @@ fn home_assistant_cameras_are_listed_and_cast() {
         std::thread::sleep(Duration::from_millis(100));
     }
     s.call("cast_stop", json!({}));
+    assert!(fan.state().protocol_errors.is_empty(), "{:?}", fan.state().protocol_errors);
+}
+
+/// In the add-on a prompt becomes a picture through Home Assistant's AI Task: the entity that can
+/// make pictures is found by itself, a still and a drawn animation become media items, and
+/// `show_ai` puts one straight on the fan. Outside Home Assistant it fails clearly.
+#[test]
+fn ai_pictures_through_home_assistant() {
+    let plain = start(true);
+    let (_, v) = plain.post("/api/call/ai_status", json!({}));
+    assert_eq!(v["ok"], false, "{v}");
+    drop(plain);
+
+    let ha = format!("http://127.0.0.1:{}", fake_home_assistant());
+    let s = start_env(false, &[], &[("P56_HA_URL", &ha), ("P56_HA_TOKEN", "test-token")]);
+    assert_eq!(s.call("ai_status", json!({})), json!({ "entities": [{ "entity_id": "ai_task.google_ai_task", "name": "Google AI Task" }] }));
+    let still = s.call("ai_image", json!({ "prompt": "a red fox", "kind": "still" }));
+    assert_eq!((still["frames"].as_u64(), still["name"].as_str()), (Some(1), Some("ai a red fox")), "{still}");
+    let anim = s.call("ai_image", json!({ "prompt": "a red fox", "kind": "anim", "name": "fox" }));
+    assert_eq!(anim["frames"], 16, "{anim}");
+    let spin = s.call("ai_image", json!({ "prompt": "a red fox", "kind": "spin" }));
+    assert_eq!(spin["frames"], 36, "{spin}");
+    for bad in [json!({ "prompt": "" }), json!({ "prompt": "fox", "kind": "video" }), json!({ "prompt": "fox", "entity_id": "light.kitchen" })] {
+        let (_, v) = s.post("/api/call/ai_image", bad.clone());
+        assert_eq!(v["ok"], false, "{bad}: {v}");
+    }
+
+    let pc = std::net::SocketAddr::from((Ipv4Addr::LOCALHOST, s.tcp));
+    let fan = p56_sim::Sim::start(p56_sim::SimConfig { name: "FAN".into(), udp_port: 0, pc: Some(pc), ..Default::default() }).unwrap();
+    s.wait("fan", |v| v["devices"].as_array().is_some_and(|d| d.len() == 1 && d[0]["status"].is_object()));
+    let r = s.call("show_ai", json!({ "prompt": "a red fox", "kind": "anim", "name": "fox" }));
+    assert_eq!(r["success"], true, "{r}");
+    assert!(fan.state().files.iter().any(|f| f.name == "fox.mp4"), "{:?}", fan.state().files);
     assert!(fan.state().protocol_errors.is_empty(), "{:?}", fan.state().protocol_errors);
 }
 

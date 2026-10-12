@@ -9,8 +9,9 @@ the HTTP API are in the [add-on documentation](../p56_pov_display/DOCS.md).
 - [4. On your dashboard](#4-on-your-dashboard)
 - [5. Automations in a few clicks](#5-automations-in-a-few-clicks)
 - [6. Your cameras on the fan](#6-your-cameras-on-the-fan)
-- [7. Your phone and computer through Home Assistant](#7-your-phone-and-computer-through-home-assistant)
-- [8. When something does not work](#8-when-something-does-not-work)
+- [7. Pictures made by AI](#7-pictures-made-by-ai)
+- [8. Your phone and computer through Home Assistant](#8-your-phone-and-computer-through-home-assistant)
+- [9. When something does not work](#9-when-something-does-not-work)
 
 ---
 
@@ -23,7 +24,7 @@ the HTTP API are in the [add-on documentation](../p56_pov_display/DOCS.md).
   type text, cast live, change the fan's Wi-Fi.
 
 A fan accepts **one connection**. With the add-on running, Home Assistant keeps that connection,
-and your phone and computer can join in through Home Assistant ([section 7](#7-your-phone-and-computer-through-home-assistant)).
+and your phone and computer can join in through Home Assistant ([section 8](#8-your-phone-and-computer-through-home-assistant)).
 
 ## 2. First time
 
@@ -114,7 +115,37 @@ times a second until you press stop; the fan then returns to its playlist.
 **A snapshot, from an automation:** use `p56_pov.show_image` with `camera:` (see above). Add
 `mode: cast` to show it live for `show_seconds` without storing anything on the fan.
 
-## 7. Your phone and computer through Home Assistant
+## 7. Pictures made by AI
+
+Type what you want to see, and an AI draws it for the fan: a still picture, the picture turning
+round, or a short animation it draws frame by frame.
+
+**What you need:** an AI in Home Assistant that can make pictures, for example **Google
+Generative AI** (Gemini). Set it up under **Settings → Devices & services → Add integration**
+with your own API key; it then also offers an **AI Task**. P56 uses whichever one you set up;
+nothing about your AI account is stored by P56. Making pictures can cost money at the AI's
+provider (with Google it needs billing turned on for the key).
+
+**From the panel:** open **P56 POV → Media**. When an AI is available, an **AI picture** box
+appears: describe the picture (for example *a neon jellyfish*), choose **Still**, **Turning** or
+**Animation** and press **Make**. After 5–30 seconds it is in the preview, ready for **Upload**
+or the **Cast** tab like any other picture. A black background and one bold subject in the
+middle are asked for automatically, because that looks best on the fan.
+
+**From an automation:**
+
+```yaml
+action: p56_pov.show_ai
+data:
+  prompt: a neon jellyfish
+  kind: anim          # still, spin (turning) or anim (animation)
+  show_seconds: 60
+```
+
+The same box and action also appear in P56 Studio on a phone or computer that goes through
+Home Assistant ([section 8](#8-your-phone-and-computer-through-home-assistant)).
+
+## 8. Your phone and computer through Home Assistant
 
 Because Home Assistant keeps the fan's one connection, a P56 Studio app on your phone or computer
 cannot find the fan by itself while the add-on runs. Let the app go **through** Home Assistant
@@ -139,13 +170,15 @@ The app now shows and controls the same fan as Home Assistant. The address stays
 you switch back to **This app controls the fan** (for example on a trip, connecting to the fan's
 own Wi-Fi) and later return to the server.
 
-## 8. When something does not work
+## 9. When something does not work
 
 | What you see | What to do |
 | --- | --- |
-| No fan appears | Is the fan on the same network as Home Assistant? Close Holoscope and P56 Studio on other devices (or set them to go through Home Assistant, [section 7](#7-your-phone-and-computer-through-home-assistant)). If your network blocks broadcasts, fill in the fan's IP under **fan_ip** in the add-on. |
+| No fan appears | Is the fan on the same network as Home Assistant? Close Holoscope and P56 Studio on other devices (or set them to go through Home Assistant, [section 8](#8-your-phone-and-computer-through-home-assistant)). If your network blocks broadcasts, fill in the fan's IP under **fan_ip** in the add-on. |
 | The phone app finds the fan, Home Assistant does not | The app has the fan's connection. Close it (swipe it away), or set it to go through Home Assistant. |
 | The app says "No P56 server answers at this address" | Check the address and `:8765`, and that **lan_api** is on and the add-on was restarted. |
 | The app asks for an API token | Enter the **api_token** from the add-on configuration. |
 | "Home Assistant camera" is missing on the Cast tab | Update the add-on to 2.1.1 or later (it needs access to Home Assistant's cameras). |
+| The **AI picture** box is missing on the Media tab | Set up an AI that can make pictures ([section 7](#7-pictures-made-by-ai)) and update the add-on to 2.1.9 or later. |
+| "the AI made no picture" | The message after it comes from the AI; often the key has no billing or hit its limit. |
 | Something else | Open the add-on's **Log** tab; the last lines usually say what is going on. |

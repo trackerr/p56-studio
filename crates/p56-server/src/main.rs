@@ -10,6 +10,8 @@
 //! `--media-dir` folders. Bodies over 64 MB get 413; more than 64 requests or 32 event streams
 //! at once get 503. `--fan-allow` limits which addresses may connect as a fan.
 
+mod ai;
+
 use std::io::{Read, Write};
 use std::net::{Ipv4Addr, TcpStream};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -18,6 +20,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
+use base64::Engine;
 use clap::Parser;
 use p56_service::{Defaults, Service, ShowRequest};
 use serde_json::{json, Value};
@@ -360,22 +363,37 @@ fn fetch_json(url: &str) -> Option<Value> {
 
 /// Minimal HTTP/1.0 GET (plain http only) returning the body of a 200 answer.
 fn http_get(url: &str, token: Option<&str>, accept: &str) -> Option<Vec<u8>> {
-    let rest = url.strip_prefix("http://")?;
+    match http_request("GET", url, token, accept, None, Duration::from_secs(5)) {
+        Ok((200, body)) => Some(body),
+        _ => None,
+    }
+}
+
+/// Minimal HTTP/1.0 request (plain http only, a JSON body if any): the status and body of the answer.
+fn http_request(method: &str, url: &str, token: Option<&str>, accept: &str, body: Option<&[u8]>, timeout: Duration) -> Result<(u16, Vec<u8>), String> {
+    let rest = url.strip_prefix("http://").ok_or_else(|| format!("not a plain http address: {url}"))?;
     let (hostport, path) = rest.split_once('/').map(|(h, p)| (h, format!("/{p}"))).unwrap_or((rest, "/".into()));
     let addr = if hostport.contains(':') { hostport.to_string() } else { format!("{hostport}:80") };
-    let sock = std::net::ToSocketAddrs::to_socket_addrs(&addr).ok()?.next()?;
-    let mut s = TcpStream::connect_timeout(&sock, Duration::from_secs(3)).ok()?;
-    s.set_read_timeout(Some(Duration::from_secs(5))).ok()?;
+    let sock = std::net::ToSocketAddrs::to_socket_addrs(&addr).ok().and_then(|mut a| a.next()).ok_or_else(|| format!("{hostport}: unknown host"))?;
+    let mut s = TcpStream::connect_timeout(&sock, Duration::from_secs(3)).map_err(|e| format!("{hostport}: {e}"))?;
+    s.set_read_timeout(Some(timeout)).map_err(|e| e.to_string())?;
     let auth = token.map(|t| format!("Authorization: Bearer {t}\r\n")).unwrap_or_default();
-    write!(s, "GET {path} HTTP/1.0\r\nHost: {hostport}\r\n{auth}Accept: {accept}\r\n\r\n").ok()?;
-    let mut resp = Vec::new();
-    s.take(32 << 20).read_to_end(&mut resp).ok()?;
-    let split = resp.windows(4).position(|w| w == b"\r\n\r\n")?;
-    let head = String::from_utf8_lossy(&resp[..split]);
-    if !head.starts_with("HTTP/1.") || !head.split_whitespace().nth(1).is_some_and(|c| c == "200") {
-        return None;
+    let content = body.map(|b| format!("Content-Type: application/json\r\nContent-Length: {}\r\n", b.len())).unwrap_or_default();
+    write!(s, "{method} {path} HTTP/1.0\r\nHost: {hostport}\r\n{auth}Accept: {accept}\r\n{content}\r\n").map_err(|e| e.to_string())?;
+    if let Some(b) = body {
+        s.write_all(b).map_err(|e| e.to_string())?;
     }
-    Some(resp[split + 4..].to_vec())
+    let mut resp = Vec::new();
+    s.take(32 << 20).read_to_end(&mut resp).map_err(|e| format!("{hostport}: {e}"))?;
+    let split = resp.windows(4).position(|w| w == b"\r\n\r\n").ok_or_else(|| format!("{hostport}: no HTTP answer"))?;
+    let head = String::from_utf8_lossy(&resp[..split]);
+    let code = head
+        .split_whitespace()
+        .nth(1)
+        .and_then(|c| c.parse().ok())
+        .filter(|_| head.starts_with("HTTP/1."))
+        .ok_or_else(|| format!("{hostport}: no HTTP answer"))?;
+    Ok((code, resp[split + 4..].to_vec()))
 }
 
 // ---- Home Assistant cameras (in the add-on) -------------------------------------------
@@ -393,9 +411,15 @@ fn camera_entity(id: &str) -> bool {
     id.strip_prefix("camera.").is_some_and(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_'))
 }
 
-/// The calls the server answers itself: Home Assistant cameras. `None` for every other call.
+/// The calls the server answers itself: Home Assistant cameras and AI pictures. `None` for every other call.
 fn ha_call(svc: &Arc<Service>, cmd: &str, args: &Value) -> Option<Result<Value, String>> {
     let source = args["args"]["source"].as_str().unwrap_or_default();
+    if matches!(cmd, "ai_status" | "ai_image" | "show_ai") {
+        let Some((base, token)) = ha_api() else {
+            return Some(Err("AI pictures are only available in the Home Assistant add-on".into()));
+        };
+        return Some(ai_call(svc, cmd, args, &base, &token));
+    }
     if cmd != "ha_cameras" && !(cmd == "cast_start" && source.starts_with("ha_camera:")) {
         return None;
     }
@@ -436,6 +460,39 @@ fn ha_call(svc: &Arc<Service>, cmd: &str, args: &Value) -> Option<Result<Value, 
     };
     log::info!("casting Home Assistant camera {entity}");
     Some(svc.cast_source(fps, pl, next).map(|_| Value::Null))
+}
+
+/// AI pictures through Home Assistant's AI Task:
+/// - `ai_status`: the AI Task entities that can make pictures (empty: none set up);
+/// - `ai_image` {prompt, kind, entity_id?, name?}: a new media item (for the app's Media panel);
+/// - `show_ai` {prompt, kind, entity_id?, …the fields of /api/show}: straight onto the fans.
+fn ai_call(svc: &Arc<Service>, cmd: &str, args: &Value, base: &str, token: &str) -> Result<Value, String> {
+    if cmd == "ai_status" {
+        return ai::entities(base, token).map(|e| json!({ "entities": e }));
+    }
+    let prompt = args["prompt"].as_str().unwrap_or_default();
+    let kind = ai::Kind::parse(args["kind"].as_str().unwrap_or_default())?;
+    let (images, ms) = ai::generate(base, token, args["entity_id"].as_str(), prompt, kind)?;
+    // a name for the fan from the prompt's first words
+    let words: String = prompt.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { ' ' }).collect();
+    let default_name = format!("ai {}", words.split_whitespace().collect::<Vec<_>>().join(" ")).chars().take(24).collect::<String>().trim().to_string();
+    let name = args["name"].as_str().filter(|n| !n.trim().is_empty()).map(String::from).unwrap_or(default_name);
+    if cmd == "ai_image" {
+        return svc.media_images(name, images, ms);
+    }
+    let mut req = args.clone();
+    let o = req.as_object_mut().ok_or("expected an object")?;
+    for k in ["prompt", "kind", "entity_id", "text", "data", "path", "image", "icon", "style"] {
+        o.remove(k);
+    }
+    o.entry("name").or_insert(json!(name));
+    let jpegs = images.iter().map(|img| base64::engine::general_purpose::STANDARD.encode(p56_core::transcode::jpeg(img, 92))).collect::<Vec<_>>();
+    o.insert("frames".into(), json!(jpegs));
+    if ms > 0 {
+        o.insert("frame_ms".into(), json!(ms));
+    }
+    let r: ShowRequest = serde_json::from_value(req).map_err(|e| e.to_string())?;
+    svc.show(r)
 }
 
 /// The simulated fan, switched on and off while the server runs.

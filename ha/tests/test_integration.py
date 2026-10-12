@@ -323,6 +323,29 @@ async def test_styles_icons_values_and_animations(hass: HomeAssistant, p56_serve
     assert await hass.config_entries.async_unload(entry.entry_id)
 
 
+async def test_show_ai_goes_to_the_server(hass: HomeAssistant, p56_server, monkeypatch) -> None:
+    """show_ai hands the prompt to the server, which makes AI pictures only inside the add-on."""
+    entry = await setup(hass, p56_server)
+    sent: list[tuple[str, dict]] = []
+    original = entry.runtime_data.api.call
+
+    async def capture(cmd, args=None, **kw):
+        sent.append((cmd, dict(args or {})))
+        return await original(cmd, args, **kw)
+
+    monkeypatch.setattr(entry.runtime_data.api, "call", capture)
+    with pytest.raises(HomeAssistantError) as err:
+        await hass.services.async_call(
+            DOMAIN, "show_ai", {"prompt": "a red fox", "kind": "anim", "show_seconds": 5}, blocking=True, return_response=True
+        )
+    assert "add-on" in err.value.translation_placeholders["error"]
+    cmd, args = sent[-1]
+    assert cmd == "show_ai"
+    assert args["prompt"] == "a red fox" and args["kind"] == "anim" and args["show_seconds"] == 5
+    with pytest.raises(Exception, match="kind"):
+        await hass.services.async_call(DOMAIN, "show_ai", {"prompt": "fox", "kind": "video"}, blocking=True)
+
+
 def test_video_helpers() -> None:
     from custom_components.p56_pov.show import is_video, split_jpegs  # noqa: PLC0415
 

@@ -136,6 +136,16 @@ Everything a style sets can be overridden: `color`, `background`, `icon`, `icon_
 into frames with the ffmpeg that comes with Home Assistant (`fps`, default 10; `max_frames`,
 default 100). The fan plays it in a loop; with `mode: cast` it plays live for `show_seconds`.
 
+#### AI pictures
+
+`p56_pov.show_ai` has an AI Task of Home Assistant draw a picture from `prompt` (the add-on
+adds a black background and asks for one bold subject in the middle). `kind: still` (default)
+shows it as it is, `spin` turns it round once every 3.6 s, and `anim` asks the AI for a 4×4
+sheet of 16 frames and plays them as an animation. `entity_id` picks the AI Task; by default the
+first one that can make pictures is used. The panel's Media tab has the same as an
+**AI picture** box. It needs `homeassistant_api` (on by default) and Home Assistant on port 8123
+with plain http on the same machine, where the add-on fetches the finished picture.
+
 `p56_pov.play_file` and `p56_pov.delete_file` take a device and a `slot` or `name`.
 `show_text` and `show_image` return the result (slot, file name) as a response.
 

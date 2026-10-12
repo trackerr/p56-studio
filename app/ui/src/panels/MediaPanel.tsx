@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { IconFilm, IconImage, IconRings, IconRotate, IconType, IconUpload, IconX } from '@/components/icons';
+import { IconFilm, IconImage, IconRings, IconRotate, IconSparkle, IconType, IconUpload, IconX } from '@/components/icons';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -12,6 +12,8 @@ import { Choice, RoundView, Section, ValueSlider } from '@/components/bits';
 
 /** Text that moves: a ticker across the middle or round along the rim ('' = still). */
 type Motion = '' | 'scroll' | 'orbit';
+/** An AI picture: still, turned round by the server, or drawn as an animation. */
+type AiKind = 'still' | 'spin' | 'anim';
 import { DEFAULT_PLACEMENT, decodeAudio, decodeVideo, invoke, onEvent, pickMedia, toBase64, type MediaInfo, type Picked, type Preview } from '@/lib/api';
 import { useT, type Key, type TFunc } from '@/lib/i18n';
 import { useP56 } from '@/state';
@@ -39,7 +41,7 @@ export function PlacementBox() {
 }
 
 /** What the panel is busy with: a local step, or an upload stage reported by the backend. */
-type Step = 'reading' | 'frames' | 'preparing' | 'text';
+type Step = 'reading' | 'frames' | 'preparing' | 'text' | 'ai';
 type Busy = null | { step: Step } | { stage: string };
 
 // Upload stages as emitted by the backend; both the old Dutch and English ids are accepted.
@@ -47,7 +49,7 @@ const STAGES: Record<string, Key> = {
   transcoderen: 'media.stageTranscoding', transcoding: 'media.stageTranscoding', transcode: 'media.stageTranscoding', encoding: 'media.stageTranscoding',
   versturen: 'media.stageSending', sending: 'media.stageSending', send: 'media.stageSending', uploading: 'media.stageSending', upload: 'media.stageSending',
 };
-const STEPS: Record<Step, Key> = { reading: 'media.reading', frames: 'media.makingFrames', preparing: 'media.preparing', text: 'media.makingText' };
+const STEPS: Record<Step, Key> = { reading: 'media.reading', frames: 'media.makingFrames', preparing: 'media.preparing', text: 'media.makingText', ai: 'media.aiMaking' };
 
 function busyLabel(b: Busy, t: TFunc): string {
   if (!b) return '';
@@ -87,6 +89,22 @@ export function MediaPanel() {
       addLog(t('media.logText', { text: txt.text }));
       return { id: m.id, name: n };
     } catch (e) { toast.error(t('media.textFailed'), { description: String(e) }); return null; }
+    finally { setBusy(null); }
+  }
+
+  // AI pictures: only where Home Assistant (with an AI that makes pictures) is behind the server
+  const [aiOk, setAiOk] = useState(false);
+  const [ai, setAi] = useState({ prompt: '', kind: 'still' as AiKind });
+  useEffect(() => {
+    invoke<{ entities: unknown[] }>('ai_status').then((s) => setAiOk(s.entities.length > 0)).catch(() => setAiOk(false));
+  }, []);
+  async function makeAi() {
+    setBusy({ step: 'ai' });
+    try {
+      const m = await invoke<MediaInfo>('ai_image', { prompt: ai.prompt, kind: ai.kind });
+      setPicked(null); setMedia(m); setFrame(0); setName(m.name);
+      addLog(t('media.logAi', { prompt: ai.prompt }));
+    } catch (e) { toast.error(t('media.aiFailed'), { description: String(e) }); }
     finally { setBusy(null); }
   }
 
@@ -260,6 +278,24 @@ export function MediaPanel() {
               </div>
             )}
           </div>
+          {aiOk && (
+            <div className="mt-4 border border-dashed border-line p-4" data-testid="ai-box">
+              <div className="mb-3 flex items-center gap-2 text-[13px] text-primary"><IconSparkle />{t('media.ai')}</div>
+              <form className="flex flex-wrap items-center gap-2" onSubmit={(e) => { e.preventDefault(); makeAi(); }}>
+                <Input className="min-w-48 flex-1" placeholder={t('media.aiPlaceholder')} aria-label={t('media.ai')} value={ai.prompt} data-testid="ai-prompt" onChange={(e) => setAi({ ...ai, prompt: e.target.value })} />
+                <Button type="submit" variant="secondary" disabled={!ai.prompt.trim() || !!busy} data-testid="ai-make"><IconSparkle />{t('media.aiMake')}</Button>
+              </form>
+              <div className="mt-2">
+                <Choice label={t('media.aiKind')} value={ai.kind} onChange={(kind) => setAi({ ...ai, kind })}
+                  options={[
+                    { value: 'still', label: t('media.still'), testId: 'ai-still' },
+                    { value: 'spin', label: t('media.aiSpin'), testId: 'ai-spin' },
+                    { value: 'anim', label: t('media.aiAnim'), testId: 'ai-anim' },
+                  ]} />
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">{t('media.aiHint')}</p>
+            </div>
+          )}
           {/* data-frames / data-size let tests check the result without depending on the UI language */}
           <p className="mt-3 text-xs text-muted-foreground" data-testid="media-info" data-frames={media?.frames ?? 0} data-size={media?.width ? `${media.width}x${media.height}` : ''}>
             {media ? <>{t('media.info', { name: media.name, count: media.frames })}{media.width ? ` · ${media.width}×${media.height}` : ''}{media.audioMs ? ` · ${t('media.withSound', { s: (media.audioMs / 1000).toFixed(1) })}` : ''}</>

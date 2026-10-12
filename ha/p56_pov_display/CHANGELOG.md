@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.1.9
+
+p56-server 0.3.9.
+
+- **AI pictures**: describe a picture in the panel's Media tab (or use the new action
+  `p56_pov.show_ai`) and the AI you set up in Home Assistant draws a still, a turning picture or
+  a short animation for the fan. Needs an AI Task that makes pictures, e.g. Google Generative AI.
+
 ## 2.1.8
 
 p56-server 0.3.8.

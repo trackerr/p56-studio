@@ -93,7 +93,14 @@ class P56Api:
 
     async def show(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Show text or a picture (see the add-on docs for the fields)."""
-        data = await self._request("POST", "/api/show", json_body=payload, timeout=120)
+        return self._shown(await self._request("POST", "/api/show", json_body=payload, timeout=120))
+
+    async def show_ai(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """A picture made by Home Assistant's AI Task, onto the fans (the add-on's server only)."""
+        return self._shown(await self.call("show_ai", payload, timeout=180))
+
+    @staticmethod
+    def _shown(data: Any) -> dict[str, Any]:
         if not isinstance(data, dict):
             raise P56CommandError("unexpected answer")
         if not data.get("success"):

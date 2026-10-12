@@ -180,6 +180,50 @@ show_image:
           max: 30
           mode: box
 
+show_ai:
+  fields:
+    device_id:
+      selector:
+        device:
+          multiple: true
+          integration: p56_pov
+    prompt:
+      required: true
+      example: a neon jellyfish
+      selector:
+        text:
+          multiline: true
+    kind:
+      selector:
+        select:
+          options:
+            - still
+            - spin
+            - anim
+          translation_key: ai_kind
+    entity_id:
+      selector:
+        entity:
+          domain: ai_task
+    show_seconds:
+      selector:
+        number:
+          min: 0
+          max: 86400
+          unit_of_measurement: s
+          mode: box
+    mode:
+      selector:
+        select:
+          options:
+            - upload
+            - cast
+          translation_key: mode
+    name:
+      advanced: true
+      selector:
+        text:
+
 play_file:
   fields:
     device_id:

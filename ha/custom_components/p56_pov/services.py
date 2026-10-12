@@ -1,4 +1,4 @@
-"""Actions: p56_pov.show_text, show_image, play_file, delete_file."""
+"""Actions: p56_pov.show_text, show_image, show_ai, play_file, delete_file."""
 
 from __future__ import annotations
 
@@ -13,7 +13,18 @@ from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv, device_registry as dr
 from homeassistant.util import dt as dt_util
 
-from .const import CONF_BACKGROUND, CONF_COLOR, CONF_MODE, DEFAULT_BACKGROUND, DEFAULT_COLOR, DEFAULT_MODE, DOMAIN, MODES, STYLES
+from .const import (
+    AI_KINDS,
+    CONF_BACKGROUND,
+    CONF_COLOR,
+    CONF_MODE,
+    DEFAULT_BACKGROUND,
+    DEFAULT_COLOR,
+    DEFAULT_MODE,
+    DOMAIN,
+    MODES,
+    STYLES,
+)
 from .coordinator import P56ConfigEntry, P56Coordinator
 from .entity import run_command
 from .show import b64, color_value, image_bytes, is_video, video_frames
@@ -64,6 +75,15 @@ SHOW_IMAGE_SCHEMA = vol.Schema(
     }
 )
 
+SHOW_AI_SCHEMA = vol.Schema(
+    {
+        **SHOW_COMMON,
+        vol.Required("prompt"): vol.All(cv.string, vol.Length(min=1, max=1000)),
+        vol.Optional("kind"): vol.In(AI_KINDS),
+        vol.Optional("entity_id"): cv.entity_domain("ai_task"),
+    }
+)
+
 FILE_SCHEMA = vol.All(
     vol.Schema(
         {
@@ -103,10 +123,11 @@ def _targets(hass: HomeAssistant, call: ServiceCall) -> list[tuple[P56Coordinato
     return out
 
 
-async def _show(call: ServiceCall, payload: dict[str, Any], default_colors: bool = False) -> ServiceResponse:
+async def _show(call: ServiceCall, payload: dict[str, Any], default_colors: bool = False, ai: bool = False) -> ServiceResponse:
     """Send the payload to every target; options defaults come from each target's own entry.
 
     default_colors: fill a missing color/background from the target entry's options.
+    ai: the payload is a prompt; the server has the picture made by the AI Task first.
     """
     results: list[dict[str, Any]] = []
     for coordinator, mac in _targets(call.hass, call):
@@ -118,7 +139,8 @@ async def _show(call: ServiceCall, payload: dict[str, Any], default_colors: bool
             body.setdefault("background", color_value(opts.get(CONF_BACKGROUND, DEFAULT_BACKGROUND)))
         if mac:
             body["mac"] = mac
-        answer = await run_command(coordinator, coordinator.api.show(body))
+        send = coordinator.api.show_ai if ai else coordinator.api.show
+        answer = await run_command(coordinator, send(body))
         results.append(answer)
     return {"results": results}
 
@@ -175,6 +197,11 @@ async def _show_image(call: ServiceCall) -> ServiceResponse:
     return await _show(call, payload)
 
 
+async def _show_ai(call: ServiceCall) -> ServiceResponse:
+    payload = {k: call.data[k] for k in ("prompt", "kind", "entity_id", "show_seconds", "mode", "name") if k in call.data}
+    return await _show(call, payload, ai=True)
+
+
 async def _file_action(call: ServiceCall, what: str) -> None:
     for coordinator, mac in _targets(call.hass, call):
         fan = coordinator.fan(mac) if mac else None
@@ -205,6 +232,9 @@ def async_setup_services(hass: HomeAssistant) -> None:
     )
     hass.services.async_register(
         DOMAIN, "show_image", _show_image, schema=SHOW_IMAGE_SCHEMA, supports_response=SupportsResponse.OPTIONAL
+    )
+    hass.services.async_register(
+        DOMAIN, "show_ai", _show_ai, schema=SHOW_AI_SCHEMA, supports_response=SupportsResponse.OPTIONAL
     )
     hass.services.async_register(DOMAIN, "play_file", _play_file, schema=FILE_SCHEMA)
     hass.services.async_register(DOMAIN, "delete_file", _delete_file, schema=FILE_SCHEMA)
