@@ -1,6 +1,6 @@
 # Android build / run helper for P56 Studio.
 #   powershell -File scripts\android.ps1 debug      # debug APK (arm64 + x86_64) → dist\
-#   powershell -File scripts\android.ps1 build      # signed release APK (arm64 + armv7 + x86_64) → dist\
+#   powershell -File scripts\android.ps1 build      # signed release APK (arm64: every current phone) → dist\
 #   powershell -File scripts\android.ps1 phone      # quick signed APK for a phone (arm64, no LTO), installed and started
 #   powershell -File scripts\android.ps1 emulator   # start the emulator
 #   powershell -File scripts\android.ps1 install    # install the latest debug APK on the emulator/phone
@@ -63,7 +63,7 @@ function Build-Apk([string[]]$targets, [bool]$release) {
 switch ($Cmd) {
   'env' { Write-Host "JAVA_HOME=$env:JAVA_HOME`nANDROID_HOME=$env:ANDROID_HOME`nNDK_HOME=$env:NDK_HOME" }
   'debug' { Build-Apk @('aarch64', 'x86_64') $false }
-  'build' { Build-Apk @('aarch64', 'armv7', 'x86_64') $true }
+  'build' { Build-Apk @('aarch64') $true }
   'phone' {
     # A third of the Rust work (arm64 only) and much faster linking (no LTO, parallel codegen),
     # in its own target folder so the release build's cache stays intact. For testing; releases
