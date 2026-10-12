@@ -4,6 +4,17 @@ P56 Studio (Windows, Linux, Android), `p56` (CLI), `p56-sim` and `p56-server`.
 The Home Assistant add-on and integration have their own changelog in
 [`ha/p56_pov_display/CHANGELOG.md`](ha/p56_pov_display/CHANGELOG.md).
 
+## 0.3.16 — 2026-10-12
+
+### Fixed
+- **Texts and messages were stored as a 0.1 s animation instead of a still picture**, so a
+  playlist flashed past them and a selected message was gone before it could be repeated. One
+  picture is now stored as a still (one frame, which the fan shows 5 s, as Holoscope does).
+- A temporary message really stays: on a real P56 selecting a file sets the fan back to
+  repeating the whole playlist, so "repeat one" is now sent after the fan reports that it plays
+  the message (tested on a real P56: the price stayed on for its 30 s, then the playlist went on).
+  The simulator now behaves the same way.
+
 ## 0.3.15 — 2026-10-12
 
 ### Fixed

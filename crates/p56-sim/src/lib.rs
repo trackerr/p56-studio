@@ -1008,6 +1008,8 @@ fn handle(sh: &Shared, out: &mut Out, pkt: &[u8], ft: u8, just_uploaded: &mut bo
                     set(&|g| {
                         g.current = i;
                         g.playing = true;
+                        // a real P56 goes back to repeating the whole playlist (seen 2026-10-12)
+                        g.repeat_all = true;
                     });
                 }
                 out.ready();

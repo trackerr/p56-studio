@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.1.16
+
+p56-server 0.3.16.
+
+- **Messages and texts no longer flash by**: they were stored as a 0.1 s animation, so with
+  several files the fan raced through the playlist and a message could not stay on. A text or
+  picture is now a still that the fan shows 5 s, and a message really stays until its time is up.
+
 ## 2.1.15
 
 p56-server 0.3.15.

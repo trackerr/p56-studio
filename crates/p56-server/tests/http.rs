@@ -948,4 +948,7 @@ fn a_message_shows_even_when_the_fan_misses_the_first_select() {
     let slot = st.files.iter().position(|f| f.name == "price.mp4").map(|i| i as u8 + 1).expect("price stored");
     assert_eq!(st.current, slot, "the fan shows the message, not the first file");
     assert!(!st.repeat_all, "and repeats only the message");
+    // a text is a still picture (one frame, which the fan shows 5 s), not a 0.1 s animation
+    // that a playlist would flash past
+    assert!(st.files.iter().all(|f| f.frames == 1), "{:?}", st.files.iter().map(|f| (&f.name, f.frames)).collect::<Vec<_>>());
 }

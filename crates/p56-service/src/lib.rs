@@ -1580,7 +1580,9 @@ impl Service {
             };
             // every picture once, then repeated to the fan's fixed 20 fps so the animation keeps its speed
             let encoded: Vec<(Vec<u8>, u32)> = images.iter().map(|img| (transcode::encode_upload(img, &ft, &pl).jpeg, frame_ms as u32)).collect();
-            let jpegs = at_fan_rate(encoded, MAX_UPLOAD_FRAMES);
+            // one picture is a still (one frame: the fan shows it 5 s, like Holoscope does), not a
+            // 0.1 s animation that a playlist would flash past
+            let jpegs = if encoded.len() == 1 { vec![encoded[0].0.clone()] } else { at_fan_rate(encoded, MAX_UPLOAD_FRAMES) };
             let name =
                 p56_core::protocol::mp4_name(&r.name.clone().unwrap_or_else(|| {
                     format!("ha_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0))
@@ -1614,13 +1616,10 @@ impl Service {
             if !select_and_confirm(&l, id, slot) {
                 log::warn!("fan #{id} did not switch to {name}");
             }
-            // a temporary file stays on until its time is up: repeat only this one meanwhile (the
-            // fan repeats what plays at that moment, so make sure that is still the message)
+            // a temporary file stays on until its time is up: repeat only this one meanwhile. Only
+            // now: a select sets a real P56 back to repeating the whole playlist.
             if secs > 0.0 {
                 let _ = l.repeat(id, false);
-                if !plays(&l, id, slot) {
-                    select_and_confirm(&l, id, slot);
-                }
             }
             self.remember(&[id], &jpegs[0], &ft);
             self.keep_thumb(&l, id, &name, &jpegs[0], &ft);
