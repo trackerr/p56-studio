@@ -54,7 +54,7 @@
       update_type: added
   actions:
     - action: p56_pov.show_ai
-      # ComfyUI off or busy: the text with an icon instead (below)
+      # ComfyUI off or busy: show_ai fails, `ai` stays unset, and the text with an icon shows instead
       continue_on_error: true
       response_variable: ai
       data:
@@ -65,7 +65,7 @@
         show_seconds: 15
         priority: 5
         mode: cast
-    - if: "{{ ai is not defined or not ai.success | default(false) }}"
+    - if: "{{ ai is not defined }}"
       then:
         - action: p56_pov.show_text
           data:

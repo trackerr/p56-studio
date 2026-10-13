@@ -225,7 +225,8 @@ data:
 **Every notification its own picture.** An automation with the trigger *Persistent notification*
 (*added*) can let the AI draw what the notification is about. With `entity_id: comfyui` only your
 own ComfyUI makes it, so the text of your notifications never leaves the house; when the PC is
-off, the second action shows the text with an icon instead.
+off, `show_ai` fails and the second action shows the text with an icon instead (`ai` is
+then not set).
 
 ```yaml
 triggers:
@@ -242,7 +243,7 @@ actions:
       show_seconds: 15
       priority: 5
       mode: cast
-  - if: "{{ ai is not defined or not ai.success | default(false) }}"
+  - if: "{{ ai is not defined }}"
     then:
       - action: p56_pov.show_text
         data:
