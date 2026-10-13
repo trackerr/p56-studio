@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 2.1.20
+
+p56-server 0.3.20.
 
 - **Removed: pages.** The pages that took turns on the fan (sub-entries of the server, the
   switch *Pages* and the sensor *Page*) are gone; use automations with `p56_pov.show_text` or
