@@ -62,7 +62,7 @@ The integration gives every fan entities you can put on any dashboard:
 | On/off and brightness | `light.p56` (a light card) |
 | Type a text, the fan shows it | `text.p56_text` (an entities card) |
 | Choose what plays | `select.p56_file` |
-| What the fan shows | `image.p56_shown` (a picture entity card) |
+| What the fan shows | `image.p56_shown` (a picture entity card); faded once it is no longer on the fan |
 | Play / pause | `switch.p56_playing` |
 
 ## 5. Automations in a few clicks
@@ -130,25 +130,6 @@ data:
 ```
 
 More examples: [examples/automations.yaml](../examples/automations.yaml).
-
-### Pages that take turns
-
-Instead of an automation for every text, you can set up **pages**: the electricity price, the
-temperature outside, the time… They take turns on the fan, each for its own number of seconds,
-and their values are filled in live.
-
-1. **Settings → Devices & services → P56 POV Display**, at your P56 server: **Add page**.
-2. Give it a name and a text. The text may be a template, such as
-   `{{ states('sensor.electricity_price') }} €`.
-3. Optionally: an icon, a style, a value with a minimum and maximum (colour by value, and
-   **Meter ring** for a ring that fills), a condition under **Show if** (for example
-   `{{ is_state('sun.sun', 'below_horizon') }}`) and the **Duration** in seconds.
-4. Turn on the switch **Pages** of the P56 server. The sensor **Page** shows which page is on.
-
-Pages are cast live, so nothing is stored on the fan. A message (a notification, the doorbell,
-an automation with `show_seconds`) always goes first; the pages continue afterwards. While a
-page shows, a changed value appears at once. To change or remove a page, use the ⋮ menu next to
-it on the integration page.
 
 ## 6. Your cameras on the fan
 

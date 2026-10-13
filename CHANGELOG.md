@@ -4,6 +4,22 @@ P56 Studio (Windows, Linux, Android), `p56` (CLI), `p56-sim` and `p56-server`.
 The Home Assistant add-on and integration have their own changelog in
 [`ha/p56_pov_display/CHANGELOG.md`](ha/p56_pov_display/CHANGELOG.md).
 
+## Unreleased
+
+### Added
+- `p56-server`: `/api/shown/<mac>` serves the last picture faded (grey, see-through) once it is no
+  longer on the fan, with header `X-P56-Live`; `/api/state` has `shown: {at, live}` per fan.
+
+### Changed
+- Switching a fan off by hand is checked too: right after a cast a fan may ignore it, so it is
+  sent once more when the fan stays on.
+
+### Removed
+- `queue: false` in `/api/show`: it was only there for the Home Assistant pages, which are gone.
+
+### Fixed
+- No status poll or heartbeat could slip in at the moment a cast starts.
+
 ## 0.3.19 — 2026-10-13
 
 ### Fixed

@@ -54,9 +54,3 @@ ANGLE_MAX: Final = 180
 AI_KINDS = ["still", "spin"]
 # p56_pov.show_ai: ready-made styles (any other text is used as the style itself)
 AI_STYLES = ["free", "photo", "3d", "cartoon", "anime", "painting", "watercolor", "pixel", "neon", "line", "comic"]
-
-# Pages that take turns (sub-entries of the server).
-SUBENTRY_PAGE: Final = "page"
-PAGE_PRIORITY: Final = -10
-PAGE_NAME: Final = "p56 page"
-PAGE_DEFAULT_SECONDS: Final = 15

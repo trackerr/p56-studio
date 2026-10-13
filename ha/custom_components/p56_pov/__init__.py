@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from homeassistant.const import CONF_HOST, CONF_PORT, Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import config_validation as cv, device_registry as dr
+from homeassistant.helpers import config_validation as cv, device_registry as dr, entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.typing import ConfigType
 
@@ -12,7 +12,6 @@ from .api import P56Api
 from .const import DEFAULT_HOST, DEFAULT_PORT, DOMAIN, LOGGER
 from .coordinator import P56ConfigEntry, P56Coordinator
 from .entity import server_device_info
-from .pages import P56Pages
 from .services import async_setup_services
 
 PLATFORMS: list[Platform] = [
@@ -44,14 +43,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: P56ConfigEntry) -> bool:
     coordinator = P56Coordinator(hass, entry, api)
     await coordinator.async_config_entry_first_refresh()
     entry.runtime_data = coordinator
-    coordinator.pages = P56Pages(hass, coordinator)
-    entry.async_on_unload(coordinator.pages.stop)
     server = dr.async_get(hass).async_get_or_create(config_entry_id=entry.entry_id, **server_device_info(coordinator))
     coordinator.server_device_id = server.id
+    _remove_pages(hass, entry)
     entry.async_create_background_task(hass, coordinator.async_listen(), f"{DOMAIN} events {api.base}")
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_options_updated))
     return True
+
+
+def _remove_pages(hass: HomeAssistant, entry: P56ConfigEntry) -> None:
+    """Pages are gone (2.22.0): drop their sub-entries and the Pages switch and Page sensor."""
+    for subentry_id, subentry in list(entry.subentries.items()):
+        if subentry.subentry_type == "page":
+            hass.config_entries.async_remove_subentry(entry, subentry_id)
+    registry = er.async_get(hass)
+    for key in ("pages", "page"):
+        for domain in ("switch", "sensor"):
+            if entity_id := registry.async_get_entity_id(domain, DOMAIN, f"{entry.entry_id}_{key}"):
+                registry.async_remove(entity_id)
 
 
 async def _options_updated(hass: HomeAssistant, entry: P56ConfigEntry) -> None:

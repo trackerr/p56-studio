@@ -1,4 +1,4 @@
-"""Play/pause, the fan's on/off settings, and the pages of the server."""
+"""Play/pause and the fan's on/off settings."""
 
 from __future__ import annotations
 
@@ -9,10 +9,9 @@ from homeassistant.components.switch import SwitchEntity, SwitchEntityDescriptio
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
-from homeassistant.helpers.restore_state import RestoreEntity
 
 from .coordinator import P56ConfigEntry
-from .entity import P56FanEntity, P56ServerEntity, add_fan_entities
+from .entity import P56FanEntity, add_fan_entities
 
 PARALLEL_UPDATES = 1
 
@@ -45,7 +44,6 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: P56ConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback
 ) -> None:
     coordinator = entry.runtime_data
-    async_add_entities([P56PagesSwitch(coordinator)])
     add_fan_entities(
         coordinator, async_add_entities, lambda mac: [P56Switch(coordinator, mac, d) for d in SWITCHES]
     )
@@ -68,32 +66,3 @@ class P56Switch(P56FanEntity, SwitchEntity):
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         await self._control(self.entity_description.off)
-
-
-class P56PagesSwitch(P56ServerEntity, SwitchEntity, RestoreEntity):
-    """The pages of this server take turns on the fans while this is on."""
-
-    def __init__(self, coordinator) -> None:
-        super().__init__(coordinator, "pages")
-
-    async def async_added_to_hass(self) -> None:
-        await super().async_added_to_hass()
-        pages = self.coordinator.pages
-        self.async_on_remove(pages.add_listener(self.async_write_ha_state))
-        last = await self.async_get_last_state()
-        if last is not None and last.state == "on":
-            pages.start()
-
-    @property
-    def is_on(self) -> bool:
-        return self.coordinator.pages.running
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        return {"pages": [p.title for p in self.coordinator.pages.pages()]}
-
-    async def async_turn_on(self, **kwargs: Any) -> None:
-        self.coordinator.pages.start()
-
-    async def async_turn_off(self, **kwargs: Any) -> None:
-        self.coordinator.pages.stop()

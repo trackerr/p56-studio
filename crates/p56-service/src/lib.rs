@@ -200,8 +200,8 @@ pub struct Service {
     next_media: AtomicU32,
     live: Mutex<LiveStats>,
     last_activity: Mutex<Option<std::time::SystemTime>>,
-    /// Round preview (PNG) of what each fan (by MAC) was last sent.
-    shown: Mutex<HashMap<String, Vec<u8>>>,
+    /// What each fan (by MAC, and by id) was last sent by this server.
+    shown: Mutex<HashMap<String, Shown>>,
     /// Per (fan MAC or id, file name). Also held while an auto-delete timer removes its file,
     /// so a new upload of the same name cannot interleave with that delete.
     names: Mutex<HashMap<(String, String), NameState>>,
@@ -248,6 +248,8 @@ pub struct DeviceDto {
     /// Model name of the fan type (e.g. "P56").
     pub model: Option<String>,
     pub support: String,
+    /// The picture this server last sent the fan, once it sent one.
+    pub shown: Option<ShownDto>,
 }
 
 #[derive(Deserialize, Clone, Copy, Debug)]
@@ -351,11 +353,6 @@ pub struct ShowRequest {
     /// equal one replaces it. Default 0.
     #[serde(default)]
     pub priority: Option<i32>,
-    /// `false`: a message that would have to wait (a more important one shows) is skipped instead,
-    /// and is not brought back when a more important one interrupts it. For things that come
-    /// round again anyway, such as rotating pages.
-    #[serde(default)]
-    pub queue: Option<bool>,
     /// A ring along the rim filled like a meter: the share of `color_scale`'s value between its
     /// min and max, clockwise from the top, in the text's colour.
     #[serde(default)]
@@ -383,17 +380,37 @@ struct Showing {
     shown: bool,
 }
 
+/// The picture a fan was last sent, and what it was sent as.
+struct Shown {
+    /// The fan it was sent to.
+    id: u32,
+    /// Round preview (PNG), and the same faded for when it is no longer on the fan.
+    png: Vec<u8>,
+    ghost: Vec<u8>,
+    /// Unix time it was sent.
+    at: u64,
+    what: ShownAs,
+}
+
+enum ShownAs {
+    /// A stored file: on the fan while the fan plays it.
+    File(String),
+    /// A timed cast: on the fan while that cast session runs, until `until`.
+    Cast { session: u64, until: Instant },
+}
+
+/// Whether the picture a fan was last sent is on it now.
+#[derive(Serialize, Clone, Copy, Debug)]
+pub struct ShownDto {
+    /// Unix time it was sent.
+    pub at: u64,
+    pub live: bool,
+}
+
 struct Waiting {
     priority: i32,
     req: ShowRequest,
     since: Instant,
-}
-
-/// What becomes of a temporary message: it shows now (with this id), waits, or is skipped.
-enum Gate {
-    Show(u64),
-    Queued,
-    Skipped,
 }
 
 /// A waiting message that could not be shown within this time is dropped.
@@ -499,6 +516,19 @@ fn data_url(mime: &str, bytes: &[u8]) -> String {
 fn png_bytes(img: &image::RgbImage) -> Vec<u8> {
     let mut v = Vec::new();
     image::DynamicImage::ImageRgb8(img.clone()).write_to(&mut std::io::Cursor::new(&mut v), image::ImageFormat::Png).ok();
+    v
+}
+
+/// A picture that is no longer on the fan: mostly grey and see-through, so it is clearly not live.
+fn ghost_png(img: &image::RgbImage) -> Vec<u8> {
+    let ghost = image::RgbaImage::from_fn(img.width(), img.height(), |x, y| {
+        let [r, g, b] = img.get_pixel(x, y).0;
+        let grey = (0.3 * r as f32 + 0.59 * g as f32 + 0.11 * b as f32) as u16;
+        let mix = |c: u8| ((c as u16 + 3 * grey) / 4) as u8;
+        image::Rgba([mix(r), mix(g), mix(b), 90])
+    });
+    let mut v = Vec::new();
+    image::DynamicImage::ImageRgba8(ghost).write_to(&mut std::io::Cursor::new(&mut v), image::ImageFormat::Png).ok();
     v
 }
 
@@ -681,17 +711,18 @@ impl Service {
     }
 
     /// Remember what fan id shows now (as a round preview), for dashboards.
-    fn remember(&self, ids: &[u32], jpeg: &[u8], ft: &FanType) {
+    fn remember(&self, ids: &[u32], jpeg: &[u8], ft: &FanType, what: impl Fn() -> ShownAs) {
         let Ok(l) = self.link() else { return };
         let Ok(round) = transcode::preview_from_jpeg(jpeg, ft, 360) else { return };
-        let png = png_bytes(&round);
+        let (png, ghost) = (png_bytes(&round), ghost_png(&round));
+        let at = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
         let mut m = self.shown.lock().unwrap();
-        for id in ids {
-            let mac = l.device(*id).and_then(|d| d.info).map(|i| i.mac).filter(|m| !m.is_empty());
-            m.insert(id.to_string(), png.clone());
-            if let Some(mac) = mac {
-                m.insert(mac, png.clone());
+        for &id in ids {
+            let shown = || Shown { id, png: png.clone(), ghost: ghost.clone(), at, what: what() };
+            if let Some(mac) = l.device(id).and_then(|d| d.info).map(|i| i.mac).filter(|m| !m.is_empty()) {
+                m.insert(mac, shown());
             }
+            m.insert(id.to_string(), shown());
         }
         drop(m);
         self.emit("shown", json!({ "ids": ids }));
@@ -751,9 +782,25 @@ impl Service {
         Ok(Value::Object(out))
     }
 
-    /// Round preview (PNG) of what the fan with this MAC (or id) was last sent by this server.
-    pub fn shown(&self, mac: &str) -> Option<Vec<u8>> {
-        self.shown.lock().unwrap().get(mac).cloned()
+    /// Round preview (PNG) of what the fan with this MAC (or id) was last sent by this server, and
+    /// whether it is on the fan now; faded when it is not.
+    pub fn shown(&self, mac: &str) -> Option<(Vec<u8>, bool)> {
+        let l = self.link().ok();
+        let m = self.shown.lock().unwrap();
+        let s = m.get(mac).or_else(|| m.get(&mac.to_ascii_uppercase())).or_else(|| m.get(&mac.to_ascii_lowercase()))?;
+        let live = l.is_some_and(|l| self.is_live(&l, s));
+        Some((if live { s.png.clone() } else { s.ghost.clone() }, live))
+    }
+
+    /// Whether a picture this server sent is on the fan now: the fan is on and plays that file,
+    /// or the cast that sent it still runs.
+    fn is_live(&self, l: &Link, s: &Shown) -> bool {
+        let Some(d) = l.device(s.id) else { return false };
+        let Some(st) = d.status.filter(|st| st.power) else { return false };
+        match &s.what {
+            ShownAs::File(name) => d.files.iter().any(|(slot, n)| *slot == st.play_index && n == name),
+            ShownAs::Cast { session, until } => self.cast_session.load(Ordering::SeqCst) == *session && Instant::now() < *until,
+        }
     }
 
     /// Dispatch one command from the UI or the HTTP API.
@@ -891,6 +938,10 @@ impl Service {
                     fan_type: s.fan_type,
                 });
                 let support = d.status.as_ref().map(|s| format!("{:?}", FanType::support(s.fan_type)).to_lowercase()).unwrap_or_default();
+                let shown = {
+                    let m = self.shown.lock().unwrap();
+                    m.get(&i.mac).filter(|_| !i.mac.is_empty()).or_else(|| m.get(&d.id.to_string())).map(|s| ShownDto { at: s.at, live: self.is_live(&l, s) })
+                };
                 DeviceDto {
                     id: d.id,
                     ip: d.ip.map(|i| i.to_string()).unwrap_or_default(),
@@ -904,6 +955,7 @@ impl Service {
                     model: d.status.as_ref().and_then(|s| FanType::model(s.fan_type)).map(str::to_string),
                     volume: d.volume,
                     support,
+                    shown,
                 }
             })
             .collect())
@@ -936,7 +988,7 @@ impl Service {
         FanType::usable(t)
     }
 
-    pub fn control(&self, id: u32, action: &str) -> Result<(), String> {
+    pub fn control(self: &Arc<Self>, id: u32, action: &str) -> Result<(), String> {
         let l = self.link()?;
         if action == "on" || action == "off" {
             self.by_hand.fetch_add(1, Ordering::SeqCst);
@@ -944,10 +996,16 @@ impl Service {
         match action {
             "on" => l.on(id),
             "off" => {
-                // switched off by hand: a running cast (e.g. rotating pages) stops too, or its
+                // switched off by hand: a running cast (e.g. a message) stops too, or its
                 // next session would switch the fan on again
                 self.cast_session.fetch_add(1, Ordering::SeqCst);
-                l.off(id)
+                let sent = l.off(id);
+                if sent.is_ok() {
+                    // right after a cast the fan may still be in live mode and ignore it
+                    let (me, l2, key, hand) = (self.clone(), l.clone(), Self::fan_key(&l, id), self.by_hand.load(Ordering::SeqCst));
+                    thread::spawn(move || me.confirm_off(&l2, id, &key, hand));
+                }
+                sent
             }
             "play" => l.play(id),
             "pause" => l.pause(id),
@@ -1175,7 +1233,7 @@ impl Service {
         self.new_upload(&l, id, &p56_core::protocol::mp4_name(&name), false);
         let audio = audio.filter(|_| frames.len() > 1);
         let outcome = l.upload_with_audio(id, &frames, audio.as_deref(), &name, Some(slot)).map_err(err)?;
-        self.remember(&[id], &frames[0], &ft);
+        self.remember(&[id], &frames[0], &ft, || ShownAs::File(p56_core::protocol::mp4_name(&name)));
         self.keep_thumb(&l, id, &p56_core::protocol::mp4_name(&name), &frames[0], &ft);
         progress("done", frames.len(), frames.len());
         Ok(Value::from(format!("{} ({} frame(s)){}", p56_core::protocol::mp4_name(&name), frames.len(), unconfirmed(outcome))))
@@ -1381,18 +1439,11 @@ impl Service {
         if ids.is_empty() {
             return Err("no fan connected".into());
         }
-        // something that comes round again anyway (rotating pages) does not wake a fan that was
-        // switched off; a message does
-        let off = |i: &u32| l.device(*i).and_then(|d| d.status).is_some_and(|s| !s.power);
-        if r.queue == Some(false) && ids.iter().all(off) {
-            return Ok(json!({ "success": true, "skipped": true }));
-        }
         // a temporary message waits for a more important one, or interrupts a less important one
         let message = match r.show_seconds.filter(|s| *s > 0.0) {
             Some(secs) => match self.message_gate(&l, &ids, &r, secs) {
-                Gate::Show(m) => Some(m),
-                Gate::Queued => return Ok(json!({ "success": true, "queued": true })),
-                Gate::Skipped => return Ok(json!({ "success": true, "skipped": true })),
+                Some(m) => Some(m),
+                None => return Ok(json!({ "success": true, "queued": true })),
             },
             None => None,
         };
@@ -1406,23 +1457,19 @@ impl Service {
         result
     }
 
-    /// Whether a temporary message for these fans may show now, or waits (or is skipped, with
-    /// `queue: false`) because a more important message shows there. A less important message
-    /// showing there is interrupted and waits to come back for the time it had left; when it was
-    /// cast, its cast stops at once.
-    fn message_gate(&self, l: &Link, ids: &[u32], r: &ShowRequest, secs: f64) -> Gate {
+    /// Whether a temporary message for these fans may show now: `Some(its id)`, or `None` when a
+    /// more important message shows there (then it waits). A less important message showing
+    /// there is interrupted and waits to come back for the time it had left.
+    fn message_gate(&self, l: &Link, ids: &[u32], r: &ShowRequest, secs: f64) -> Option<u64> {
         let keys: Vec<String> = ids.iter().map(|&i| Self::fan_key(l, i)).collect();
         let priority = r.priority.unwrap_or(0);
         let now = Instant::now();
         let mut m = self.messages.lock().unwrap();
         m.showing.retain(|_, s| s.ends > now);
         if keys.iter().filter_map(|k| m.showing.get(k)).any(|s| s.priority > priority) {
-            if r.queue == Some(false) {
-                return Gate::Skipped;
-            }
             log::info!("message waits for a more important one (priority {priority})");
             m.waiting.push(Waiting { priority, req: r.clone(), since: now });
-            return Gate::Queued;
+            return None;
         }
         // interrupted by a more important message: comes back afterwards (not when merely
         // replaced by an equal one, e.g. a price that updates)
@@ -1435,8 +1482,7 @@ impl Service {
                 }
                 let left = if s.shown { s.ends.saturating_duration_since(now).as_secs_f64() } else { s.req.show_seconds.unwrap_or(0.0) };
                 let same = s.req.name.is_some() && s.req.name == r.name;
-                let comes_back = s.req.queue != Some(false);
-                if s.priority < priority && !same && comes_back && left >= MESSAGE_RESUME_MIN && !interrupted.contains(&s.message) {
+                if s.priority < priority && !same && left >= MESSAGE_RESUME_MIN && !interrupted.contains(&s.message) {
                     interrupted.push(s.message);
                     let mut back = s.req.clone();
                     back.show_seconds = Some(left);
@@ -1458,7 +1504,7 @@ impl Service {
         for k in keys {
             m.showing.insert(k, Showing { message, priority, req: r.clone(), ends, shown: false });
         }
-        Gate::Show(message)
+        Some(message)
     }
 
     /// A temporary message really shows now: it ends `secs` from now.
@@ -1511,32 +1557,42 @@ impl Service {
         }
     }
 
-    /// Switch fan `id` (key `key`) off and check that it reports off; once more if not. Gives up
-    /// as soon as a new message takes the fan or it is switched on or off by hand (`hand` is
-    /// [`Self::by_hand`] when the message ended).
+    /// Switch fan `id` (key `key`) off and check that it went off (see [`Self::confirm_off`]).
     fn off_and_confirm(&self, l: &Link, id: u32, key: String, hand: u64) {
-        let taken = || {
-            let m = self.messages.lock().unwrap();
-            self.by_hand.load(Ordering::SeqCst) != hand || m.showing.contains_key(&key) || m.woke.contains(&key)
-        };
-        for attempt in 0..2 {
-            if taken() {
-                return;
-            }
+        if !self.fan_taken(&key, hand) {
             let _ = l.off(id);
+            self.confirm_off(l, id, &key, hand);
+        }
+    }
+
+    /// Check that fan `id` reports off after "off" was sent; send it once more if not. Gives up as
+    /// soon as a new message takes the fan or it is switched on or off by hand (`hand` is
+    /// [`Self::by_hand`] when "off" was sent).
+    fn confirm_off(&self, l: &Link, id: u32, key: &str, hand: u64) {
+        for attempt in 0..2 {
+            if attempt == 1 {
+                if self.fan_taken(key, hand) {
+                    return;
+                }
+                let _ = l.off(id);
+            }
             let deadline = Instant::now() + Duration::from_secs(3);
             while Instant::now() < deadline {
                 thread::sleep(Duration::from_millis(300));
                 let _ = l.refresh(id);
                 thread::sleep(Duration::from_millis(200));
-                if taken() || l.device(id).and_then(|d| d.status).is_some_and(|s| !s.power) {
+                if self.fan_taken(key, hand) || l.device(id).and_then(|d| d.status).is_some_and(|s| !s.power) {
                     return;
                 }
             }
-            if attempt == 1 {
-                log::warn!("fan #{id} stayed on after the message");
-            }
         }
+        log::warn!("fan #{id} stayed on after \"off\"");
+    }
+
+    /// Whether a message or a hand on/off has taken fan `key` since `hand`.
+    fn fan_taken(&self, key: &str, hand: u64) -> bool {
+        let m = self.messages.lock().unwrap();
+        self.by_hand.load(Ordering::SeqCst) != hand || m.showing.contains_key(key) || m.woke.iter().any(|k| k == key)
     }
 
     /// The fans a request is for: one id, the fan with that MAC, or all.
@@ -1606,15 +1662,16 @@ impl Service {
             if groups.is_empty() {
                 return Err(results.first().and_then(|r| r["error"].as_str()).unwrap_or("no fan connected").to_string());
             }
-            for (ft, gids, jpegs) in &groups {
-                self.remember(gids, &jpegs[0], ft);
-            }
             let dur = if secs > 0.0 { secs } else { 10.0 };
             let n = images.len();
             let period = Duration::from_millis(if n > 1 { frame_ms.clamp(20, 2000) } else { 200 });
             let fans: usize = groups.iter().map(|(_, g, _)| g.len()).sum();
             // a timed cast is a session like any other: it ends the running one and is ended by the next
             let session = self.cast_session.fetch_add(1, Ordering::SeqCst) + 1;
+            let until = Instant::now() + Duration::from_secs_f64(dur);
+            for (ft, gids, jpegs) in &groups {
+                self.remember(gids, &jpegs[0], ft, || ShownAs::Cast { session, until });
+            }
             if let Some(m) = message {
                 self.message_shows(m, dur);
             }
@@ -1634,13 +1691,15 @@ impl Service {
                     i += 1;
                     thread::sleep(period);
                 }
+                // what Home Assistant shows as on the fan is not any more
+                me.emit("shown", json!({ "ids": groups.iter().flat_map(|(_, g, _)| g.clone()).collect::<Vec<_>>() }));
                 if let Some(m) = message {
                     me.message_done(m);
                 }
             });
             return Ok(json!({ "success": true, "mode": "cast", "seconds": dur, "fans": fans, "frames": n, "results": results }));
         }
-        // a running cast (e.g. rotating pages) ends now: a fan in live mode does not store a file
+        // a running cast (e.g. a cast message) ends now: a fan in live mode does not store a file
         // (the upload itself waits until the fan has left live mode)
         self.cast_session.fetch_add(1, Ordering::SeqCst);
         for id in ids {
@@ -1694,7 +1753,7 @@ impl Service {
             if secs > 0.0 {
                 let _ = l.repeat(id, false);
             }
-            self.remember(&[id], &jpegs[0], &ft);
+            self.remember(&[id], &jpegs[0], &ft, || ShownAs::File(name.clone()));
             self.keep_thumb(&l, id, &name, &jpegs[0], &ft);
             if secs > 0.0 {
                 if let Some(m) = message {

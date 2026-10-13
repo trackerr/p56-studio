@@ -6,26 +6,16 @@ from typing import Any
 
 import voluptuous as vol
 
-from homeassistant.config_entries import (
-    ConfigEntry,
-    ConfigFlow,
-    ConfigFlowResult,
-    ConfigSubentryFlow,
-    OptionsFlow,
-    SubentryFlowResult,
-)
+from homeassistant.config_entries import ConfigFlow, ConfigFlowResult, OptionsFlow
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
-    BooleanSelector,
-    IconSelector,
     NumberSelector,
     NumberSelectorConfig,
     NumberSelectorMode,
     SelectSelector,
     SelectSelectorConfig,
-    TemplateSelector,
     TextSelector,
 )
 from homeassistant.helpers.service_info.hassio import HassioServiceInfo
@@ -47,9 +37,6 @@ from .const import (
     DOMAIN,
     LOGGER,
     MODES,
-    PAGE_DEFAULT_SECONDS,
-    STYLES,
-    SUBENTRY_PAGE,
 )
 
 
@@ -68,11 +55,6 @@ def _schema(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT) -> vol.Schema:
 class P56ConfigFlow(ConfigFlow, domain=DOMAIN):
     VERSION = 2
     MINOR_VERSION = 1
-
-    @classmethod
-    @callback
-    def async_get_supported_subentry_types(cls, config_entry: ConfigEntry) -> dict[str, type[ConfigSubentryFlow]]:
-        return {SUBENTRY_PAGE: P56PageFlow}
 
     def __init__(self) -> None:
         self._discovered: dict[str, Any] = {}
@@ -179,46 +161,3 @@ class P56OptionsFlow(OptionsFlow):
             }
         )
         return self.async_show_form(step_id="init", data_schema=schema)
-
-
-def _number(minimum: float, maximum: float, step: float | str = 1, unit: str | None = None) -> NumberSelector:
-    config = NumberSelectorConfig(min=minimum, max=maximum, step=step, mode=NumberSelectorMode.BOX)
-    if unit:
-        config["unit_of_measurement"] = unit
-    return NumberSelector(config)
-
-
-PAGE_SCHEMA = vol.Schema(
-    {
-        vol.Required("name"): TextSelector(),
-        vol.Optional("text"): TemplateSelector(),
-        vol.Optional("icon"): IconSelector(),
-        vol.Optional("style"): SelectSelector(SelectSelectorConfig(options=STYLES, translation_key="style")),
-        vol.Optional("color"): TextSelector(),
-        vol.Optional("value"): TemplateSelector(),
-        vol.Optional("value_min"): _number(-1_000_000, 1_000_000, "any"),
-        vol.Optional("value_max"): _number(-1_000_000, 1_000_000, "any"),
-        vol.Optional("invert_colors", default=False): BooleanSelector(),
-        vol.Optional("gauge", default=False): BooleanSelector(),
-        vol.Optional("show_if"): TemplateSelector(),
-        vol.Required("seconds", default=PAGE_DEFAULT_SECONDS): _number(3, 3600, 1, "s"),
-        vol.Optional("order", default=0): _number(0, 999),
-    }
-)
-
-
-class P56PageFlow(ConfigSubentryFlow):
-    """Add or change a page that takes turns on the fans."""
-
-    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
-        if user_input is not None:
-            return self.async_create_entry(title=user_input["name"], data=user_input)
-        return self.async_show_form(step_id="user", data_schema=PAGE_SCHEMA)
-
-    async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
-        subentry = self._get_reconfigure_subentry()
-        if user_input is not None:
-            return self.async_update_and_abort(self._get_entry(), subentry, title=user_input["name"], data=user_input)
-        return self.async_show_form(
-            step_id="reconfigure", data_schema=self.add_suggested_values_to_schema(PAGE_SCHEMA, subentry.data)
-        )

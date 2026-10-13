@@ -893,41 +893,6 @@ fn messages_wait_or_interrupt_by_priority() {
     assert_eq!(playing, base_slot, "{d}");
 }
 
-/// Rotating pages (cast, lowest priority, `queue: false`): a message interrupts a page and stops
-/// its cast, a page that comes while a message shows is skipped, and an interrupted page does
-/// not come back afterwards.
-#[test]
-fn pages_make_way_for_messages() {
-    let s = start(true);
-    s.wait("virtual fan", |v| v["devices"].as_array().is_some_and(|d| !d.is_empty() && d[0]["status"].is_object()));
-    let page = |text: &str, secs: f64| {
-        let (_, v) = s.post("/api/show", json!({ "text": text, "name": "page", "mode": "cast", "show_seconds": secs, "priority": -10, "queue": false }));
-        v
-    };
-    assert_eq!(page("weather", 20.0)["success"], true);
-    // a message interrupts the page
-    let (_, msg) = s.post("/api/show", json!({ "text": "door", "name": "door", "show_seconds": 3, "priority": 5 }));
-    assert_eq!(msg["success"], true, "{msg}");
-    assert!(msg["queued"].is_null(), "{msg}");
-    // the next page while the message shows: skipped, not queued
-    let next = page("price", 5.0);
-    assert_eq!(next["skipped"], true, "{next}");
-    // after the message the interrupted page does not come back by itself
-    let deadline = Instant::now() + Duration::from_secs(20);
-    loop {
-        let st = s.get("/api/state");
-        let files = st["devices"][0]["files"].as_array().cloned().unwrap_or_default();
-        if !files.iter().any(|f| f[1] == "door.mp4") {
-            break;
-        }
-        assert!(Instant::now() < deadline, "the message was not removed");
-        std::thread::sleep(Duration::from_millis(300));
-    }
-    std::thread::sleep(Duration::from_secs(2));
-    // a page can show again now
-    assert_eq!(page("price", 2.0)["success"], true);
-}
-
 /// A real P56 switches itself off and on after an upload, starts at the first file and misses a
 /// select sent right then. A temporary message must still end up showing (and repeating only
 /// itself), not the first file of the playlist.
@@ -953,19 +918,19 @@ fn a_message_shows_even_when_the_fan_misses_the_first_select() {
     assert!(st.files.iter().all(|f| f.frames == 1), "{:?}", st.files.iter().map(|f| (&f.name, f.frames)).collect::<Vec<_>>());
 }
 
-/// A message that is uploaded while pages are cast: the cast stops, the fan leaves live mode, and
-/// the file is stored and shown (a real P56 in live mode stores nothing).
+/// A message that is uploaded while a less important one is cast: the cast stops, the fan leaves
+/// live mode, and the file is stored and shown (a real P56 in live mode stores nothing).
 #[test]
-fn an_upload_while_pages_are_cast_is_stored() {
+fn an_upload_during_a_cast_is_stored() {
     let s = start_env(false, &[], &[]);
     let pc = std::net::SocketAddr::from((Ipv4Addr::LOCALHOST, s.tcp));
     let fan = p56_sim::Sim::start(p56_sim::SimConfig { name: "FAN".into(), udp_port: 0, pc: Some(pc), ..Default::default() }).unwrap();
     s.wait("fan", |v| v["devices"].as_array().is_some_and(|d| d.len() == 1 && d[0]["status"].is_object()));
-    let (_, v) = s.post("/api/show", json!({ "text": "clock", "name": "p56 page", "mode": "cast", "show_seconds": 30, "priority": -10, "queue": false }));
+    let (_, v) = s.post("/api/show", json!({ "text": "clock", "name": "clock", "mode": "cast", "show_seconds": 30, "priority": -10 }));
     assert_eq!(v["success"], true, "{v}");
     let deadline = Instant::now() + Duration::from_secs(10);
     while fan.state().cast_ok < 5 {
-        assert!(Instant::now() < deadline, "the page was not cast");
+        assert!(Instant::now() < deadline, "the clock was not cast");
         std::thread::sleep(Duration::from_millis(100));
     }
     let (_, v) = s.post("/api/show", json!({ "text": "€ 0.35", "name": "price", "show_seconds": 5, "priority": 5 }));
@@ -975,22 +940,18 @@ fn an_upload_while_pages_are_cast_is_stored() {
     assert!(st.protocol_errors.is_empty(), "{:?}", st.protocol_errors);
 }
 
-/// Switching the fan off while pages are cast: the cast stops and the next page does not switch
-/// the fan on again (it is skipped); a message still may.
+/// Switching the fan off during a cast stops the cast, so it does not switch the fan on again.
 #[test]
-fn pages_leave_a_switched_off_fan_alone() {
+fn switching_off_stops_a_cast() {
     let s = start_env(false, &[], &[]);
     let pc = std::net::SocketAddr::from((Ipv4Addr::LOCALHOST, s.tcp));
     let fan = p56_sim::Sim::start(p56_sim::SimConfig { name: "FAN".into(), udp_port: 0, pc: Some(pc), ..Default::default() }).unwrap();
     s.wait("fan", |v| v["devices"].as_array().is_some_and(|d| d.len() == 1 && d[0]["status"].is_object()));
-    let page = |text: &str| {
-        let (_, v) = s.post("/api/show", json!({ "text": text, "name": "p56 page", "mode": "cast", "show_seconds": 30, "priority": -10, "queue": false }));
-        v
-    };
-    assert_eq!(page("clock")["success"], true);
+    let (_, v) = s.post("/api/show", json!({ "text": "clock", "name": "clock", "mode": "cast", "show_seconds": 30 }));
+    assert_eq!(v["success"], true, "{v}");
     let deadline = Instant::now() + Duration::from_secs(10);
     while fan.state().cast_ok < 5 {
-        assert!(Instant::now() < deadline, "the page was not cast");
+        assert!(Instant::now() < deadline, "the clock was not cast");
         std::thread::sleep(Duration::from_millis(100));
     }
     s.call("control", json!({ "id": 1, "action": "off" }));
@@ -999,9 +960,7 @@ fn pages_leave_a_switched_off_fan_alone() {
     let cast = fan.state().cast_ok;
     std::thread::sleep(Duration::from_secs(1));
     assert_eq!(fan.state().cast_ok, cast, "the cast stopped");
-    assert_eq!(page("price")["skipped"], true);
-    std::thread::sleep(Duration::from_millis(500));
-    assert!(!fan.state().power, "the page did not switch the fan on");
+    assert!(!fan.state().power, "the fan stays off");
 }
 
 /// A fan that is off shows a message and goes off again afterwards (stored or cast); one that
@@ -1038,4 +997,42 @@ fn a_fan_that_was_off_goes_off_again_after_a_message() {
     std::thread::sleep(Duration::from_millis(800));
     assert!(fan.state().power, "it was on before, so it stays on");
     assert!(fan.state().protocol_errors.is_empty(), "{:?}", fan.state().protocol_errors);
+}
+
+/// The picture last sent is reported live while it is on the fan, and served faded once it is not
+/// (another file plays, the cast is over, or the fan is off).
+#[test]
+fn the_shown_picture_fades_when_it_is_not_on_the_fan() {
+    let s = start(true);
+    s.wait("virtual fan", |v| v["devices"].as_array().is_some_and(|d| !d.is_empty() && d[0]["status"].is_object()));
+    let mac = s.get("/api/state")["devices"][0]["mac"].as_str().unwrap().to_string();
+    let fetch = || {
+        let r = ureq::get(&format!("{}/api/shown/{mac}", s.base)).call().unwrap();
+        let live = r.header("X-P56-Live") == Some("1");
+        let mut png = Vec::new();
+        r.into_reader().read_to_end(&mut png).unwrap();
+        (live, image::load_from_memory(&png).unwrap())
+    };
+    let live = |want: bool| move |v: &Value| v["devices"][0]["shown"]["live"] == want;
+    show_ok(&s, json!({ "text": "ONE", "name": "one" }));
+    show_ok(&s, json!({ "text": "TWO", "name": "two" }));
+    let st = s.wait("two is live", live(true));
+    assert!(st["devices"][0]["shown"]["at"].as_u64().unwrap() > 1_700_000_000, "{st}");
+    let (on, img) = fetch();
+    assert!(on && !img.color().has_alpha(), "live: the picture as sent");
+    // another file plays: faded
+    let slot = st["devices"][0]["files"].as_array().unwrap().iter().find(|f| f[1] == "one.mp4").unwrap()[0].as_u64().unwrap();
+    s.call("set_value", json!({ "id": 1, "what": "select", "value": slot }));
+    s.wait("two not live", live(false));
+    let (on, img) = fetch();
+    assert!(!on && img.color().has_alpha(), "not live: faded");
+    assert!(img.to_rgba8().pixels().all(|p| p[3] < 128), "see-through");
+    // a cast: live while it runs, not afterwards, and not while the fan is off
+    show_ok(&s, json!({ "text": "CAST", "mode": "cast", "show_seconds": 2 }));
+    s.wait("cast live", live(true));
+    s.wait("cast over", live(false));
+    show_ok(&s, json!({ "text": "THREE", "name": "three" }));
+    s.wait("three live", live(true));
+    s.call("control", json!({ "id": 1, "action": "off" }));
+    s.wait("off: not live", live(false));
 }

@@ -603,10 +603,11 @@ fn handle(mut req: Request, svc: &Arc<Service>, subs: &Subscribers, origin: &Opt
         (Method::Get, p) if p.starts_with("/api/shown/") => {
             let mac = p.trim_start_matches("/api/shown/").replace("%3A", ":").replace("%3a", ":");
             match svc.shown(&mac) {
-                Some(png) => {
+                Some((png, live)) => {
                     let r = Response::from_data(png)
                         .with_header(Header::from_bytes("Content-Type", "image/png").unwrap())
-                        .with_header(Header::from_bytes("Cache-Control", "no-store").unwrap());
+                        .with_header(Header::from_bytes("Cache-Control", "no-store").unwrap())
+                        .with_header(Header::from_bytes("X-P56-Live", if live { "1" } else { "0" }).unwrap());
                     let _ = req.respond(cors(r, origin));
                     return;
                 }

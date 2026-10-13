@@ -20,9 +20,6 @@
       },
       "master": {
         "default": "mdi:crown"
-      },
-      "pages": {
-        "default": "mdi:book-open-page-variant"
       }
     },
     "select": {
@@ -62,9 +59,6 @@
       },
       "last_activity": {
         "default": "mdi:clock-outline"
-      },
-      "page": {
-        "default": "mdi:book-open-variant"
       }
     },
     "button": {

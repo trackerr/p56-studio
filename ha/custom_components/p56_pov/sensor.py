@@ -58,7 +58,7 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: P56ConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback
 ) -> None:
     coordinator = entry.runtime_data
-    async_add_entities([P56FansConnected(coordinator), P56LastActivity(coordinator), P56CurrentPage(coordinator)])
+    async_add_entities([P56FansConnected(coordinator), P56LastActivity(coordinator)])
     add_fan_entities(
         coordinator, async_add_entities, lambda mac: [P56FanSensor(coordinator, mac, d) for d in FAN_SENSORS]
     )
@@ -122,23 +122,3 @@ class P56LastActivity(P56ServerEntity, SensorEntity):
     @property
     def native_value(self) -> datetime | None:
         return self.coordinator.data.last_activity if self.coordinator.data else None
-
-
-class P56CurrentPage(P56ServerEntity, SensorEntity):
-    """The page that shows now (empty while the pages are off or none may show)."""
-
-    def __init__(self, coordinator: P56Coordinator) -> None:
-        super().__init__(coordinator, "page")
-
-    async def async_added_to_hass(self) -> None:
-        await super().async_added_to_hass()
-        self.async_on_remove(self.coordinator.pages.add_listener(self.async_write_ha_state))
-
-    @property
-    def native_value(self) -> str | None:
-        return self.coordinator.pages.current
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        pages = self.coordinator.pages
-        return {"running": pages.running, "pages": [p.title for p in pages.pages()]}

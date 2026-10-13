@@ -516,13 +516,14 @@ impl Link {
             thread::sleep(Duration::from_secs(3));
             tick += 1;
             for id in self.ids() {
-                // Holoscope.exe sends neither heartbeat nor status poll during a live cast
-                if self.casting(id) {
-                    continue;
-                }
                 // skip a fan that is busy (upload, cast frame); the next tick catches up
                 let Some(tx) = self.tx(id) else { continue };
                 if let Ok(_g) = tx.try_lock() {
+                    // Holoscope.exe sends neither heartbeat nor status poll during a live cast
+                    // (checked under the send lock, so a cast cannot start in between)
+                    if self.casting(id) {
+                        continue;
+                    }
                     let _ = self.send_to(id, &proto::heartbeat());
                     if tick.is_multiple_of(5) {
                         let _ = self.send_to(id, &proto::get_machine());
@@ -787,12 +788,19 @@ impl Link {
         self.cmd(id, &proto::factory_reset())
     }
     pub fn refresh(&self, id: u32) -> Result<(), Error> {
-        // never during a live cast (Holoscope.exe does not poll then); the fan reports anyway
+        // never during a live cast (Holoscope.exe does not poll then); the fan reports anyway.
+        // Checked under the send lock, so a cast cannot start between the check and the poll.
+        let tx = self.tx(id).ok_or(Error::NotConnected)?;
+        let _g = tx.lock().unwrap();
         if self.casting(id) {
             return Ok(());
         }
-        self.cmd(id, &proto::get_machine())?;
-        self.cmd(id, &proto::heartbeat())
+        for data in [proto::get_machine(), proto::heartbeat()] {
+            if let Some(e) = self.send_ready(id, &data, fresh_ack_window(600))? {
+                return Err(Error::Fan(e));
+            }
+        }
+        Ok(())
     }
 
     /// Upload one or more fan-layout JPEG frames as a playlist entry and show it.

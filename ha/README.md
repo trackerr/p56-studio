@@ -27,9 +27,8 @@ hologram fan, straight from Home Assistant. Local, no vendor app, no cloud.**
 | 🔔 **Notifications** | `notify.send_message` shows a message for 15 seconds, then the playlist resumes |
 | 🎨 **Styles & icons** | Ready-made looks (alert, warning, info, success, price, clock) with a ring along the rim, any Home Assistant icon, and a text colour that follows a value (green → red) |
 | 🖼️ **Pictures & animations** | `p56_pov.show_image` from a file, a URL, the media library or a camera snapshot; animated GIFs and videos play as animations |
-| 📑 **Pages** | Texts that take turns on the fan (price, temperature, time…), set up in the UI as pages with templates, a condition, a duration and a meter ring; messages always go first |
 | ✨ **AI pictures** | `p56_pov.show_ai` or the panel's Media tab: describe a picture and the AI you set up in Home Assistant (AI Task, e.g. Google Gemini) draws it in any style (photo, painting, cartoon, 3D, neon…), still or turning round its own axis |
-| 👀 **Preview** | An image entity that shows what the fan is displaying right now |
+| 👀 **Preview** | An image entity that shows what was last sent to the fan, faded once it is no longer on it |
 | 🖥️ **Web app** | The full P56 Studio app as a sidebar panel: upload photos, GIFs and video, cast live, change Wi-Fi |
 | 🔌 **Self-contained** | Everything runs inside Home Assistant; the fans connect to it on your own network |
 

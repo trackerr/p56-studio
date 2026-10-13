@@ -125,6 +125,7 @@ async def test_entities_and_actions(hass: HomeAssistant, p56_server, tmp_path: P
     await wait_for(hass, "image updated", lambda: hass.states.get(image).state not in ("unknown", "unavailable"))
     shown = hass.data["image"].get_entity(image)
     assert (await shown.async_image())[:8] == b"\x89PNG\r\n\x1a\n"
+    await wait_for(hass, "image live", lambda: hass.states.get(image).attributes.get("live") is True)
 
     # picture from a file, on one device, removed again after 1 s
     pic = tmp_path / "pic.png"
@@ -138,6 +139,9 @@ async def test_entities_and_actions(hass: HomeAssistant, p56_server, tmp_path: P
     )
     await wait_for(hass, "picture shown", lambda: "short.mp4" in hass.states.get(select).attributes.get("options", []))
     await wait_for(hass, "picture gone again", lambda: "short.mp4" not in hass.states.get(select).attributes.get("options", []), 20)
+    # the picture stays, faded: it is no longer on the fan
+    await wait_for(hass, "image not live", lambda: hass.states.get(image).attributes.get("live") is False)
+    assert (await shown.async_image())[:8] == b"\x89PNG\r\n\x1a\n"
 
     # play / delete by name
     await hass.services.async_call(DOMAIN, "delete_file", {"device_id": device.id, "name": "price"}, blocking=True)
@@ -560,45 +564,3 @@ async def test_show_text_uses_default_colors_of_each_server(
         for p in (sim, proc):
             p.kill()
             p.wait()
-
-
-async def test_pages_take_turns(hass: HomeAssistant, p56_server, monkeypatch) -> None:
-    """Pages are added as sub-entries and take turns while the Pages switch is on: templates are
-    filled in, a page whose condition is false is skipped, and every page is cast at the lowest
-    priority without queueing."""
-    entry = await setup(hass, p56_server)
-    pages = (("Weather", "Sunny", ""), ("Hidden", "never", "{{ 1 > 2 }}"), ("Price", "{{ 1 + 1 }} cents", ""))
-    for name, text, show_if in pages:
-        result = await hass.config_entries.subentries.async_init((entry.entry_id, "page"), context={"source": "user"})
-        assert result["type"] is FlowResultType.FORM
-        data = {"name": name, "text": text, "seconds": 3}
-        if show_if:
-            data["show_if"] = show_if
-        result = await hass.config_entries.subentries.async_configure(result["flow_id"], data)
-        assert result["type"] is FlowResultType.CREATE_ENTRY, result
-    await hass.async_block_till_done()
-    entry = hass.config_entries.async_get_entry(entry.entry_id)
-    assert [s.title for s in entry.runtime_data.pages.pages()] == ["Hidden", "Price", "Weather"]
-
-    sent: list[dict] = []
-    api = entry.runtime_data.api
-    original = api.show
-
-    async def capture(payload):
-        sent.append(dict(payload))
-        return await original(payload)
-
-    monkeypatch.setattr(api, "show", capture)
-    switch = next(e.entity_id for e in er.async_entries_for_config_entry(er.async_get(hass), entry.entry_id) if e.unique_id == f"{entry.entry_id}_pages")
-    sensor = next(e.entity_id for e in er.async_entries_for_config_entry(er.async_get(hass), entry.entry_id) if e.unique_id == f"{entry.entry_id}_page")
-    await hass.services.async_call("switch", "turn_on", {"entity_id": switch}, blocking=True)
-    await wait_for(hass, "two pages shown", lambda: {"Sunny", "2 cents"} <= {p["text"] for p in sent}, 20, msg=lambda: sent)
-    assert "never" not in {p["text"] for p in sent}
-    assert all(p["mode"] == "cast" and p["priority"] == -10 and p["queue"] is False for p in sent)
-    assert hass.states.get(switch).state == "on"
-    assert hass.states.get(sensor).state in ("Weather", "Price")
-
-    await hass.services.async_call("switch", "turn_off", {"entity_id": switch}, blocking=True)
-    await hass.async_block_till_done()
-    assert hass.states.get(switch).state == "off"
-    assert hass.states.get(sensor).state in ("unknown", "")

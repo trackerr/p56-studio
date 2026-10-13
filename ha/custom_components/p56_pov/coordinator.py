@@ -35,6 +35,8 @@ class P56Fan:
     last_error: str | None
     support: str
     raw: dict[str, Any] = field(repr=False)
+    # the picture this server last sent: {"at": unix time, "live": still on the fan}
+    shown: dict[str, Any] | None = None
 
     @property
     def current_file(self) -> str | None:
@@ -74,6 +76,7 @@ def parse_state(state: dict[str, Any]) -> P56Data:
             last_error=dev.get("last_error"),
             support=dev.get("support") or "",
             raw=dev,
+            shown=dev.get("shown"),
         )
     last = state.get("last_activity")
     last_dt = None
@@ -105,10 +108,7 @@ class P56Coordinator(DataUpdateCoordinator[P56Data]):
         )
         self.api = api
         self.live = False
-        self.shown_at: dict[str, datetime] = {}
         self.server_device_id: str = ""
-        # set in async_setup_entry (pages.P56Pages)
-        self.pages: Any = None
 
     async def _async_update_data(self) -> P56Data:
         try:
@@ -154,12 +154,5 @@ class P56Coordinator(DataUpdateCoordinator[P56Data]):
         kind = event.get("type")
         if kind == "packet":
             kind = (event.get("data") or {}).get("kind")
-        if kind == "shown":
-            now = dt_util.utcnow()
-            ids = set((event.get("data") or {}).get("ids") or [])
-            for fan in (self.data.fans.values() if self.data else []):
-                if fan.id in ids:
-                    self.shown_at[fan.mac] = now
-            self.async_update_listeners()
         if kind in REFRESH_EVENTS or kind == "shown":
             self.hass.async_create_task(self.async_request_refresh(), eager_start=True)

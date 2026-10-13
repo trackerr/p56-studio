@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- **Removed: pages.** The pages that took turns on the fan (sub-entries of the server, the
+  switch *Pages* and the sensor *Page*) are gone; use automations with `p56_pov.show_text` or
+  `p56_pov.show_ai` instead. Pages you still have are removed, with that switch and sensor.
+- The picture entity (`image.<fan>_shown`) keeps the last picture, also after a restart, and
+  shows it faded once it is no longer on the fan. Attribute `live`.
+- Switching the fan off is checked: right after a cast a fan may ignore it, so it is sent again.
+
 ## 2.1.19
 
 p56-server 0.3.19.
