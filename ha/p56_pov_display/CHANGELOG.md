@@ -2,7 +2,7 @@
 
 ## 2.1.21
 
-p56-server 0.3.21.
+p56-server 0.3.21, with integration 2.23.0 (needed for `entity_id: comfyui`).
 
 - **AI pictures from your own computer:** option `comfyui_url` (and `comfyui_size`) makes
   `p56_pov.show_ai` and the panel's AI picture use ComfyUI with Qwen Image 2.1 in your house;
@@ -15,7 +15,7 @@ p56-server 0.3.21.
 
 ## 2.1.20
 
-p56-server 0.3.20.
+p56-server 0.3.20, with integration 2.22.0.
 
 - **Removed: pages.** The pages that took turns on the fan (sub-entries of the server, the
   switch *Pages* and the sensor *Page*) are gone; use automations with `p56_pov.show_text` or

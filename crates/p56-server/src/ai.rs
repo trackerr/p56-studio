@@ -31,7 +31,7 @@ pub enum Kind {
     Spin,
     /// 16 frames drawn by the AI (a sprite sheet).
     Anim,
-    /// A background for text written over it (`show_ai` with `text`): calm and dark in the middle.
+    /// A background for text written over it (`show_ai` with `text`): a whole, simple picture of the theme.
     Backdrop,
 }
 

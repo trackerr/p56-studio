@@ -24,10 +24,10 @@ hologram fan, straight from Home Assistant. Local, no vendor app, no cloud.**
 | --- | --- |
 | 💡 **Control** | On/off and brightness as a light, play/pause, playlist, repeat, picture angle |
 | 📝 **Text** | A text field on your dashboard, or the `p56_pov.show_text` action, sized automatically to fit the round display |
-| 🔔 **Notifications** | `notify.send_message` shows a message for 15 seconds, then the playlist resumes |
+| 🔔 **Notifications** | `notify.send_message` shows a message with a bell for 15 seconds, then the playlist resumes; a fan that was off goes off again |
 | 🎨 **Styles & icons** | Ready-made looks (alert, warning, info, success, price, clock) with a ring along the rim, any Home Assistant icon, and a text colour that follows a value (green → red) |
 | 🖼️ **Pictures & animations** | `p56_pov.show_image` from a file, a URL, the media library or a camera snapshot; animated GIFs and videos play as animations |
-| ✨ **AI pictures** | `p56_pov.show_ai` or the panel's Media tab: describe a picture and the AI you set up in Home Assistant (AI Task, e.g. Google Gemini) draws it in any style (photo, painting, cartoon, 3D, neon…), still or turning round its own axis |
+| ✨ **AI pictures** | `p56_pov.show_ai` or the panel's Media tab: describe a picture and an AI draws it in any style (photo, painting, cartoon, 3D, neon…), still or turning round its own axis. Either free and private with ComfyUI on a PC in your house, or with the AI you set up in Home Assistant (AI Task, e.g. Google Gemini). With a text, the AI draws a fitting background for a notification or a price |
 | 👀 **Preview** | An image entity that shows what was last sent to the fan, faded once it is no longer on it |
 | 🖥️ **Web app** | The full P56 Studio app as a sidebar panel: upload photos, GIFs and video, cast live, change Wi-Fi |
 | 🔌 **Self-contained** | Everything runs inside Home Assistant; the fans connect to it on your own network |
@@ -70,17 +70,39 @@ entities and actions). Both are in this repository.
 Copy the folder `custom_components/p56_pov` to `/config/custom_components/` and restart Home Assistant.
 </details>
 
-### Step 3 — Connect
-
-Go to **Settings → Devices & services**. Home Assistant shows **"P56 POV Display discovered"**:
-click **Add**. Every fan that connects now appears as a device.
-
-### Step 4 — Put the fan on your Wi-Fi (once)
+### Step 3 — Put the fan on your Wi-Fi (once)
 
 A new fan starts as its own Wi-Fi hotspot, which Home Assistant can't reach. Connect a phone or
 PC to that hotspot once, open [P56 Studio](https://github.com/trackerr/p56-studio/releases)
-(or the vendor app), go to **Network → Router** and enter your Wi-Fi name and password.
-From then on the fan joins your Wi-Fi and finds Home Assistant by itself.
+(or the vendor app), go to **Network → Connect to your router**, enter your Wi-Fi name and
+password and press **Set router**. From then on the fan joins your Wi-Fi and finds Home Assistant
+by itself.
+
+- The fan has a **2.4 GHz** radio only: use a 2.4 GHz network (a combined 2.4/5 GHz one is fine).
+- Name and password can be at most 31 characters.
+- Keep Bluetooth speakers away from the fan's Bluetooth: Wi-Fi and Bluetooth share one radio,
+  and a connected Bluetooth receiver can stop the fan from joining your Wi-Fi.
+
+### Step 4 — Connect
+
+Go to **Settings → Devices & services**. Home Assistant shows **"P56 POV Display discovered"**:
+click **Add**. Every fan that connects appears as a device (give it a minute after step 3).
+
+### Step 5 — Keep one black picture on the fan
+
+With an empty playlist a P56 blinks four blue LEDs. Upload one black picture (for example named
+`black`, in the panel's **Media** tab) and leave it there: the fan then shows nothing, and
+messages return to it when they are over.
+
+### Optional — AI pictures
+
+For `p56_pov.show_ai` and the panel's **AI picture** box you need an AI that can draw:
+**ComfyUI** with the free Qwen Image 2.1 model on a PC with a graphics card in your house
+(add-on option **ComfyUI address**), or an AI in Home Assistant such as **Google Generative AI**.
+The [user guide](docs/GUIDE.md#7-pictures-made-by-ai) walks you through both.
+
+> 🔄 **Updating:** update the add-on and the integration together (both are in HACS / the
+> add-on store), then restart Home Assistant.
 
 ---
 
@@ -92,15 +114,20 @@ For each fan (example names for a fan called *P56*):
 | --- | --- |
 | `light.p56` | Picture on/off and brightness |
 | `switch.p56_playing` | Play / pause |
+| `switch.p56_breathing_light`, `switch.p56_start_on_power`, `switch.p56_master` | Breathing light, start by itself on power, group master |
 | `select.p56_file` | Choose what plays |
 | `select.p56_repeat` | Repeat all files or one |
 | `text.p56_text` | Type something, the fan shows it |
-| `notify.p56_message` | Notifications, shown for a while |
-| `image.p56_shown` | What Home Assistant last sent to the fan |
+| `notify.p56_message` | Notifications with a bell, shown for a while |
+| `image.p56_shown` | What Home Assistant last sent to the fan; faded once it is no longer on it (attribute `live`) |
 | `sensor.p56_playing_file`, `sensor.p56_files` | Current file, number of files |
-| `number.p56_picture_angle` | Settings |
+| `sensor.p56_ip_address`, `sensor.p56_last_error` | The fan's IP, the last error it reported |
+| `number.p56_picture_angle` | Turn the picture (−180 … 180°) |
+| `number.p56_volume` | Volume of the fan's speaker (sound of videos) |
+| `button.p56_refresh`, `button.p56_delete_playing_file` | Ask the fan for its state; delete the file that plays |
 
-Plus `sensor.p56_server_connected_fans` (0 means no fan is connected).
+Plus `sensor.p56_server_connected_fans` (0 means no fan is connected) and
+`sensor.p56_server_last_activity`.
 
 ---
 
@@ -148,6 +175,20 @@ data:
   show_seconds: 20
 ```
 
+### An AI picture behind a text
+
+```yaml
+action: p56_pov.show_ai
+data:
+  prompt: "{{ 'cheap green energy' if states('sensor.energy_price') | float < 0.25 else 'expensive power' }}"
+  text: "{{ states('sensor.energy_price') }} €/kWh"
+  value: "{{ states('sensor.energy_price') }}"
+  value_min: 0.20
+  value_max: 0.35
+  show_seconds: 60
+  mode: cast
+```
+
 ### Send a notification
 
 ```yaml
@@ -162,12 +203,14 @@ data:
 | --- | --- |
 | `p56_pov.show_text` | `text`, `style`, `icon`, `value` + `value_min` + `value_max`, `gauge`, `color`, `background`, `icon_color`, `ring`, `font_size`, `show_seconds`, `priority`, `mode`, `name`, `device_id` |
 | `p56_pov.show_image` | one of `path` / `url` / `camera` / `media` (pictures, GIFs, videos), plus `show_seconds`, `priority`, `mode`, `name`, `fps`, `max_frames`, `scale`, `x_offset`, `y_offset`, `mirror`, `device_id` |
-| `p56_pov.show_ai` | `prompt`, plus `kind` (`still` / `spin`), `art_style` (`photo`, `3d`, `cartoon`, `painting`, … or your own words), `entity_id` (an AI Task; default the first that makes pictures), `text` (written over an AI background, with `color`, `icon`, `font_size`, `value` + `value_min` + `value_max`), `fresh`, `show_seconds`, `mode`, `name`, `device_id` |
+| `p56_pov.show_ai` | `prompt`, plus `kind` (`still` / `spin`), `art_style` (`photo`, `3d`, `cartoon`, `painting`, … or your own words), `entity_id` (`comfyui` or an AI Task; default ComfyUI when set up, otherwise the first AI Task that makes pictures), `text` (written over a whole AI background, with `color`, `font_size`, `value` + `value_min` + `value_max`, `invert_colors`, `gauge`), `icon` (only without text), `fresh`, `show_seconds`, `priority`, `mode`, `name`, `device_id` |
 | `p56_pov.play_file` | `device_id` and `slot` or `name` |
 | `p56_pov.delete_file` | `device_id` and `slot` or `name` |
 
 `mode: upload` (default) stores the picture on the fan; `mode: cast` shows it live without
-storing anything. Leave out `device_id` to use all fans.
+storing anything. Leave out `device_id` to use all fans. With `show_seconds` it is a message: the
+fan shows only that, then returns to what it played, and a fan that was off goes off again;
+`priority` decides whether a message waits for or interrupts the one showing.
 
 More ready-to-use automations: [examples/automations.yaml](examples/automations.yaml).
 
@@ -182,6 +225,20 @@ More ready-to-use automations: [examples/automations.yaml](examples/automations.
 - Check the add-on log: it shows every fan that answers.
 - Broadcast blocked or another subnet? Enter the fan's IP under the add-on option **Fan IP addresses**.
 - Only one program can serve a fan at a time: close the vendor app and P56 Studio on other devices.
+</details>
+
+<details>
+<summary><b>Four blue lights blink on the fan</b></summary>
+
+Its playlist is empty. Keep one black picture on the fan (step 5).
+</details>
+
+<details>
+<summary><b>The fan keeps falling back to its own hotspot</b></summary>
+
+- The network must be 2.4 GHz, and name and password at most 31 characters.
+- A Bluetooth receiver connected to the fan can keep it off Wi-Fi (they share one radio):
+  disconnect it, then set the router again.
 </details>
 
 <details>

@@ -263,7 +263,7 @@
         },
         "show_seconds": {
           "name": "Duur",
-          "description": "Na zoveel seconden weer weghalen; het vorige bestand speelt weer (0: laten staan)."
+          "description": "Een melding: zoveel seconden te zien, de fan herhaalt intussen alleen deze en gaat daarna terug naar wat hij speelde; een fan die uit stond gaat weer uit. 0: laten staan (live: 10 s)."
         },
         "priority": {
           "name": "Prioriteit",
@@ -325,11 +325,11 @@
         },
         "path": {
           "name": "Bestand",
-          "description": "Pad van een afbeelding op Home Assistant (moet toegestaan zijn)."
+          "description": "Pad van een afbeelding, GIF of video op Home Assistant, in een map uit allowlist_external_dirs (bv. /media/…)."
         },
         "url": {
           "name": "URL",
-          "description": "Afbeelding om te downloaden."
+          "description": "Afbeelding, GIF of video om te downloaden."
         },
         "camera": {
           "name": "Camera",
@@ -337,11 +337,11 @@
         },
         "media": {
           "name": "Media",
-          "description": "Afbeelding uit de mediabibliotheek."
+          "description": "Afbeelding, GIF of video uit de mediabibliotheek."
         },
         "show_seconds": {
           "name": "Duur",
-          "description": "Na zoveel seconden weer weghalen (0: laten staan)."
+          "description": "Een melding: zoveel seconden te zien, de fan herhaalt intussen alleen deze en gaat daarna terug naar wat hij speelde; een fan die uit stond gaat weer uit. 0: laten staan (live: 10 s)."
         },
         "priority": {
           "name": "Prioriteit",
@@ -383,7 +383,7 @@
     },
     "show_ai": {
       "name": "AI-plaatje tonen",
-      "description": "Laat de AI die in Home Assistant is ingesteld (AI Task) een plaatje of korte animatie tekenen en toont die op de fan. Werkt met de P56-add-on.",
+      "description": "Laat een AI een plaatje tekenen (ComfyUI bij je thuis, of een AI Task van Home Assistant zoals Google) en toont het op de fan, stilstaand of draaiend om zijn eigen as. Werkt met de P56-add-on.",
       "fields": {
         "device_id": {
           "name": "Fans",
@@ -403,11 +403,11 @@
         },
         "entity_id": {
           "name": "AI Task",
-          "description": "Welke AI het plaatje maakt. Leeg: ComfyUI als die in de add-on is ingesteld (comfyui_url), anders de eerste AI Task die het kan; in YAML kiest comfyui voor ComfyUI."
+          "description": "Welke AI het plaatje maakt. Leeg: ComfyUI als die in de add-on is ingesteld (ComfyUI-adres), anders de eerste AI Task die het kan; is ComfyUI niet bereikbaar, dan neemt de AI Task het over. Alleen ComfyUI: schakel naar YAML en vul comfyui in."
         },
         "text": {
           "name": "Tekst",
-          "description": "Tekst over het plaatje heen, bijvoorbeeld een prijs. De AI maakt dan een achtergrond met een rustig midden in plaats van een onderwerp."
+          "description": "Tekst over het plaatje heen, bijvoorbeeld een prijs of een melding. De AI maakt dan een heel plaatje van de opdracht als achtergrond (zonder tekst), en de tekst komt erover op een verduisterde band. Soort telt dan niet."
         },
         "color": {
           "name": "Tekstkleur",
@@ -415,7 +415,7 @@
         },
         "icon": {
           "name": "Icoon",
-          "description": "Icoon boven de tekst, bijvoorbeeld mdi:flash. Vervalt als de AI een achtergrond maakt (alleen tekst)."
+          "description": "Icoon over het AI-plaatje, alleen zonder tekst; met tekst staat alleen de tekst erop."
         },
         "value": {
           "name": "Waarde",
@@ -447,7 +447,7 @@
         },
         "show_seconds": {
           "name": "Duur",
-          "description": "Na zoveel seconden weer weghalen (0: laten staan)."
+          "description": "Een melding: zoveel seconden te zien, de fan herhaalt intussen alleen deze en gaat daarna terug naar wat hij speelde; een fan die uit stond gaat weer uit. 0: laten staan (live: 10 s)."
         },
         "priority": {
           "name": "Prioriteit",

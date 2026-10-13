@@ -9,9 +9,32 @@
     - action: p56_pov.show_text
       data:
         text: "{{ states('sensor.energy_price') | float(0) | round(2) }} €/kWh"
-        color: "#ffc800"
+        style: price
+        # the text and ring go from green (cheap) to red (expensive)
+        value: "{{ states('sensor.energy_price') | float(0) }}"
+        value_min: 0.20
+        value_max: 0.35
         name: energy
         show_seconds: 60
+
+- alias: "P56 - energy price with an AI picture behind it"
+  triggers:
+    - trigger: state
+      entity_id: sensor.energy_price
+  actions:
+    - action: p56_pov.show_ai
+      data:
+        # the prompt changes only with the mood, so the same picture is reused for every price
+        prompt: >
+          {% set p = states('sensor.energy_price') | float(0) %}
+          {{ 'sunny green energy' if p < 0.25 else ('expensive power, red warning' if p >= 0.30 else 'warm orange energy') }}
+        text: "{{ '%.2f' | format(states('sensor.energy_price') | float(0)) }} €/kWh"
+        value: "{{ states('sensor.energy_price') | float(0) }}"
+        value_min: 0.20
+        value_max: 0.35
+        name: energy
+        show_seconds: 60
+        mode: cast
 
 - alias: "P56 - show new persistent notifications"
   triggers:
@@ -25,6 +48,46 @@
         title: "{{ trigger.notification.title | default('', true) }}"
         message: "{{ trigger.notification.message[:80] }}"
 
+- alias: "P56 - every notification its own AI picture (only ComfyUI in the house)"
+  triggers:
+    - trigger: persistent_notification
+      update_type: added
+  actions:
+    - action: p56_pov.show_ai
+      # ComfyUI off or busy: the text with an icon instead (below)
+      continue_on_error: true
+      response_variable: ai
+      data:
+        # only ComfyUI: the notification text never leaves the house
+        entity_id: comfyui
+        prompt: "{{ trigger.notification.title | default('', true) }} {{ trigger.notification.message[:200] }}"
+        text: "{{ trigger.notification.message[:80] }}"
+        show_seconds: 15
+        priority: 5
+        mode: cast
+    - if: "{{ ai is not defined or not ai.success | default(false) }}"
+      then:
+        - action: p56_pov.show_text
+          data:
+            text: "{{ trigger.notification.message[:80] }}"
+            style: info
+            show_seconds: 15
+            priority: 5
+            mode: cast
+
+- alias: "P56 - washing machine done, with an AI picture"
+  triggers:
+    - trigger: state
+      entity_id: sensor.washing_machine_status
+      to: "done"
+  actions:
+    - action: p56_pov.show_ai
+      data:
+        prompt: a washing machine with clean laundry
+        text: Washing done
+        show_seconds: 300
+        priority: 5
+
 - alias: "P56 - doorbell camera on the fan"
   triggers:
     - trigger: state
@@ -36,6 +99,8 @@
         camera: camera.front_door
         mode: cast
         show_seconds: 20
+        # interrupts less important messages (they come back afterwards)
+        priority: 10
 
 - alias: "P56 - display off at night"
   triggers:

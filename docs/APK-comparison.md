@@ -5,6 +5,11 @@ Method: QML source extracted from the Qt resources (47 files), C++ disassembled 
 `llvm-objdump`, packet layout traced per `DeviceInterface::*` function.
 Not tested against a real fan.
 
+> **Historical analysis** from the start of the project (October 2026). The "Us" column shows
+> what was built *then*; nearly everything marked missing has been built and tested on a real P56
+> since. For the current state see [PROTOCOL.md](../PROTOCOL.md) (with the Bluetooth and colour
+> mode notes) and the [changelog](../CHANGELOG.md).
+
 ## 1. Commands app → fan
 
 Notation: `X` = XOR checksum. "Us" = `crates/p56-core/src/protocol.rs`.

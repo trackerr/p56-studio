@@ -56,7 +56,8 @@ Rename the fan, change its hotspot, put it on your Wi-Fi (router mode).
 
 **Home Assistant**<br>
 An add-on and integration: text with icons and ready-made styles, notifications, camera
-snapshots, GIFs and videos on the fan from your automations. [Learn more →](https://github.com/trackerr/home-assistant-p56)
+snapshots, GIFs and videos on the fan from your automations, and pictures drawn by AI (ComfyUI in
+your house, or Google through Home Assistant). [Learn more →](https://github.com/trackerr/home-assistant-p56)
 
 </td>
 </tr>
@@ -90,6 +91,9 @@ Step by step for everyday use: **[user guide](docs/GUIDE.md)**.
 4. Start **P56 Studio**. Windows asks to open the firewall the first time: allow it for private networks.
 5. The fan appears by itself.
 
+> **Good to know:** a P56 has a 2.4 GHz Wi-Fi radio only (so use a 2.4 GHz network for router
+> mode), and with an empty playlist it blinks four blue LEDs: keep one black picture on it.
+
 ### Android
 
 1. Download **`P56-Studio-…-android.apk`** from the [latest release](https://github.com/trackerr/p56-studio/releases/latest) and open it (allow installing from your browser if asked).
@@ -103,7 +107,7 @@ Install the add-on and integration from **[trackerr/home-assistant-p56](https://
 one-click install buttons, a sidebar panel with this app, and actions like `p56_pov.show_text`.
 
 > **Fan not showing up?** Check that both devices are on the same network, that Holoscope is closed,
-> and that the firewall allows UDP 8988 and TCP 6666. You can also enter the fan's IP in the **App** tab (*IP of the fan*).
+> and that the firewall allows UDP 8988 and TCP 6666. You can also enter the fan's IP in the **App** tab (*Fan IP, if you know it*).
 
 ---
 
@@ -150,7 +154,10 @@ Then open **http://localhost:8765/**. It powers the Home Assistant add-on; stati
 (x86_64 and aarch64) are in every release.
 
 It answers only this machine until you add `--lan`; protect that with `--api-token <token>`.
-`--fan-allow <ip>` limits which addresses may connect as a fan.
+`--fan-allow <ip>` limits which addresses may connect as a fan. `--comfyui http://<pc>:8188`
+makes AI pictures with [ComfyUI](https://www.comfy.org) and Qwen Image 2.1 on a computer in your
+house (`--comfyui-size`, default 768); see the
+[add-on documentation](ha/p56_pov_display/DOCS.md#ai-pictures).
 
 One server can be the single controller of your fans while Home Assistant, browsers and P56
 Studio on other phones and computers use it at the same time (App tab → *Control through a P56
@@ -165,7 +172,8 @@ server*): a fan keeps one connection, to the app or server it found.
 | `POST /api/show` | Show text or a picture: `{"text": "Hello", "show_seconds": 30}` |
 | `POST /api/call/<command>` | Any app command, e.g. `control` `{"id": 1, "action": "off"}` |
 | `GET /api/events` | Live events (server-sent events) |
-| `GET /api/shown/<mac>` | PNG of what the fan was last sent |
+| `POST /api/call/show_ai` | An AI picture on the fan: `{"prompt": "a jellyfish", "show_seconds": 30}` |
+| `GET /api/shown/<mac>` | PNG of what the fan was last sent (faded when it is no longer on it) |
 
 Full reference: [add-on documentation](ha/p56_pov_display/DOCS.md#http-api-port-8765).
 </details>

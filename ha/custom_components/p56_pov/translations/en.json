@@ -263,7 +263,7 @@
         },
         "show_seconds": {
           "name": "Duration",
-          "description": "Remove again after this many seconds; the previous file plays again (0: keep)."
+          "description": "A message: shown this many seconds, the fan repeats only this meanwhile and then returns to what it played; a fan that was off goes off again. 0: keep (live: 10 s)."
         },
         "priority": {
           "name": "Priority",
@@ -325,11 +325,11 @@
         },
         "path": {
           "name": "File",
-          "description": "Path of a picture on Home Assistant (must be allowed)."
+          "description": "Path of a picture, GIF or video on Home Assistant, in a folder of allowlist_external_dirs (e.g. /media/…)."
         },
         "url": {
           "name": "URL",
-          "description": "Picture to download."
+          "description": "Picture, GIF or video to download."
         },
         "camera": {
           "name": "Camera",
@@ -337,11 +337,11 @@
         },
         "media": {
           "name": "Media",
-          "description": "Picture from the media library."
+          "description": "Picture, GIF or video from the media library."
         },
         "show_seconds": {
           "name": "Duration",
-          "description": "Remove again after this many seconds (0: keep)."
+          "description": "A message: shown this many seconds, the fan repeats only this meanwhile and then returns to what it played; a fan that was off goes off again. 0: keep (live: 10 s)."
         },
         "priority": {
           "name": "Priority",
@@ -383,7 +383,7 @@
     },
     "show_ai": {
       "name": "Show AI picture",
-      "description": "Has the AI set up in Home Assistant (AI Task) draw a picture or a short animation and shows it on the fan. Needs the P56 add-on.",
+      "description": "Has an AI draw a picture (ComfyUI in your house, or a Home Assistant AI Task such as Google) and shows it on the fan, still or turning round its own axis. Needs the P56 add-on.",
       "fields": {
         "device_id": {
           "name": "Fans",
@@ -403,11 +403,11 @@
         },
         "entity_id": {
           "name": "AI Task",
-          "description": "Which AI makes the picture. Empty: ComfyUI when it is set up in the add-on (comfyui_url), otherwise the first AI Task that can; in YAML, comfyui picks ComfyUI."
+          "description": "Which AI makes the picture. Empty: ComfyUI when it is set up in the add-on (ComfyUI address), otherwise the first AI Task that can; when ComfyUI cannot be reached the AI Task takes over. Only ComfyUI: switch to YAML and enter comfyui."
         },
         "text": {
           "name": "Text",
-          "description": "Text written over the picture, e.g. a price. The AI then makes a background with a calm middle instead of a subject."
+          "description": "Text written over the picture, e.g. a price or a notification. The AI then makes a whole picture of the prompt as background (without writing), and the text goes over it on a darkened band. Kind is ignored then."
         },
         "color": {
           "name": "Text colour",
@@ -415,7 +415,7 @@
         },
         "icon": {
           "name": "Icon",
-          "description": "Icon above the text, e.g. mdi:flash. Left out when the AI makes a background (text only)."
+          "description": "Icon over the AI picture, only without text; with text only the text is shown."
         },
         "value": {
           "name": "Value",
@@ -447,7 +447,7 @@
         },
         "show_seconds": {
           "name": "Duration",
-          "description": "Remove again after this many seconds (0: keep)."
+          "description": "A message: shown this many seconds, the fan repeats only this meanwhile and then returns to what it played; a fan that was off goes off again. 0: keep (live: 10 s)."
         },
         "priority": {
           "name": "Priority",

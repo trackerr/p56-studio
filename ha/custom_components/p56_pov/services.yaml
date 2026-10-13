@@ -102,7 +102,7 @@ show_text:
           translation_key: mode
     name:
       advanced: true
-      example: energieprijs
+      example: energy
       selector:
         text:
 
@@ -131,6 +131,7 @@ show_image:
         media:
           accept:
             - image/*
+            - video/*
     show_seconds:
       selector:
         number:

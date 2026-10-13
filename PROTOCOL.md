@@ -4,7 +4,7 @@ Reverse-engineered from `Holoscope.exe` (Windows, Qt5) and `Holoscope.apk` (Andr
 `DeviceInterface::*`, `MyTcpServer::ReadData`, `fileprocess::*`). The APK is the newest
 source; where it differed from the earlier Windows analysis, this document has been updated.
 Everything below is implemented in `crates/p56-core` and emulated by
-`crates/p56-sim`. Date: 2026-10-10.
+`crates/p56-sim`. Last updated: 2026-10-13.
 
 ## 1. Network
 | What | Value |
@@ -198,5 +198,7 @@ P56 (2026-10-11).
 - **Firmware**: Holoscope.exe starts an update over a separate socket with a `.bin`; the APK
   only contains strings. No firmware file, chip or bootloader known → deliberately not built.
 - **Cloud media library** (`bg.holoscope.tech`), **group display** (splitting an image across
-  several fans), **3D text/sphere/cube**, **sound in videos**: analysed, not built yet.
+  several fans), **3D text/sphere/cube**: analysed, not built yet.
+- **Bluetooth** (audio and the BT commands): deliberately not used, see §3 (one radio for
+  Wi-Fi and Bluetooth).
 - **Binary image formats** for fan types without JPEG.

@@ -19,14 +19,20 @@ for that, see [PROTOCOL.md](../PROTOCOL.md).
 A new fan makes its **own Wi-Fi network** (a hotspot), named like `3D-P56-…`.
 
 1. Switch on the fan.
-2. Connect your phone or computer to the fan's Wi-Fi. It has no internet; that is normal.
-   On Android, choose "stay connected" if the phone asks.
+2. Connect your phone or computer to the fan's Wi-Fi (its password is in the fan's manual or on
+   its label). It has no internet; that is normal. On Android, choose "stay connected" if the
+   phone asks.
 3. Open **P56 Studio**. After a few seconds the fan's name appears at the top of the screen.
 
 **Put the fan on your home Wi-Fi (recommended, once).** Then your phone and computer keep their
 normal internet while you use the fan: go to **Network → Connect to your router**, enter your Wi-Fi
 name and password and press **Set router**. Put your phone or computer back on your home Wi-Fi;
-the fan finds it by itself.
+the fan finds it by itself. The fan has a **2.4 GHz** radio only, so it needs a 2.4 GHz network
+(a combined 2.4/5 GHz network is fine); name and password can be at most 31 characters.
+
+**Keep one black picture on the fan.** With an empty playlist a P56 blinks four blue LEDs.
+Upload a black picture (for example named `black`) and leave it there: the fan then shows
+nothing while it has nothing else to play.
 
 > Only **one app at a time** can control a fan: close Holoscope, and open P56 Studio on one
 > device. Want to use several devices, or Home Assistant? See [section 7](#7-several-phones-and-computers-or-home-assistant-together).
@@ -42,7 +48,8 @@ The round dial is the fan.
 - **Brightness**: the **slider** under the dial, from 1 to 16.
 - **Power**, **pause / play** and **refresh** are the round buttons below.
 - On the right (below on a phone): **repeat** the whole list or one file, the
-  breathing light, start automatically at power-on, volume (only on fans with a speaker) and,
+  breathing light, start automatically at power-on, group master (for fans used together),
+  volume (only on fans with a speaker) and,
   under maintenance, **format** (erases all files) and **factory settings**.
 
 ## 3. Putting pictures, GIFs, videos and text on the fan
@@ -124,6 +131,11 @@ server is the **Home Assistant add-on** (see
 [home-assistant-p56](https://github.com/trackerr/home-assistant-p56)); on a computer that is always
 on, `p56-server --lan` works too.
 
+Through a server that can make AI pictures (the Home Assistant add-on with an AI set up, or
+`p56-server --comfyui`), the **Media** tab also gets an **AI picture** box: describe a picture and
+it is drawn for the fan (see the
+[Home Assistant guide](https://github.com/trackerr/home-assistant-p56/blob/main/docs/GUIDE.md#7-pictures-made-by-ai)).
+
 **With Home Assistant as the server**
 
 1. In Home Assistant, open **Settings → Add-ons → P56 POV Display → Configuration**.
@@ -148,9 +160,10 @@ away) and the fan connects to the next one within a few seconds.
 | --- | --- |
 | "Searching for your fan…" stays | Is this device on the fan's Wi-Fi, or on the same router as the fan? Is Holoscope or another P56 Studio still open somewhere? On Windows, allow P56 Studio in the firewall when asked. |
 | The fan connected to another device | Close the app there, or use one server for all ([section 7](#7-several-phones-and-computers-or-home-assistant-together)). |
-| "No P56 server answers at this address" | Check the address and port 8765. In Home Assistant, turn on **lan_api** in the add-on. |
-| "API token required" | Enter the **api_token** from the add-on configuration (or `--api-token` of p56-server). |
+| "No P56 server answers at this address" | Check the address and port 8765. In Home Assistant, turn on **API reachable on the network** in the add-on. |
+| "API token required" | Enter the **API token** from the add-on configuration (or `--api-token` of p56-server). |
 | Casting shows nothing | Press the test card first. If the rings do show, the source is the problem (camera permission, a closed window). |
 | A picture is turned the wrong way | Drag the outer ring on the Fan tab, or use **Rotation** under Position & scale before uploading. |
 | The fan stays on its own Wi-Fi after setting the router | Check the Wi-Fi name and password, and set them again from the fan's own Wi-Fi. |
-| The fan falls off Wi-Fi and keeps showing its own hotspot | Do not pair a Bluetooth receiver or speaker to the fan: Wi-Fi and Bluetooth share one radio, and the fan cannot rejoin Wi-Fi while Bluetooth is connected. Disconnect the speaker or switch the fan's Bluetooth off. P56 Studio does not use Bluetooth. |
+| The fan falls off Wi-Fi and keeps showing its own hotspot | Do not pair a Bluetooth receiver or speaker to the fan: Wi-Fi and Bluetooth share one radio, and the fan cannot rejoin Wi-Fi while Bluetooth is connected. Disconnect the speaker (with the vendor app, or switch the speaker off and restart the fan), then set the router again. P56 Studio does not use Bluetooth. |
+| Four blue lights blink on the fan | Its playlist is empty. Keep one black picture on it ([section 1](#1-getting-connected)). |
