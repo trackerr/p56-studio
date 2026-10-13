@@ -13,8 +13,8 @@ import { Choice, RoundView, Section, ValueSlider } from '@/components/bits';
 
 /** Text that moves: a ticker across the middle or round along the rim ('' = still). */
 type Motion = '' | 'scroll' | 'orbit';
-/** An AI picture: still, or turned round its own axis by the server. */
-type AiKind = 'still' | 'spin';
+/** An AI picture: still, turned round its own axis by the server, or a real 3D model (ComfyUI). */
+type AiKind = 'still' | 'spin' | '3d';
 /** Ready-made styles for AI pictures ('free': as the prompt says). */
 const AI_STYLES = ['free', 'photo', '3d', 'cartoon', 'anime', 'painting', 'watercolor', 'pixel', 'neon', 'line', 'comic'] as const;
 type AiStyle = (typeof AI_STYLES)[number];
@@ -45,7 +45,7 @@ export function PlacementBox() {
 }
 
 /** What the panel is busy with: a local step, or an upload stage reported by the backend. */
-type Step = 'reading' | 'frames' | 'preparing' | 'text' | 'ai';
+type Step = 'reading' | 'frames' | 'preparing' | 'text' | 'ai' | 'ai3d';
 type Busy = null | { step: Step } | { stage: string };
 
 // Upload stages as emitted by the backend; both the old Dutch and English ids are accepted.
@@ -53,7 +53,7 @@ const STAGES: Record<string, Key> = {
   transcoderen: 'media.stageTranscoding', transcoding: 'media.stageTranscoding', transcode: 'media.stageTranscoding', encoding: 'media.stageTranscoding',
   versturen: 'media.stageSending', sending: 'media.stageSending', send: 'media.stageSending', uploading: 'media.stageSending', upload: 'media.stageSending',
 };
-const STEPS: Record<Step, Key> = { reading: 'media.reading', frames: 'media.makingFrames', preparing: 'media.preparing', text: 'media.makingText', ai: 'media.aiMaking' };
+const STEPS: Record<Step, Key> = { reading: 'media.reading', frames: 'media.makingFrames', preparing: 'media.preparing', text: 'media.makingText', ai: 'media.aiMaking', ai3d: 'media.ai3dMaking' };
 
 function busyLabel(b: Busy, t: TFunc): string {
   if (!b) return '';
@@ -98,12 +98,16 @@ export function MediaPanel() {
 
   // AI pictures: only where Home Assistant (with an AI that makes pictures) is behind the server
   const [aiOk, setAiOk] = useState(false);
+  // a real 3D model needs ComfyUI
+  const [ai3d, setAi3d] = useState(false);
   const [ai, setAi] = useState({ prompt: '', kind: 'still' as AiKind, style: 'free' as AiStyle });
   useEffect(() => {
-    invoke<{ entities: unknown[] }>('ai_status').then((s) => setAiOk(s.entities.length > 0)).catch(() => setAiOk(false));
+    invoke<{ entities: { entity_id: string }[] }>('ai_status')
+      .then((s) => { setAiOk(s.entities.length > 0); setAi3d(s.entities.some((e) => e.entity_id === 'comfyui')); })
+      .catch(() => setAiOk(false));
   }, []);
   async function makeAi() {
-    setBusy({ step: 'ai' });
+    setBusy({ step: ai.kind === '3d' ? 'ai3d' : 'ai' });
     try {
       const m = await invoke<MediaInfo>('ai_image', { prompt: ai.prompt, kind: ai.kind, art_style: ai.style });
       setPicked(null); setMedia(m); setFrame(0); setName(m.name);
@@ -313,6 +317,7 @@ export function MediaPanel() {
                   options={[
                     { value: 'still', label: t('media.still'), testId: 'ai-still' },
                     { value: 'spin', label: t('media.aiSpin'), testId: 'ai-spin' },
+                    ...(ai3d ? [{ value: '3d' as AiKind, label: t('media.ai3d'), testId: 'ai-3d' }] : []),
                   ]} />
                 <div className="flex min-w-48 items-center gap-3">
                   <span className="orbit-label">{t('media.aiStyle')}</span>
@@ -324,7 +329,7 @@ export function MediaPanel() {
                   </Select>
                 </div>
               </div>
-              <p className="mt-2 text-xs text-muted-foreground">{t('media.aiHint')}</p>
+              <p className="mt-2 text-xs text-muted-foreground">{t(ai.kind === '3d' ? 'media.ai3dHint' : 'media.aiHint')}</p>
             </div>
           )}
           {/* data-frames / data-size let tests check the result without depending on the UI language */}

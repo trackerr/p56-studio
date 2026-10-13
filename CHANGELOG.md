@@ -4,6 +4,18 @@ P56 Studio (Windows, Linux, Android), `p56` (CLI), `p56-sim` and `p56-server`.
 The Home Assistant add-on and integration have their own changelog in
 [`ha/p56_pov_display/CHANGELOG.md`](ha/p56_pov_display/CHANGELOG.md).
 
+## 0.3.25 — 2026-10-13
+
+### Added
+- **Real 3D models** (`kind: "3d"`, ComfyUI only): Qwen Image 2.1 draws the object, its background
+  is cut away, Trellis 2 makes a coloured 3D model and ComfyUI renders it from all round (60 views,
+  one turn in 3.6 s). About 2 minutes on a laptop graphics card (171 s on the real fan's test).
+  `p56-server --ai-dir <folder>` keeps the views, so the same prompt again is there at once, also
+  after a restart. The web app's AI box offers **Real 3D** when ComfyUI is there.
+
+### Changed
+- Docs: the breathing light is a status light (all LEDs light up in one colour now and then).
+
 ## 0.3.24 — 2026-10-13
 
 ### Changed

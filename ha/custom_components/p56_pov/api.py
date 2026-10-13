@@ -97,7 +97,9 @@ class P56Api:
 
     async def show_ai(self, payload: dict[str, Any]) -> dict[str, Any]:
         """A picture made by Home Assistant's AI Task, onto the fans (the add-on's server only)."""
-        return self._shown(await self.call("show_ai", payload, timeout=180))
+        # a real 3D model takes about 2 minutes (ComfyUI allows 10)
+        timeout = 660 if payload.get("kind") == "3d" else 180
+        return self._shown(await self.call("show_ai", payload, timeout=timeout))
 
     @staticmethod
     def _shown(data: Any) -> dict[str, Any]:

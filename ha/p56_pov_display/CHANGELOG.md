@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.1.25
+
+p56-server 0.3.25, with integration 2.27.0.
+
+- **Real 3D:** `p56_pov.show_ai` with `kind: 3d` (and **Real 3D** in the panel's AI box) makes a
+  real 3D model of the object with ComfyUI and shows it turning from all sides. About 2 minutes
+  the first time; the add-on keeps it in `/data/ai`, so the same prompt is there at once
+  afterwards, also after a restart. Needs ComfyUI with the Trellis 2 files.
+
 ## 2.1.24
 
 p56-server 0.3.24, with integration 2.26.0.

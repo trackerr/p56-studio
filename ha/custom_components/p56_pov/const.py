@@ -50,7 +50,8 @@ BRIGHTNESS_MAX: Final = 16
 ANGLE_MIN: Final = -180
 ANGLE_MAX: Final = 180
 
-# p56_pov.show_ai: a still, or the object turning round its own axis
-AI_KINDS = ["still", "spin"]
+# p56_pov.show_ai: a still, the object turning round its own axis, or a real 3D model of it
+# turning (ComfyUI only, about 2 minutes, kept by the add-on)
+AI_KINDS = ["still", "spin", "3d"]
 # p56_pov.show_ai: ready-made styles (any other text is used as the style itself)
 AI_STYLES = ["free", "photo", "3d", "cartoon", "anime", "painting", "watercolor", "pixel", "neon", "line", "comic"]

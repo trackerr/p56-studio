@@ -29,7 +29,7 @@ are sometimes padded to 5 (Holoscope.exe: `3E`, Holoscope.apk: `00`).
 | 05 / 06 | repeat whole list / current file | `5A 05 05 F5` / `5A 06 06 F5` |
 | 07 | format memory card | `5A 07 07 F5` |
 | 08 | factory reset | `5A 08 08 F5` |
-| 09 / 0A | breathing light on / off | `5A 09 09 F5` / `5A 0A 0A F5` |
+| 09 / 0A | breathing light on / off: a status light, all LEDs light up in one colour now and then to show the fan is on (most app languages call it "status light"; seen on a P56) | `5A 09 09 F5` / `5A 0A 0A F5` |
 | 0B / 0C | autostart on / off | `5A 0B 0B F5` / `5A 0C 0C F5` |
 | 0D | heartbeat / request status | `5A 0D 0D F5` |
 | 10 | cancel transfer | `5A 10 10 F5` |

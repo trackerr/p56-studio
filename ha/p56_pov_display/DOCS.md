@@ -72,7 +72,7 @@ Add it, and every fan that connects becomes a device:
 | --- | --- |
 | `light.<fan>` | Picture on/off and brightness (16 steps) |
 | `switch.<fan>_playing` | Play / pause |
-| `switch.<fan>_breathing_light`, `switch.<fan>_start_on_power`, `switch.<fan>_master` | The fan's breathing light, starting by itself when it gets power, and group master |
+| `switch.<fan>_breathing_light`, `switch.<fan>_start_on_power`, `switch.<fan>_master` | The fan's status light (all LEDs light up in one colour now and then, to show that the fan is on), starting by itself when it gets power, and group master |
 | `select.<fan>_file` | What plays (the playlist) |
 | `select.<fan>_repeat` | Repeat all files or one |
 | `number.<fan>_picture_angle` | Rotate the picture (−180 … 180°) |
@@ -185,7 +185,13 @@ data:
 (option `comfyui_url`, see below) or an AI Task of Home Assistant such as Google Generative AI.
 The add-on adds only what the fan needs: a black background and the subject in the middle. `kind: still` (default)
 shows it as it is, and `spin` turns the object round its own upright axis (as on a turntable,
-one turn in 2.4 s). `art_style` sets how it is drawn: `photo`, `3d`, `cartoon`, `anime`,
+one turn in 2.4 s). `kind: 3d` makes a **real 3D model** of the object with ComfyUI (Trellis 2)
+and shows it turning, seen from all sides (60 views, one turn in 3.6 s). It takes about 2
+minutes on a laptop graphics card; the add-on keeps the model (in its own `/data/ai`), so the same
+prompt again is there at once, also after a restart (`fresh: true` makes a new one). Only with
+ComfyUI; it needs the files of ComfyUI's template *Pixal3D & TRELLIS.2: Image to Model*
+(`trellis_2…` in `diffusion_models`, the Trellis 2 shape and texture VAEs, `dino…` in
+`clip_vision` and `birefnet` in `background_removal`). `art_style` sets how it is drawn: `photo`, `3d`, `cartoon`, `anime`,
 `painting`, `watercolor`, `pixel`, `neon`, `line`, `comic`, or any words of your own; without it
 the AI follows the prompt. White margins the AI sometimes adds become black. `entity_id` picks the AI Task, or
 `comfyui` for ComfyUI (below); by default ComfyUI when it is set up, otherwise the first AI Task

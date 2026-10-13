@@ -232,6 +232,7 @@ show_ai:
           options:
             - still
             - spin
+            - "3d"
           translation_key: ai_kind
     art_style:
       selector:

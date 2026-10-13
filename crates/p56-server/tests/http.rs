@@ -1051,19 +1051,30 @@ fn fake_comfyui() -> (u16, std::sync::Arc<std::sync::Mutex<Vec<Value>>>) {
             let url = req.url().to_string();
             let json_reply = |v: Value| tiny_http::Response::from_string(v.to_string());
             let r = match url.split('?').next().unwrap_or_default() {
-                "/models/diffusion_models" => {
-                    json_reply(json!(["flux.safetensors", "qwen_image_2.1_int8.safetensors", "qwen_image_2.1_turbo_int8.safetensors"]))
-                }
+                "/models/diffusion_models" => json_reply(json!([
+                    "flux.safetensors",
+                    "qwen_image_2.1_int8.safetensors",
+                    "qwen_image_2.1_turbo_int8.safetensors",
+                    "trellis_2_int8.safetensors"
+                ])),
                 "/models/text_encoders" => json_reply(json!(["qwen3vl_8b_int8.safetensors"])),
-                "/models/vae" => json_reply(json!(["qwen_image_2.1_vae_bf16.safetensors"])),
+                "/models/vae" => {
+                    json_reply(json!(["qwen_image_2.1_vae_bf16.safetensors", "trellis_2_shape_vae_bf16.safetensors", "trellis_2_texture_vae_bf16.safetensors"]))
+                }
+                "/models/clip_vision" => json_reply(json!(["dino_v3_L_naf_fp32.safetensors"])),
+                "/models/background_removal" => json_reply(json!(["birefnet.safetensors"])),
                 "/prompt" => {
                     seen.lock().unwrap().push(serde_json::from_str::<Value>(&body).unwrap_or(Value::Null));
                     json_reply(json!({ "prompt_id": "job1" }))
                 }
-                "/history/job1" => json_reply(json!({ "job1": {
-                    "status": { "status_str": "success" },
-                    "outputs": { "9": { "images": [{ "filename": "p56 1.png", "subfolder": "", "type": "temp" }] } }
-                } })),
+                "/history/job1" => {
+                    // a picture (node 9), and the views round a 3D model (nodes 300…)
+                    let mut outputs = serde_json::Map::new();
+                    for node in std::iter::once(9).chain(300..360) {
+                        outputs.insert(node.to_string(), json!({ "images": [{ "filename": "p56 1.png", "subfolder": "", "type": "temp" }] }));
+                    }
+                    json_reply(json!({ "job1": { "status": { "status_str": "success" }, "outputs": outputs } }))
+                }
                 "/view" if url.contains("filename=p56%201.png") && url.contains("type=temp") => tiny_http::Response::from_data(image_png()),
                 _ => tiny_http::Response::from_string("not found").with_status_code(404),
             };
@@ -1158,4 +1169,36 @@ fn a_fan_that_was_off_spins_up_on_black_first() {
     assert_eq!(st.cast_ok, cast_before, "nothing cast");
     assert!(st.commands[commands_before.min(st.commands.len())..].iter().any(|c| c == "select"), "{:?}", st.commands);
     assert!(st.protocol_errors.is_empty(), "{:?}", st.protocol_errors);
+}
+
+/// A real 3D model (`kind: 3d`): only with ComfyUI, made by Trellis 2 and rendered from all round
+/// (60 views), and kept: the same prompt again, also after a restart, is not made again.
+#[test]
+fn a_real_3d_model_from_comfyui_is_kept() {
+    let (port, sent) = fake_comfyui();
+    let comfy = format!("http://127.0.0.1:{port}");
+    let dir = std::env::temp_dir().join(format!("p56-ai3d-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let args = ["--comfyui", comfy.as_str(), "--ai-dir", dir.to_str().unwrap()];
+    let s = start_env(false, &args, &[]);
+    let model = s.call("ai_image", json!({ "prompt": "a treasure chest", "kind": "3d" }));
+    assert_eq!(model["frames"], 60, "{model}");
+    let graph = sent.lock().unwrap()[0]["prompt"].clone();
+    assert_eq!(graph["30"]["inputs"]["unet_name"], "trellis_2_int8.safetensors");
+    assert_eq!(graph["51"]["class_type"], "RemeshMesh");
+    assert_eq!(graph["359"]["class_type"], "PreviewImage");
+    assert_eq!(graph["159"]["inputs"]["mode.yaw"], 354.0);
+    let words = graph["5"]["inputs"]["prompt"].as_str().unwrap();
+    assert!(words.contains("a treasure chest") && words.contains("slightly above"), "{words}");
+    // the same again: from the store, nothing sent to ComfyUI
+    assert_eq!(s.call("ai_image", json!({ "prompt": "a treasure chest", "kind": "3d" }))["frames"], 60);
+    assert_eq!(sent.lock().unwrap().len(), 1);
+    drop(s);
+    let s = start_env(false, &args, &[]);
+    assert_eq!(s.call("ai_image", json!({ "prompt": "a treasure chest", "kind": "3d" }))["frames"], 60);
+    assert_eq!(sent.lock().unwrap().len(), 1, "kept across a restart");
+    // only ComfyUI makes 3D models
+    let (_, v) = s.post("/api/call/ai_image", json!({ "prompt": "a chest", "kind": "3d", "entity_id": "ai_task.google_ai_task" }));
+    assert_eq!(v["ok"], false, "{v}");
+    let _ = std::fs::remove_dir_all(&dir);
 }

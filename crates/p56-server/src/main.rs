@@ -66,6 +66,10 @@ struct Args {
     /// Size of ComfyUI's pictures in pixels (square; a P56 shows about 344 across).
     #[arg(long, default_value_t = 768)]
     comfyui_size: u32,
+    /// Keep real 3D models (`kind: 3d`) in this folder, so the same one is there at once next
+    /// time, also after a restart.
+    #[arg(long)]
+    ai_dir: Option<std::path::PathBuf>,
     /// Write the HTTP and TCP ports in use to this file ({"http": …, "tcp": …}) once both are
     /// open: how tests find the ports that port 0 picked.
     #[arg(long, hide = true)]
@@ -243,6 +247,9 @@ fn main() {
             Ok(()) => log::info!("AI pictures from ComfyUI at {}", url.trim()),
             Err(e) => log::error!("{e}"),
         }
+    }
+    if let Some(dir) = args.ai_dir.clone() {
+        ai::keep_3d_in(dir);
     }
     let subs: Subscribers = Arc::new(Mutex::new(Vec::new()));
     let svc = start_service(&args, subs.clone());

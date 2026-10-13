@@ -1,8 +1,10 @@
 //! AI pictures: a prompt becomes a still, an object turning round its own axis, or a short
 //! animation for the fan. They are made by ComfyUI on a computer in the house (`--comfyui`), or
 //! through Home Assistant's AI Task (only in the add-on), by whatever AI the user set up there
-//! (Google, OpenAI, …). No key or account is kept here.
+//! (Google, OpenAI, …). No key or account is kept here. With ComfyUI an object can also be made
+//! as a real 3D model (Trellis 2) and turned round on all sides.
 
+use std::path::PathBuf;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
@@ -20,6 +22,12 @@ const SPIN_MS: u32 = 100;
 /// A drawn animation: a 4×4 sheet of frames.
 const SHEET: u32 = 4;
 const SHEET_MS: u32 = 125;
+/// A real 3D model: views round it, 6° apart (one turn in 3.6 s; 24 looked like a slideshow), and
+/// how long making one may take (about 2 minutes on a laptop graphics card).
+const REAL3D_VIEWS: u32 = 60;
+const REAL3D_MS: u32 = 60;
+const REAL3D_SIZE: u32 = 384;
+const REAL3D_TIMEOUT: Duration = Duration::from_secs(600);
 
 /// What to make of the prompt.
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -33,6 +41,8 @@ pub enum Kind {
     Anim,
     /// A background for text written over it (`show_ai` with `text`): a whole, simple picture of the theme.
     Backdrop,
+    /// A real 3D model of the object (ComfyUI with Trellis 2), seen turning round on all sides.
+    Real3d,
 }
 
 impl Kind {
@@ -41,7 +51,8 @@ impl Kind {
             "" | "still" => Ok(Kind::Still),
             "spin" => Ok(Kind::Spin),
             "anim" | "animation" => Ok(Kind::Anim),
-            _ => Err(format!("unknown kind '{s}' (still, spin or anim)")),
+            "3d" | "real3d" => Ok(Kind::Real3d),
+            _ => Err(format!("unknown kind '{s}' (still, spin, 3d or anim)")),
         }
     }
 }
@@ -86,6 +97,8 @@ pub fn instructions(prompt: &str, kind: Kind, style: Option<&str>) -> String {
     let body = match kind {
         Kind::Still => format!("A square image {LOOK}\nSubject: {prompt}"),
         Kind::Spin => format!("A square image, the subject seen straight from the front, {LOOK}\nSubject: {prompt}"),
+        // the model is made from this one picture: the whole object, a little from above
+        Kind::Real3d => format!("A square image, the whole subject seen from the front and slightly above, {LOOK}\nSubject: {prompt}"),
         // A whole picture: the text is written over it, on a darkened band. The theme sits inside
         // the sentence (at the end Qwen Image drew random things) but not in quotes (then it
         // writes it out), and the background is darker, not dark (dark everywhere shows nothing).
@@ -121,6 +134,13 @@ pub struct Comfy {
     pub size: u32,
 }
 static COMFY: OnceLock<Comfy> = OnceLock::new();
+/// Where real 3D models are kept (their views), so the same one is there at once next time.
+static KEEP_3D: OnceLock<PathBuf> = OnceLock::new();
+
+/// Keep the views of real 3D models in `dir` (e.g. /data/ai in the add-on).
+pub fn keep_3d_in(dir: PathBuf) {
+    let _ = KEEP_3D.set(dir);
+}
 
 /// Make pictures with ComfyUI at `url` (`http://host:port`), `size` pixels square (rounded to a
 /// multiple of 64, 256–1536).
@@ -187,6 +207,9 @@ pub fn generate(
         return Err("describe the picture first".into());
     }
     let instructions = instructions(prompt, kind, style);
+    if kind == Kind::Real3d {
+        return real_3d(entity, &instructions, fresh);
+    }
     // the AIs to try in turn: the one asked for, or ComfyUI and then Home Assistant's
     let mut sources: Vec<String> = match entity.filter(|e| !e.is_empty()) {
         Some(COMFYUI) if comfy().is_some() => vec![COMFYUI.into()],
@@ -257,48 +280,31 @@ fn ha_picture(base: &str, token: &str, entity: &str, instructions: &str) -> Resu
     fetch_picture(base, token, path)
 }
 
-/// A picture from ComfyUI with Qwen Image 2.1 (the turbo model when it is there), in the size set
-/// up (an animation sheet at least 1024).
-fn comfy_picture(c: &Comfy, instructions: &str, kind: Kind) -> Result<Vec<u8>, String> {
-    let get = |path: &str| -> Result<Value, String> {
-        let (code, body) = crate::http_request("GET", &format!("{}{path}", c.url), None, "application/json", None, Duration::from_secs(10))
-            .map_err(|e| format!("ComfyUI not reachable: {e}"))?;
-        if code != 200 {
-            return Err(format!("ComfyUI {path}: HTTP {code}"));
-        }
-        serde_json::from_slice(&body).map_err(|e| format!("ComfyUI {path}: {e}"))
-    };
-    let pick = |folder: &str, want: &dyn Fn(&str) -> bool| -> Result<String, String> {
-        let list = get(&format!("/models/{folder}"))?;
-        let names: Vec<&str> =
-            list.as_array().map(|a| a.iter().filter_map(|n| n.as_str()).filter(|n| want(&n.to_ascii_lowercase())).collect()).unwrap_or_default();
-        // the turbo model first (8 steps instead of 25)
-        names
-            .iter()
-            .find(|n| n.to_ascii_lowercase().contains("turbo"))
-            .or(names.first())
-            .map(|n| n.to_string())
-            .ok_or_else(|| format!("ComfyUI has no Qwen Image 2.1 file in models/{folder}"))
-    };
-    let unet = pick("diffusion_models", &|n| n.contains("qwen_image_2.1") || n.contains("qwen-image-2.1"))?;
-    let clip = pick("text_encoders", &|n| n.contains("qwen3vl") || n.contains("qwen3_vl") || n.contains("qwen_2.5_vl"))?;
-    let vae = pick("vae", &|n| n.contains("qwen_image_2.1") || n.contains("qwen-image-2.1"))?;
-    let steps = if unet.to_ascii_lowercase().contains("turbo") { 8 } else { 25 };
-    let size = if kind == Kind::Anim { c.size.max(1024) } else { c.size };
-    let seed = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos() as u64 & 0xffff_ffff_ffff).unwrap_or(1);
-    let graph = json!({
-        "1": { "class_type": "UNETLoader", "inputs": { "unet_name": unet, "weight_dtype": "default" } },
-        "2": { "class_type": "QwenImage21Cache", "inputs": { "model": ["1", 0], "device": "auto", "dtype": "default" } },
-        "3": { "class_type": "CLIPLoader", "inputs": { "clip_name": clip, "type": "qwen_image", "device": "default" } },
-        "4": { "class_type": "VAELoader", "inputs": { "vae_name": vae } },
-        "5": { "class_type": "TextEncodeQwenImage21", "inputs": { "clip": ["3", 0], "prompt": instructions, "negative_prompt": "", "resolution": 1024 } },
-        "6": { "class_type": "EmptyLatentImage", "inputs": { "width": size, "height": size, "batch_size": 1 } },
-        "7": { "class_type": "KSampler", "inputs": { "model": ["2", 0], "positive": ["5", 0], "negative": ["5", 1], "latent_image": ["6", 0],
-            "seed": seed, "steps": steps, "cfg": 1.0, "sampler_name": "euler", "scheduler": "simple", "denoise": 1.0 } },
-        "8": { "class_type": "VAEDecode", "inputs": { "samples": ["7", 0], "vae": ["4", 0] } },
-        // a preview, not a saved file: nothing piles up on that computer
-        "9": { "class_type": "PreviewImage", "inputs": { "images": ["8", 0] } },
-    });
+/// A GET on ComfyUI's API, as JSON.
+fn comfy_get(c: &Comfy, path: &str) -> Result<Value, String> {
+    let (code, body) = crate::http_request("GET", &format!("{}{path}", c.url), None, "application/json", None, Duration::from_secs(10))
+        .map_err(|e| format!("ComfyUI not reachable: {e}"))?;
+    if code != 200 {
+        return Err(format!("ComfyUI {path}: HTTP {code}"));
+    }
+    serde_json::from_slice(&body).map_err(|e| format!("ComfyUI {path}: {e}"))
+}
+
+/// A model file in ComfyUI's `models/<folder>` that `want` accepts (its name in lower case): one
+/// with "turbo" in its name first (8 steps instead of 25). `what` names it in the error.
+fn comfy_pick(c: &Comfy, folder: &str, what: &str, want: &dyn Fn(&str) -> bool) -> Result<String, String> {
+    let list = comfy_get(c, &format!("/models/{folder}"))?;
+    let names: Vec<&str> = list.as_array().map(|a| a.iter().filter_map(|n| n.as_str()).filter(|n| want(&n.to_ascii_lowercase())).collect()).unwrap_or_default();
+    names
+        .iter()
+        .find(|n| n.to_ascii_lowercase().contains("turbo"))
+        .or(names.first())
+        .map(|n| n.to_string())
+        .ok_or_else(|| format!("ComfyUI has no {what} file in models/{folder}"))
+}
+
+/// Run a workflow on ComfyUI and wait for it (at most `timeout`): its history entry.
+fn comfy_run(c: &Comfy, graph: Value, timeout: Duration) -> Result<Value, String> {
     let body = serde_json::to_vec(&json!({ "prompt": graph, "client_id": "p56-server" })).unwrap_or_default();
     let (code, answer) = crate::http_request("POST", &format!("{}/prompt", c.url), None, "application/json", Some(&body), Duration::from_secs(20))
         .map_err(|e| format!("ComfyUI not reachable: {e}"))?;
@@ -307,10 +313,10 @@ fn comfy_picture(c: &Comfy, instructions: &str, kind: Kind) -> Result<Vec<u8>, S
         let why = answer["error"]["message"].as_str().map(String::from).unwrap_or_else(|| format!("HTTP {code}"));
         format!("ComfyUI refused the picture: {why} {}", answer["node_errors"]).trim().to_string()
     })?;
-    let deadline = Instant::now() + GENERATE_TIMEOUT;
+    let deadline = Instant::now() + timeout;
     let done = loop {
         std::thread::sleep(Duration::from_millis(500));
-        if let Some(h) = get(&format!("/history/{id}"))?.get(id).cloned() {
+        if let Some(h) = comfy_get(c, &format!("/history/{id}"))?.get(id).cloned() {
             break h;
         }
         if Instant::now() > deadline {
@@ -320,7 +326,11 @@ fn comfy_picture(c: &Comfy, instructions: &str, kind: Kind) -> Result<Vec<u8>, S
     if done["status"]["status_str"].as_str() != Some("success") {
         return Err(format!("ComfyUI failed: {}", done["status"]["messages"]).chars().take(400).collect());
     }
-    let img = done["outputs"].as_object().and_then(|o| o.values().find_map(|v| v["images"].get(0).cloned())).ok_or("ComfyUI made no picture")?;
+    Ok(done)
+}
+
+/// The picture behind one output image of a finished workflow (`{filename, subfolder, type}`).
+fn comfy_view(c: &Comfy, img: &Value) -> Result<Vec<u8>, String> {
     let q = |k: &str| {
         img[k]
             .as_str()
@@ -343,6 +353,174 @@ fn comfy_picture(c: &Comfy, instructions: &str, kind: Kind) -> Result<Vec<u8>, S
     Ok(png)
 }
 
+/// The nodes "1"–"8" that draw `instructions` with Qwen Image 2.1, `size` pixels square; the
+/// picture is output 0 of node "8".
+fn qwen_nodes(c: &Comfy, instructions: &str, size: u32) -> Result<serde_json::Map<String, Value>, String> {
+    let unet = comfy_pick(c, "diffusion_models", "Qwen Image 2.1", &|n| n.contains("qwen_image_2.1") || n.contains("qwen-image-2.1"))?;
+    let clip = comfy_pick(c, "text_encoders", "Qwen Image 2.1", &|n| n.contains("qwen3vl") || n.contains("qwen3_vl") || n.contains("qwen_2.5_vl"))?;
+    let vae = comfy_pick(c, "vae", "Qwen Image 2.1", &|n| n.contains("qwen_image_2.1") || n.contains("qwen-image-2.1"))?;
+    let steps = if unet.to_ascii_lowercase().contains("turbo") { 8 } else { 25 };
+    let graph = json!({
+        "1": { "class_type": "UNETLoader", "inputs": { "unet_name": unet, "weight_dtype": "default" } },
+        "2": { "class_type": "QwenImage21Cache", "inputs": { "model": ["1", 0], "device": "auto", "dtype": "default" } },
+        "3": { "class_type": "CLIPLoader", "inputs": { "clip_name": clip, "type": "qwen_image", "device": "default" } },
+        "4": { "class_type": "VAELoader", "inputs": { "vae_name": vae } },
+        "5": { "class_type": "TextEncodeQwenImage21", "inputs": { "clip": ["3", 0], "prompt": instructions, "negative_prompt": "", "resolution": 1024 } },
+        "6": { "class_type": "EmptyLatentImage", "inputs": { "width": size, "height": size, "batch_size": 1 } },
+        "7": { "class_type": "KSampler", "inputs": { "model": ["2", 0], "positive": ["5", 0], "negative": ["5", 1], "latent_image": ["6", 0],
+            "seed": seed(), "steps": steps, "cfg": 1.0, "sampler_name": "euler", "scheduler": "simple", "denoise": 1.0 } },
+        "8": { "class_type": "VAEDecode", "inputs": { "samples": ["7", 0], "vae": ["4", 0] } },
+    });
+    Ok(graph.as_object().cloned().unwrap_or_default())
+}
+
+fn seed() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos() as u64 & 0xffff_ffff_ffff).unwrap_or(1)
+}
+
+/// A picture from ComfyUI with Qwen Image 2.1 (the turbo model when it is there), in the size set
+/// up (an animation sheet at least 1024).
+fn comfy_picture(c: &Comfy, instructions: &str, kind: Kind) -> Result<Vec<u8>, String> {
+    let size = if kind == Kind::Anim { c.size.max(1024) } else { c.size };
+    let mut graph = qwen_nodes(c, instructions, size)?;
+    // a preview, not a saved file: nothing piles up on that computer
+    graph.insert("9".into(), json!({ "class_type": "PreviewImage", "inputs": { "images": ["8", 0] } }));
+    let done = comfy_run(c, Value::Object(graph), GENERATE_TIMEOUT)?;
+    let img = done["outputs"]["9"]["images"].get(0).cloned().ok_or("ComfyUI made no picture")?;
+    comfy_view(c, &img)
+}
+
+/// A real 3D model of the object, as views round it: from the store when it was made before
+/// (unless `fresh`), else made by ComfyUI and kept.
+fn real_3d(entity: Option<&str>, instructions: &str, fresh: bool) -> Result<(Vec<RgbImage>, u32), String> {
+    if entity.is_some_and(|e| !e.is_empty() && e != COMFYUI) {
+        return Err("a real 3D model can only be made by ComfyUI".into());
+    }
+    let c = comfy().ok_or("a real 3D model needs ComfyUI (add-on option comfyui_url)")?;
+    let key = format!("{COMFYUI}\n3d\n{instructions}");
+    let dir = KEEP_3D.get().map(|d| d.join(format!("{:016x}", fnv(&key))));
+    if !fresh {
+        if let Some(views) = dir.as_ref().and_then(|d| load_views(d)) {
+            log::info!("3D model from the store ({} views)", views.len());
+            return Ok((views, REAL3D_MS));
+        }
+        if let Some((_, images, ms)) = MADE.lock().unwrap().iter().find(|(k, _, _)| *k == key) {
+            log::info!("3D model made before");
+            return Ok((images.clone(), *ms));
+        }
+    }
+    let started = Instant::now();
+    let views = comfy_3d(c, instructions)?;
+    log::info!("3D model from comfyui: {} views in {:.0} s", views.len(), started.elapsed().as_secs_f64());
+    match &dir {
+        Some(d) => save_views(d, &views, &key),
+        None => {
+            let mut kept = MADE.lock().unwrap();
+            kept.retain(|(k, _, _)| !k.starts_with(&format!("{COMFYUI}\n3d\n")));
+            kept.push((key, views.clone(), REAL3D_MS));
+        }
+    }
+    Ok((views, REAL3D_MS))
+}
+
+/// FNV-1a: a name for a stored 3D model that stays the same across versions.
+fn fnv(s: &str) -> u64 {
+    s.bytes().fold(0xcbf2_9ce4_8422_2325, |h, b| (h ^ b as u64).wrapping_mul(0x0100_0000_01b3))
+}
+
+fn load_views(dir: &std::path::Path) -> Option<Vec<RgbImage>> {
+    let views: Vec<RgbImage> = (0..REAL3D_VIEWS)
+        .map(|i| std::fs::read(dir.join(format!("{i:02}.jpg"))).ok().and_then(|b| image::load_from_memory(&b).ok()).map(|i| i.to_rgb8()))
+        .collect::<Option<Vec<_>>>()?;
+    Some(views)
+}
+
+fn save_views(dir: &std::path::Path, views: &[RgbImage], key: &str) {
+    let saved = std::fs::create_dir_all(dir).and_then(|_| {
+        for (i, v) in views.iter().enumerate() {
+            std::fs::write(dir.join(format!("{i:02}.jpg")), transcode::jpeg(v, 90))?;
+        }
+        std::fs::write(dir.join("prompt.txt"), key)
+    });
+    if let Err(e) = saved {
+        log::warn!("3D model not kept in {}: {e}", dir.display());
+    }
+}
+
+/// Make a real 3D model with ComfyUI: Qwen Image 2.1 draws the object, its background is cut
+/// away, Trellis 2 makes a coloured model of it, and that is rendered from all round. Tried on a
+/// laptop graphics card: about 2 minutes. The detail upsampling and mesh decimation of the
+/// template are left out (they took over ten minutes); a coarse remesh is plenty for the fan.
+fn comfy_3d(c: &Comfy, instructions: &str) -> Result<Vec<RgbImage>, String> {
+    let trellis = comfy_pick(c, "diffusion_models", "Trellis 2", &|n| n.contains("trellis_2") || n.contains("trellis2"))?;
+    let shape_vae = comfy_pick(c, "vae", "Trellis 2 shape VAE", &|n| (n.contains("trellis_2") || n.contains("trellis2")) && n.contains("shape"))?;
+    let texture_vae = comfy_pick(c, "vae", "Trellis 2 texture VAE", &|n| (n.contains("trellis_2") || n.contains("trellis2")) && n.contains("texture"))?;
+    let dino = comfy_pick(c, "clip_vision", "DINOv3 (Trellis 2)", &|n| n.contains("dino"))?;
+    let cutter = comfy_pick(c, "background_removal", "background removal (BiRefNet)", &|_| true)?;
+    let s = seed() & 0xffff_ffff;
+    let mut g = qwen_nodes(c, instructions, 1024)?;
+    let more = json!({
+        // the object cut out of its background, in a square
+        "20": { "class_type": "LoadBackgroundRemovalModel", "inputs": { "bg_removal_name": cutter } },
+        "21": { "class_type": "RemoveBackground", "inputs": { "bg_removal_model": ["20", 0], "image": ["8", 0] } },
+        "22": { "class_type": "ImageCropToMask", "inputs": { "images": ["8", 0], "masks": ["21", 0], "width": 1024, "height": 1024,
+            "pad_factor": 1.1, "grow_mask": 0, "background": "#000000" } },
+        // Trellis 2: structure, shape and colour (the settings of ComfyUI's own template)
+        "30": { "class_type": "UNETLoader", "inputs": { "unet_name": trellis, "weight_dtype": "default" } },
+        "31": { "class_type": "CLIPVisionLoader", "inputs": { "clip_name": dino } },
+        "32": { "class_type": "VAELoader", "inputs": { "vae_name": shape_vae } },
+        "33": { "class_type": "VAELoader", "inputs": { "vae_name": texture_vae } },
+        "34": { "class_type": "Trellis2Conditioning", "inputs": { "clip_vision_model": ["31", 0], "image": ["22", 0] } },
+        "35": { "class_type": "CFGOverride", "inputs": { "model": ["30", 0], "cfg": 1.0, "start_percent": 0.667, "end_percent": 1.0 } },
+        "36": { "class_type": "RescaleCFG", "inputs": { "model": ["35", 0], "multiplier": 0.7 } },
+        "37": { "class_type": "ModelSamplingSD3", "inputs": { "model": ["36", 0], "shift": 5.0 } },
+        "38": { "class_type": "EmptyTrellis2LatentStructure", "inputs": { "batch_size": 1 } },
+        "39": { "class_type": "KSampler", "inputs": { "model": ["37", 0], "positive": ["34", 0], "negative": ["34", 1], "latent_image": ["38", 0],
+            "seed": s, "steps": 12, "cfg": 7.5, "sampler_name": "euler", "scheduler": "normal", "denoise": 1.0 } },
+        "40": { "class_type": "VaeDecodeStructureTrellis2", "inputs": { "samples": ["39", 0], "vae": ["32", 0], "resolution": "32" } },
+        "41": { "class_type": "Trellis2ShapeStage", "inputs": { "positive": ["34", 0], "negative": ["34", 1], "voxel": ["40", 0] } },
+        "42": { "class_type": "CFGOverride", "inputs": { "model": ["30", 0], "cfg": 1.0, "start_percent": 0.769, "end_percent": 1.0 } },
+        "43": { "class_type": "RescaleCFG", "inputs": { "model": ["42", 0], "multiplier": 0.5 } },
+        "44": { "class_type": "KSampler", "inputs": { "model": ["43", 0], "positive": ["41", 0], "negative": ["41", 1], "latent_image": ["41", 2],
+            "seed": s, "steps": 20, "cfg": 7.5, "sampler_name": "euler", "scheduler": "normal", "denoise": 1.0 } },
+        "47": { "class_type": "VaeDecodeShapeTrellis", "inputs": { "samples": ["44", 0], "vae": ["32", 0] } },
+        "48": { "class_type": "Trellis2TextureStage", "inputs": { "positive": ["41", 0], "negative": ["41", 1], "shape_latent": ["44", 0] } },
+        "49": { "class_type": "KSampler", "inputs": { "model": ["30", 0], "positive": ["48", 0], "negative": ["48", 1], "latent_image": ["48", 2],
+            "seed": s + 1, "steps": 12, "cfg": 1.0, "sampler_name": "euler", "scheduler": "normal", "denoise": 1.0 } },
+        "50": { "class_type": "VaeDecodeTextureTrellis", "inputs": { "samples": ["49", 0], "vae": ["33", 0], "shape_subdivides": ["47", 1] } },
+        // a coarse mesh (about 25,000 faces) renders 60 times in seconds; the full one took minutes
+        "51": { "class_type": "RemeshMesh", "inputs": { "mesh": ["47", 0], "resolution": 128, "sign_mode": "udf", "sign_mode.qef": false,
+            "sign_mode.drop_inverted_components": false, "sign_mode.drop_enclosed_components": false, "band": 1.0, "project_back": 0.0,
+            "fix_poles": false, "smooth_iters": 0, "drop_small_components": 0.01, "precluster_max_verts": 20_000_000 } },
+        "52": { "class_type": "MeshSmoothNormals", "inputs": { "mesh": ["51", 0], "crease_angle": 180.0 } },
+        "53": { "class_type": "PaintMesh", "inputs": { "mesh": ["52", 0], "voxel_colors": ["50", 0] } },
+    });
+    g.extend(more.as_object().cloned().unwrap_or_default());
+    // views from all round, at the same distance, so the object does not grow or shrink
+    for v in 0..REAL3D_VIEWS {
+        let yaw = v as f64 * 360.0 / REAL3D_VIEWS as f64;
+        g.insert(
+            format!("{}", 100 + v),
+            json!({ "class_type": "CreateCameraInfo", "inputs": { "mode": "orbit", "mode.yaw": yaw, "mode.pitch": 12.0,
+            "mode.distance": 2.4, "target_x": 0.0, "target_y": 0.0, "target_z": 0.0, "roll": 0.0, "fov": 35.0, "zoom": 1.0, "camera_type": "perspective" } }),
+        );
+        g.insert(
+            format!("{}", 200 + v),
+            json!({ "class_type": "RenderMesh", "inputs": { "mesh": ["53", 0], "mode": "vertex colors",
+            "width": REAL3D_SIZE, "height": REAL3D_SIZE, "background": "#000000", "camera_info": [format!("{}", 100 + v), 0] } }),
+        );
+        g.insert(format!("{}", 300 + v), json!({ "class_type": "PreviewImage", "inputs": { "images": [format!("{}", 200 + v), 0] } }));
+    }
+    let done = comfy_run(c, Value::Object(g), REAL3D_TIMEOUT)?;
+    (0..REAL3D_VIEWS)
+        .map(|v| {
+            let img = done["outputs"][format!("{}", 300 + v)]["images"].get(0).cloned().ok_or("ComfyUI rendered no view")?;
+            let bytes = comfy_view(c, &img)?;
+            transcode::decode_rgb(&bytes).map_err(|e| format!("cannot read a view: {e}"))
+        })
+        .collect()
+}
+
 /// The AI's picture turned into frames for the fan, and kept under `key`.
 fn finish(entity: &str, key: &str, bytes: &[u8], kind: Kind) -> Result<(Vec<RgbImage>, u32), String> {
     let mut img = transcode::decode_rgb(bytes).map_err(|e| format!("cannot read the AI's picture: {e}"))?;
@@ -357,6 +535,7 @@ fn finish(entity: &str, key: &str, bytes: &[u8], kind: Kind) -> Result<(Vec<RgbI
             (turntable(&centred, SPIN_FRAMES), SPIN_MS)
         }
         Kind::Anim => (sheet(&img, SHEET), SHEET_MS),
+        Kind::Real3d => (vec![transcode::fit(img, p56_service::MAX_SIDE)], 0),
     };
     let mut kept = MADE.lock().unwrap();
     kept.retain(|(k, _, _)| *k != key);

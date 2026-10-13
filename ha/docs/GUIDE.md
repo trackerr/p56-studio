@@ -200,12 +200,18 @@ is off, the AI of way B is used, if you set that up too.
 Other AIs in Home Assistant that offer an AI Task with pictures work the same way.
 
 **From the panel:** open **P56 POV → Media**. When an AI is available, an **AI picture** box
-appears: describe the picture (for example *a jellyfish*), choose **Still** or **Turning** and a
+appears: describe the picture (for example *a jellyfish*), choose **Still**, **Turning** or **Real 3D** and a
 **Style** (or leave it on *As described* and put the style in your words), and press **Make**. After 5–30 seconds (ComfyUI: 5–10) it is in the preview, ready for **Upload**
 or the **Cast** tab like any other picture; a turning picture plays in the preview (pause it with
 the button next to the frame slider). A black background and one bold subject in the
 middle are asked for automatically, because the fan shows black as transparent; the style is
 up to you.
+
+**Real 3D** (only with ComfyUI) makes an actual 3D model of the object and shows it turning, from
+the front, the sides and the back: a pumpkin for Halloween, a Christmas tree, a treasure chest.
+It takes about 2 minutes the first time; the add-on keeps it, so the same description again is
+there at once, also next year. In ComfyUI install the template **Pixal3D & TRELLIS.2: Image to
+Model** with its files as well.
 
 **From an automation:**
 
@@ -213,7 +219,7 @@ up to you.
 action: p56_pov.show_ai
 data:
   prompt: a neon jellyfish
-  kind: spin          # still, or spin (turning round its own axis)
+  kind: spin          # still, spin (turning round its own axis) or 3d (a real 3D model, ComfyUI, ~2 min)
   art_style: photo    # or 3d, cartoon, anime, painting, watercolor, pixel, neon, line, comic, or your own words
   show_seconds: 60
 ```

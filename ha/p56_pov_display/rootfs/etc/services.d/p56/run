@@ -15,6 +15,8 @@ fi
 args+=(--options-file /data/options.json --options-url http://supervisor/addons/self/info)
 # previews of uploaded files, kept across restarts
 args+=(--thumb-dir /data/thumbs)
+# real 3D models made by ComfyUI, kept across restarts
+args+=(--ai-dir /data/ai)
 # p56-server answers only this machine and Home Assistant unless --lan is given
 if bashio::config.true 'lan_api'; then
     args+=(--lan)

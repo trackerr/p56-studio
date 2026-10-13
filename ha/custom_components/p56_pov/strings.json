@@ -74,7 +74,8 @@
     "ai_kind": {
       "options": {
         "still": "Still",
-        "spin": "Turning round its own axis"
+        "spin": "Turning round its own axis",
+        "3d": "Real 3D model (ComfyUI, ~2 min)"
       }
     },
     "ai_style": {
@@ -407,7 +408,7 @@
         },
         "kind": {
           "name": "Kind",
-          "description": "A still picture, or the object turning round its own axis (as on a turntable)."
+          "description": "A still picture, the object turning round its own axis (as on a turntable), or a real 3D model of it seen from all sides (only with ComfyUI; takes about 2 minutes the first time, after that it is kept)."
         },
         "art_style": {
           "name": "Style",

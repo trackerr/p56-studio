@@ -74,7 +74,8 @@
     "ai_kind": {
       "options": {
         "still": "Stilstaand",
-        "spin": "Draaiend om de eigen as"
+        "spin": "Draaiend om de eigen as",
+        "3d": "Echt 3D-model (ComfyUI, ~2 min)"
       }
     },
     "ai_style": {
@@ -407,7 +408,7 @@
         },
         "kind": {
           "name": "Soort",
-          "description": "Een stilstaand plaatje, of het object dat om zijn eigen as draait (als op een draaiplateau)."
+          "description": "Een stilstaand plaatje, het object dat om zijn eigen as draait (als op een draaiplateau), of een echt 3D-model ervan, van alle kanten (alleen met ComfyUI; duurt de eerste keer zo'n 2 minuten, daarna wordt het bewaard)."
         },
         "art_style": {
           "name": "Stijl",
