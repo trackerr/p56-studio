@@ -1,12 +1,16 @@
 # Changelog
 
-## Unreleased
+## 2.1.21
+
+p56-server 0.3.21.
 
 - **AI pictures from your own computer:** option `comfyui_url` (and `comfyui_size`) makes
   `p56_pov.show_ai` and the panel's AI picture use ComfyUI with Qwen Image 2.1 in your house;
   Home Assistant's AI Task (e.g. Google) is the fallback. `entity_id: comfyui` picks it.
 - The AI is no longer told about the fan itself, so it does not paint a fan disc or a ring
   around the picture.
+- A background behind text shows objects that belong to its prompt (a washing machine for
+  "the laundry is done"), so every notification can get its own fitting picture.
 
 ## 2.1.20
 

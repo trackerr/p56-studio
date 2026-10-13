@@ -86,12 +86,13 @@ pub fn instructions(prompt: &str, kind: Kind, style: Option<&str>) -> String {
     let body = match kind {
         Kind::Still => format!("A square image {LOOK}\nSubject: {prompt}"),
         Kind::Spin => format!("A square image, the subject seen straight from the front, {LOOK}\nSubject: {prompt}"),
+        // the theme inside the sentence: at the end Qwen Image drew random objects around it
         Kind::Backdrop => format!(
-            "A square background picture on pure black (#000000). Large text will be written over its middle, so \
-             the middle stays dark and empty; the theme is shown around the edge, like a wreath of shapes. Keep \
-             it simple and not busy, so the text stays the main thing: a few bold, clean, brightly coloured \
-             shapes, little fine detail. Pure black elsewhere, up to every edge of the image, no white margin, no \
-             screen or device, no text, letters or numbers.\nTheme: {prompt}"
+            "A square background picture on pure black (#000000) about \"{prompt}\". Around the edge, like a \
+             wreath, a few bold, clean, brightly coloured objects that belong to \"{prompt}\", so anyone sees at \
+             once what it is about. The middle stays dark and empty, because large text will be written over it. \
+             Little fine detail, pure black elsewhere up to every edge of the image, no white margin, no screen or \
+             device, no text, letters or numbers."
         ),
         Kind::Anim => format!(
             "A square sprite sheet that fills the whole image on pure black, with no white or coloured margin, \
@@ -544,8 +545,9 @@ mod tests {
         assert!(instructions("fox", Kind::Still, Some("photo")).ends_with("Style: a realistic photograph"));
         assert!(instructions("fox", Kind::Still, Some(" Van Gogh ")).ends_with("Style: Van Gogh"));
         assert!(!instructions("fox", Kind::Still, Some("free")).contains("Style"));
-        // a background behind text (notifications, prices) stays simple
-        assert!(instructions("cheap power", Kind::Backdrop, None).contains("simple and not busy"));
+        // a background behind text (notifications, prices): simple, about the theme, empty middle
+        let b = instructions("cheap power", Kind::Backdrop, None);
+        assert!(b.contains("Little fine detail") && b.contains("belong to \"cheap power\"") && b.contains("middle stays dark"), "{b}");
     }
 
     #[test]

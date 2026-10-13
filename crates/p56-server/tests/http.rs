@@ -574,7 +574,7 @@ fn fake_home_assistant_counting() -> (u16, std::sync::Arc<std::sync::atomic::Ato
                     let ok = b["entity_id"] == "ai_task.google_ai_task"
                         && b["instructions"]
                             .as_str()
-                            .is_some_and(|i| i.contains("black") && (i.contains("Subject: a red fox") || i.contains("Theme: cheap power")));
+                            .is_some_and(|i| i.contains("black") && (i.contains("Subject: a red fox") || i.contains("about \"cheap power\"")));
                     if ok {
                         count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                         tiny_http::Response::from_data(
