@@ -94,6 +94,17 @@ function AngleBezel({ c, onPreview }: { c: RingControl; onPreview: (v: number | 
   // value 0 sits at 12 o'clock; -180 / +180 meet at 6 o'clock
   const { current, angle, handlers, onKeyDown } = useRing(c, -270, 360, onPreview);
   const { focus, bind } = useFocus();
+  // Chrome on Android ignores touch-action inside an SVG: a drag along the ring then became a
+  // page scroll after the first move (pointercancel). Hold on to a touch that starts on the ring.
+  const grip = useRef<SVGCircleElement>(null);
+  useEffect(() => {
+    const el = grip.current;
+    if (!el) return;
+    const hold = (e: TouchEvent) => { if (e.cancelable) e.preventDefault(); };
+    el.addEventListener('touchstart', hold, { passive: false });
+    el.addEventListener('touchmove', hold, { passive: false });
+    return () => { el.removeEventListener('touchstart', hold); el.removeEventListener('touchmove', hold); };
+  }, []);
   const L = circ(R_BEZEL);
   // the label rides just inside the bezel
   const [tx, ty] = polar(angle, R_BEZEL - 22);
@@ -105,7 +116,7 @@ function AngleBezel({ c, onPreview }: { c: RingControl; onPreview: (v: number | 
         <circle cx={C} cy={C} r={R_BEZEL} fill="none" stroke="hsl(var(--input))" strokeWidth={10} strokeDasharray={`1.2 ${L / 36 - 1.2}`} />
         <circle cx={C} cy={C} r={R_BEZEL} fill="none" stroke="hsl(var(--muted-foreground))" strokeWidth={16} strokeDasharray={`2 ${L / 4 - 2}`} />
         <path d={`M${C - 10} 2 L${C + 10} 2 L${C} 21 Z`} fill="hsl(var(--primary))" transform={`rotate(${angle + 90} ${C} ${C})`} />
-        <circle cx={C} cy={C} r={R_BEZEL} fill="none" stroke="transparent" strokeWidth={40}
+        <circle ref={grip} cx={C} cy={C} r={R_BEZEL} fill="none" stroke="transparent" strokeWidth={40}
           style={{ pointerEvents: c.disabled ? 'none' : 'stroke', cursor: 'grab', touchAction: 'none' }} {...handlers} />
       </g>
       <text x={tx} y={ty} textAnchor="middle" dominantBaseline="middle" className="pointer-events-none fill-primary font-sans" fontSize={13} fontWeight={500}>{c.format(current)}</text>

@@ -4,6 +4,14 @@ P56 Studio (Windows, Linux, Android), `p56` (CLI), `p56-sim` and `p56-server`.
 The Home Assistant add-on and integration have their own changelog in
 [`ha/p56_pov_display/CHANGELOG.md`](ha/p56_pov_display/CHANGELOG.md).
 
+## 0.3.27 — 2026-10-13
+
+### Fixed
+- Android: dragging the outer ring of the dial (turning the picture) stopped after the first
+  bit of movement, because Android took the touch over as a page scroll (Chrome ignores
+  `touch-action` inside an SVG). A touch that starts on the ring now stays with it; tried on a
+  Galaxy S24.
+
 ## 0.3.26 — 2026-10-13
 
 ### Changed

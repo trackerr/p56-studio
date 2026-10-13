@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.1.27
+
+p56-server 0.3.27, with integration 2.29.0.
+
+- Panel on a phone: dragging the outer ring of the dial (turning the picture) now keeps turning
+  as long as you hold it, instead of stopping after the first bit.
+
 ## 2.1.26
 
 p56-server 0.3.26, with integration 2.28.0.
