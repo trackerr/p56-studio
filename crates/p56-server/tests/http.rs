@@ -1030,6 +1030,8 @@ fn a_fan_that_was_off_goes_off_again_after_a_message() {
     // a fan that was on stays on
     s.call("control", json!({ "id": 1, "action": "on" }));
     wait("on", &|| fan.state().power);
+    // the server knows it too (a message reads the fan's state from the server)
+    s.wait("server sees the fan on", |v| v["devices"][0]["status"]["power"] == true);
     let (_, v) = s.post("/api/show", json!({ "text": "hello", "name": "hello", "show_seconds": 2 }));
     assert_eq!(v["success"], true, "{v}");
     wait("message gone", &|| !fan.state().files.iter().any(|f| f.name == "hello.mp4"));

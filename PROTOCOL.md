@@ -182,6 +182,8 @@ ON(01) · CAST_START(26) → 29 · ~70 ms · FRAME(28) FRAME(28) …   (no heart
   briefly and falls back. A real P56 shows the test card at 15 fps.
 - **No heartbeat (0D) or status poll (1C)** while casting: Holoscope.exe suppresses both.
 - **Stop:** nothing is sent; the frames simply stop.
+- **OFF (02) is ignored in live mode**, also right after the last frame (seen on a real P56,
+  2026-10-13): P56 Studio waits until 2 s after the last frame before switching a fan off.
 - A P56 with an empty playlist pauses itself, and a paused fan shows no cast frames: P56 Studio
   sends PLAY (04) first when the fan reports it is paused (confirmed on a real P56).
 

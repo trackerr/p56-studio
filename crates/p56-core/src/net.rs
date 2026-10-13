@@ -725,6 +725,11 @@ impl Link {
         self.cmd(id, &proto::on())
     }
     pub fn off(&self, id: u32) -> Result<(), Error> {
+        // a fan in live mode ignores "off": wait until a cast is over (up to 4 s)
+        let quiet_by = Instant::now() + Duration::from_secs(4);
+        while self.casting(id) && Instant::now() < quiet_by {
+            thread::sleep(Duration::from_millis(100));
+        }
         self.cmd(id, &proto::off())
     }
     pub fn play(&self, id: u32) -> Result<(), Error> {

@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.1.19
+
+p56-server 0.3.19.
+
+- A fan that was off and showed a message as a cast (`mode: cast`, e.g. `show_ai`) went black
+  afterwards but stayed on. It now goes off again, like after a stored message.
+
 ## 2.1.18
 
 p56-server 0.3.18.

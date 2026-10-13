@@ -4,6 +4,14 @@ P56 Studio (Windows, Linux, Android), `p56` (CLI), `p56-sim` and `p56-server`.
 The Home Assistant add-on and integration have their own changelog in
 [`ha/p56_pov_display/CHANGELOG.md`](ha/p56_pov_display/CHANGELOG.md).
 
+## 0.3.19 — 2026-10-13
+
+### Fixed
+- A fan that was off and showed a message as a cast (`mode: cast`) went black afterwards but
+  stayed on: a fan in live mode ignores "off". Switching off now waits until the cast is over,
+  checks that the fan really went off and tries once more if not. `p56-sim` ignores "off" during
+  a cast too.
+
 ## 0.3.18 — 2026-10-12
 
 ### Changed

@@ -193,6 +193,9 @@ pub struct Service {
     /// The current cast session. Every cast (live, or a timed one from `show`) takes a new number;
     /// a loop only sends while its number is current, so starting or stopping one ends the other.
     cast_session: Arc<AtomicU64>,
+    /// Counts on/off commands given by hand: switching a fan off again after a message gives
+    /// up when one comes in between.
+    by_hand: AtomicU64,
     media: Mutex<HashMap<u32, Media>>,
     next_media: AtomicU32,
     live: Mutex<LiveStats>,
@@ -553,6 +556,7 @@ impl Service {
             link: Mutex::new(None),
             fan_type: Mutex::new(0),
             cast_session: Arc::new(AtomicU64::new(0)),
+            by_hand: AtomicU64::new(0),
             media: Mutex::new(HashMap::new()),
             next_media: AtomicU32::new(0),
             live: Mutex::new(LiveStats::default()),
@@ -934,6 +938,9 @@ impl Service {
 
     pub fn control(&self, id: u32, action: &str) -> Result<(), String> {
         let l = self.link()?;
+        if action == "on" || action == "off" {
+            self.by_hand.fetch_add(1, Ordering::SeqCst);
+        }
         match action {
             "on" => l.on(id),
             "off" => {
@@ -1486,7 +1493,10 @@ impl Service {
             for k in done {
                 if let Some(id) = l.ids().into_iter().find(|&i| Self::fan_key(&l, i) == k) {
                     log::info!("fan #{id} was off before the message: off again");
-                    let _ = l.off(id);
+                    let me = self.clone();
+                    let l2 = l.clone();
+                    let hand = self.by_hand.load(Ordering::SeqCst);
+                    thread::spawn(move || me.off_and_confirm(&l2, id, k, hand));
                 }
             }
             next
@@ -1498,6 +1508,34 @@ impl Service {
                     log::warn!("waiting message not shown: {e}");
                 }
             });
+        }
+    }
+
+    /// Switch fan `id` (key `key`) off and check that it reports off; once more if not. Gives up
+    /// as soon as a new message takes the fan or it is switched on or off by hand (`hand` is
+    /// [`Self::by_hand`] when the message ended).
+    fn off_and_confirm(&self, l: &Link, id: u32, key: String, hand: u64) {
+        let taken = || {
+            let m = self.messages.lock().unwrap();
+            self.by_hand.load(Ordering::SeqCst) != hand || m.showing.contains_key(&key) || m.woke.contains(&key)
+        };
+        for attempt in 0..2 {
+            if taken() {
+                return;
+            }
+            let _ = l.off(id);
+            let deadline = Instant::now() + Duration::from_secs(3);
+            while Instant::now() < deadline {
+                thread::sleep(Duration::from_millis(300));
+                let _ = l.refresh(id);
+                thread::sleep(Duration::from_millis(200));
+                if taken() || l.device(id).and_then(|d| d.status).is_some_and(|s| !s.power) {
+                    return;
+                }
+            }
+            if attempt == 1 {
+                log::warn!("fan #{id} stayed on after the message");
+            }
         }
     }
 

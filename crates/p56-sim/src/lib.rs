@@ -879,7 +879,10 @@ fn handle(sh: &Shared, out: &mut Out, pkt: &[u8], ft: u8, just_uploaded: &mut bo
             out.send(&status(sh));
         }
         op::OFF => {
-            set(&|g| g.power = false);
+            // a real P56 in live mode ignores it (seen 2026-10-13 right after a cast)
+            if !live(sh) {
+                set(&|g| g.power = false);
+            }
             out.ready();
             out.send(&status(sh));
         }

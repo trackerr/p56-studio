@@ -1,6 +1,6 @@
 [package]
 name = "p56-studio"
-version = "0.3.18"
+version = "0.3.19"
 edition = "2021"
 description = "Open-source Holoscope replacement for P56 POV hologram fans"
 license = "MIT"
