@@ -4,6 +4,18 @@ P56 Studio (Windows, Linux, Android), `p56` (CLI), `p56-sim` and `p56-server`.
 The Home Assistant add-on and integration have their own changelog in
 [`ha/p56_pov_display/CHANGELOG.md`](ha/p56_pov_display/CHANGELOG.md).
 
+## Unreleased
+
+### Added
+- `p56-server --comfyui <url>` (and `--comfyui-size`): AI pictures from ComfyUI with Qwen Image
+  2.1 on a computer in the house; Home Assistant's AI Task is the fallback. `entity_id:
+  "comfyui"` picks it.
+
+### Changed
+- The instructions for AI pictures no longer describe the fan itself (Qwen Image painted a fan
+  disc or a ring of light around the subject): only a black background, a lit subject in the
+  middle, and no frame, ring or device.
+
 ## 0.3.20 — 2026-10-13
 
 ### Added

@@ -1,8 +1,10 @@
-//! AI pictures through Home Assistant's AI Task (only in the add-on): a prompt becomes a still,
-//! an object turning round its own axis, or a short animation for the fan. Which AI makes them (Google, OpenAI, …)
-//! is whatever the user set up in Home Assistant; no key or account is kept here.
+//! AI pictures: a prompt becomes a still, an object turning round its own axis, or a short
+//! animation for the fan. They are made by ComfyUI on a computer in the house (`--comfyui`), or
+//! through Home Assistant's AI Task (only in the add-on), by whatever AI the user set up there
+//! (Google, OpenAI, …). No key or account is kept here.
 
-use std::time::Duration;
+use std::sync::OnceLock;
+use std::time::{Duration, Instant};
 
 use image::RgbImage;
 use p56_core::transcode;
@@ -44,12 +46,12 @@ impl Kind {
     }
 }
 
-/// What the fan needs, added to every prompt. Only technical: the style is the user's.
-const LOOK: &str = "made for a round holographic fan display (a spinning LED blade: black shows as \
-transparent and only lit pixels are seen, so the subject itself is well lit). Pure black background \
-(#000000) all around the subject and up to every edge of the image, no white or coloured margin, no \
-floor, no frame, no border, no text, letters or numbers unless the subject asks for them. The \
-subject in the middle, filling most of the space.";
+/// What the fan needs, added to every prompt. Only technical: the style is the user's. It does
+/// not mention the fan itself: some models (Qwen Image) then paint a fan or a ring of light.
+const LOOK: &str = "with the subject alone on a pure black background (#000000) that runs up to every \
+edge of the image: no white or coloured margin, no floor, no shadow, no frame, border, circle or ring \
+around it, no screen or device, no text, letters or numbers unless the subject asks for them. The \
+subject itself is brightly lit and clearly visible, in the middle, filling most of the image.";
 
 /// Ready-made styles (`art_style`); any other text is used as the style itself.
 const STYLES: [(&str, &str); 10] = [
@@ -85,12 +87,11 @@ pub fn instructions(prompt: &str, kind: Kind, style: Option<&str>) -> String {
         Kind::Still => format!("A square image {LOOK}\nSubject: {prompt}"),
         Kind::Spin => format!("A square image, the subject seen straight from the front, {LOOK}\nSubject: {prompt}"),
         Kind::Backdrop => format!(
-            "A square background picture made for a round holographic fan display (a spinning LED blade: black \
-             shows as transparent, only bright pixels are seen). Large text will be written over its middle, so \
-             the middle stays dark and calm; the theme is shown around the edge, like a ring or a frame. Keep it \
-             simple and not busy, so the text stays the main thing: a few bold, clean shapes in bright colours, \
-             little fine detail. Pure black elsewhere, up to every edge of the image, no white margin, no text, \
-             letters or numbers.\nTheme: {prompt}"
+            "A square background picture on pure black (#000000). Large text will be written over its middle, so \
+             the middle stays dark and empty; the theme is shown around the edge, like a wreath of shapes. Keep \
+             it simple and not busy, so the text stays the main thing: a few bold, clean, brightly coloured \
+             shapes, little fine detail. Pure black elsewhere, up to every edge of the image, no white margin, no \
+             screen or device, no text, letters or numbers.\nTheme: {prompt}"
         ),
         Kind::Anim => format!(
             "A square sprite sheet that fills the whole image on pure black, with no white or coloured margin, \
@@ -101,7 +102,7 @@ pub fn instructions(prompt: &str, kind: Kind, style: Option<&str>) -> String {
              position), so that played quickly one after another the subject visibly moves; never the same \
              picture repeated. The subject stays in the middle of its cell at the same size and never travels \
              across it: an object turns once around its own upright axis over the {} frames, as on a turntable; \
-             a creature or figure moves on the spot. Each cell is {LOOK}\nSubject: {prompt}",
+             a creature or figure moves on the spot. Each cell is a picture {LOOK}\nSubject: {prompt}",
             SHEET * SHEET,
             SHEET * SHEET
         ),
@@ -109,8 +110,49 @@ pub fn instructions(prompt: &str, kind: Kind, style: Option<&str>) -> String {
     body + &style
 }
 
-/// The AI Task entities that can make pictures: `[{entity_id, name}]`.
-pub fn entities(base: &str, token: &str) -> Result<Vec<Value>, String> {
+/// The id that picks ComfyUI where an AI Task entity is expected.
+pub const COMFYUI: &str = "comfyui";
+/// ComfyUI on a computer in the house: its address and the picture size it makes.
+pub struct Comfy {
+    pub url: String,
+    pub size: u32,
+}
+static COMFY: OnceLock<Comfy> = OnceLock::new();
+
+/// Make pictures with ComfyUI at `url` (`http://host:port`), `size` pixels square (rounded to a
+/// multiple of 64, 256–1536).
+pub fn use_comfyui(url: &str, size: u32) -> Result<(), String> {
+    let url = url.trim().trim_end_matches('/');
+    if !url.starts_with("http://") || url.len() <= 7 {
+        return Err(format!("ComfyUI address must look like http://192.168.1.20:8188, not {url}"));
+    }
+    let size = (size.clamp(256, 1536) + 32) / 64 * 64;
+    let _ = COMFY.set(Comfy { url: url.to_string(), size });
+    Ok(())
+}
+
+fn comfy() -> Option<&'static Comfy> {
+    COMFY.get()
+}
+
+/// The AIs that can make pictures: `[{entity_id, name}]`, ComfyUI first when it is set up.
+/// `ha` is Home Assistant's API (base, token), when there is one.
+pub fn entities(ha: Option<(&str, &str)>) -> Result<Vec<Value>, String> {
+    let mut list = Vec::new();
+    if let Some(c) = comfy() {
+        list.push(json!({ "entity_id": COMFYUI, "name": format!("ComfyUI ({})", c.url.trim_start_matches("http://")) }));
+    }
+    match ha.map(|(base, token)| ha_entities(base, token)) {
+        Some(Ok(more)) => list.extend(more),
+        Some(Err(e)) if list.is_empty() => return Err(e),
+        None if list.is_empty() => return Err("AI pictures need ComfyUI (--comfyui) or the Home Assistant add-on".into()),
+        _ => {}
+    }
+    Ok(list)
+}
+
+/// The AI Task entities in Home Assistant that can make pictures.
+fn ha_entities(base: &str, token: &str) -> Result<Vec<Value>, String> {
     // right after Home Assistant restarts its API can fail for a moment: try once more
     let fetch = || crate::http_get(&format!("{base}/states"), Some(token), "application/json").and_then(|b| serde_json::from_slice::<Value>(&b).ok());
     let states = fetch().or_else(|| {
@@ -136,27 +178,68 @@ const MADE_KEPT: usize = 8;
 /// Ask the AI for a picture and turn it into frames for the fan: (pictures, ms per frame). The
 /// same prompt again gives the same picture, unless `fresh`.
 pub fn generate(
-    base: &str, token: &str, entity: Option<&str>, prompt: &str, kind: Kind, style: Option<&str>, fresh: bool,
+    ha: Option<(&str, &str)>, entity: Option<&str>, prompt: &str, kind: Kind, style: Option<&str>, fresh: bool,
 ) -> Result<(Vec<RgbImage>, u32), String> {
     if prompt.trim().is_empty() {
         return Err("describe the picture first".into());
     }
-    let entity = match entity.filter(|e| !e.is_empty()) {
-        Some(e) if e.starts_with("ai_task.") && e[8..].chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_') => e.to_string(),
-        Some(e) => return Err(format!("not an AI Task entity: {e}")),
-        None => entities(base, token)?
-            .first()
-            .and_then(|e| e["entity_id"].as_str().map(String::from))
-            .ok_or("no AI in Home Assistant can make pictures: add one (e.g. Google Generative AI) and its AI Task")?,
-    };
     let instructions = instructions(prompt, kind, style);
-    let key = format!("{entity}\n{instructions}");
-    if !fresh {
-        if let Some((_, images, ms)) = MADE.lock().unwrap().iter().find(|(k, _, _)| *k == key) {
-            log::info!("AI picture from {entity}: made before");
-            return Ok((images.clone(), *ms));
+    // the AIs to try in turn: the one asked for, or ComfyUI and then Home Assistant's
+    let mut sources: Vec<String> = match entity.filter(|e| !e.is_empty()) {
+        Some(COMFYUI) if comfy().is_some() => vec![COMFYUI.into()],
+        Some(COMFYUI) => return Err("ComfyUI is not set up (add-on option comfyui_url)".into()),
+        Some(e) if e.starts_with("ai_task.") && e[8..].chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_') => vec![e.to_string()],
+        Some(e) => return Err(format!("not an AI Task entity: {e}")),
+        None => comfy().map(|_| COMFYUI.to_string()).into_iter().collect(),
+    };
+    let ha_fallback = entity.filter(|e| !e.is_empty()).is_none();
+    let mut last_err = String::new();
+    let mut tried_ha = false;
+    loop {
+        let entity = match sources.first() {
+            Some(e) => e.clone(),
+            None if ha_fallback && !tried_ha => {
+                tried_ha = true;
+                let (base, token) =
+                    ha.ok_or_else(|| if last_err.is_empty() { "AI pictures need ComfyUI or the Home Assistant add-on".into() } else { last_err.clone() })?;
+                match ha_entities(base, token)?.first().and_then(|e| e["entity_id"].as_str().map(String::from)) {
+                    Some(e) => e,
+                    None if !last_err.is_empty() => return Err(last_err),
+                    None => return Err("no AI in Home Assistant can make pictures: add one (e.g. Google Generative AI) and its AI Task".into()),
+                }
+            }
+            None => return Err(last_err),
+        };
+        if !sources.is_empty() {
+            sources.remove(0);
+        }
+        let key = format!("{entity}\n{instructions}");
+        if !fresh {
+            if let Some((_, images, ms)) = MADE.lock().unwrap().iter().find(|(k, _, _)| *k == key) {
+                log::info!("AI picture from {entity}: made before");
+                return Ok((images.clone(), *ms));
+            }
+        }
+        let bytes = if entity == COMFYUI {
+            comfy_picture(comfy().expect("checked above"), &instructions, kind)
+        } else {
+            match ha {
+                Some((base, token)) => ha_picture(base, token, &entity, &instructions),
+                None => Err("Home Assistant's AI needs the Home Assistant add-on".into()),
+            }
+        };
+        match bytes {
+            Ok(bytes) => return finish(&entity, &key, &bytes, kind),
+            Err(e) => {
+                log::warn!("AI picture from {entity} failed: {e}");
+                last_err = e;
+            }
         }
     }
+}
+
+/// A picture from Home Assistant's AI Task `entity`.
+fn ha_picture(base: &str, token: &str, entity: &str, instructions: &str) -> Result<Vec<u8>, String> {
     let body = json!({ "task_name": "P56 picture", "entity_id": entity, "instructions": instructions });
     let url = format!("{base}/services/ai_task/generate_image?return_response");
     let (code, answer) =
@@ -168,8 +251,98 @@ pub fn generate(
     }
     let res = &answer["service_response"];
     let path = res["url"].as_str().ok_or("the AI answered without a picture")?;
-    let bytes = fetch_picture(base, token, path)?;
-    let mut img = transcode::decode_rgb(&bytes).map_err(|e| format!("cannot read the AI's picture: {e}"))?;
+    fetch_picture(base, token, path)
+}
+
+/// A picture from ComfyUI with Qwen Image 2.1 (the turbo model when it is there), in the size set
+/// up (an animation sheet at least 1024).
+fn comfy_picture(c: &Comfy, instructions: &str, kind: Kind) -> Result<Vec<u8>, String> {
+    let get = |path: &str| -> Result<Value, String> {
+        let (code, body) = crate::http_request("GET", &format!("{}{path}", c.url), None, "application/json", None, Duration::from_secs(10))
+            .map_err(|e| format!("ComfyUI not reachable: {e}"))?;
+        if code != 200 {
+            return Err(format!("ComfyUI {path}: HTTP {code}"));
+        }
+        serde_json::from_slice(&body).map_err(|e| format!("ComfyUI {path}: {e}"))
+    };
+    let pick = |folder: &str, want: &dyn Fn(&str) -> bool| -> Result<String, String> {
+        let list = get(&format!("/models/{folder}"))?;
+        let names: Vec<&str> =
+            list.as_array().map(|a| a.iter().filter_map(|n| n.as_str()).filter(|n| want(&n.to_ascii_lowercase())).collect()).unwrap_or_default();
+        // the turbo model first (8 steps instead of 25)
+        names
+            .iter()
+            .find(|n| n.to_ascii_lowercase().contains("turbo"))
+            .or(names.first())
+            .map(|n| n.to_string())
+            .ok_or_else(|| format!("ComfyUI has no Qwen Image 2.1 file in models/{folder}"))
+    };
+    let unet = pick("diffusion_models", &|n| n.contains("qwen_image_2.1") || n.contains("qwen-image-2.1"))?;
+    let clip = pick("text_encoders", &|n| n.contains("qwen3vl") || n.contains("qwen3_vl") || n.contains("qwen_2.5_vl"))?;
+    let vae = pick("vae", &|n| n.contains("qwen_image_2.1") || n.contains("qwen-image-2.1"))?;
+    let steps = if unet.to_ascii_lowercase().contains("turbo") { 8 } else { 25 };
+    let size = if kind == Kind::Anim { c.size.max(1024) } else { c.size };
+    let seed = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos() as u64 & 0xffff_ffff_ffff).unwrap_or(1);
+    let graph = json!({
+        "1": { "class_type": "UNETLoader", "inputs": { "unet_name": unet, "weight_dtype": "default" } },
+        "2": { "class_type": "QwenImage21Cache", "inputs": { "model": ["1", 0], "device": "auto", "dtype": "default" } },
+        "3": { "class_type": "CLIPLoader", "inputs": { "clip_name": clip, "type": "qwen_image", "device": "default" } },
+        "4": { "class_type": "VAELoader", "inputs": { "vae_name": vae } },
+        "5": { "class_type": "TextEncodeQwenImage21", "inputs": { "clip": ["3", 0], "prompt": instructions, "negative_prompt": "", "resolution": 1024 } },
+        "6": { "class_type": "EmptyLatentImage", "inputs": { "width": size, "height": size, "batch_size": 1 } },
+        "7": { "class_type": "KSampler", "inputs": { "model": ["2", 0], "positive": ["5", 0], "negative": ["5", 1], "latent_image": ["6", 0],
+            "seed": seed, "steps": steps, "cfg": 1.0, "sampler_name": "euler", "scheduler": "simple", "denoise": 1.0 } },
+        "8": { "class_type": "VAEDecode", "inputs": { "samples": ["7", 0], "vae": ["4", 0] } },
+        // a preview, not a saved file: nothing piles up on that computer
+        "9": { "class_type": "PreviewImage", "inputs": { "images": ["8", 0] } },
+    });
+    let body = serde_json::to_vec(&json!({ "prompt": graph, "client_id": "p56-server" })).unwrap_or_default();
+    let (code, answer) = crate::http_request("POST", &format!("{}/prompt", c.url), None, "application/json", Some(&body), Duration::from_secs(20))
+        .map_err(|e| format!("ComfyUI not reachable: {e}"))?;
+    let answer: Value = serde_json::from_slice(&answer).unwrap_or(Value::Null);
+    let id = answer["prompt_id"].as_str().filter(|_| code == 200).ok_or_else(|| {
+        let why = answer["error"]["message"].as_str().map(String::from).unwrap_or_else(|| format!("HTTP {code}"));
+        format!("ComfyUI refused the picture: {why} {}", answer["node_errors"]).trim().to_string()
+    })?;
+    let deadline = Instant::now() + GENERATE_TIMEOUT;
+    let done = loop {
+        std::thread::sleep(Duration::from_millis(500));
+        if let Some(h) = get(&format!("/history/{id}"))?.get(id).cloned() {
+            break h;
+        }
+        if Instant::now() > deadline {
+            return Err("ComfyUI took too long".into());
+        }
+    };
+    if done["status"]["status_str"].as_str() != Some("success") {
+        return Err(format!("ComfyUI failed: {}", done["status"]["messages"]).chars().take(400).collect());
+    }
+    let img = done["outputs"].as_object().and_then(|o| o.values().find_map(|v| v["images"].get(0).cloned())).ok_or("ComfyUI made no picture")?;
+    let q = |k: &str| {
+        img[k]
+            .as_str()
+            .unwrap_or_default()
+            .bytes()
+            .map(|b| if b.is_ascii_alphanumeric() || b"-_.".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") })
+            .collect::<String>()
+    };
+    let (code, png) = crate::http_request(
+        "GET",
+        &format!("{}/view?filename={}&subfolder={}&type={}", c.url, q("filename"), q("subfolder"), q("type")),
+        None,
+        "image/*",
+        None,
+        Duration::from_secs(20),
+    )?;
+    if code != 200 {
+        return Err(format!("ComfyUI did not hand over the picture: HTTP {code}"));
+    }
+    Ok(png)
+}
+
+/// The AI's picture turned into frames for the fan, and kept under `key`.
+fn finish(entity: &str, key: &str, bytes: &[u8], kind: Kind) -> Result<(Vec<RgbImage>, u32), String> {
+    let mut img = transcode::decode_rgb(bytes).map_err(|e| format!("cannot read the AI's picture: {e}"))?;
     blacken_background(&mut img);
     log::info!("AI picture from {entity}: {}×{}", img.width(), img.height());
     let made = match kind {
@@ -187,7 +360,7 @@ pub fn generate(
     if kept.len() >= MADE_KEPT {
         kept.remove(0);
     }
-    kept.push((key, made.0.clone(), made.1));
+    kept.push((key.to_string(), made.0.clone(), made.1));
     Ok(made)
 }
 

@@ -152,6 +152,13 @@ with your own API key; it then also offers an **AI Task**. P56 uses whichever on
 nothing about your AI account is stored by P56. Making pictures can cost money at the AI's
 provider (with Google it needs billing turned on for the key).
 
+**Or on your own computer:** a PC with a graphics card can make the pictures with
+[ComfyUI](https://www.comfy.org) and the free **Qwen Image 2.1** model (install its *Text to
+Image* template). Start ComfyUI with `--listen`, and in the add-on's **Configuration** fill in
+**ComfyUI address**, for example `http://192.168.1.20:8188`. A picture then takes 5–10 seconds,
+costs nothing and never leaves your house. When that PC is off, the AI of Home Assistant above is
+used instead.
+
 **From the panel:** open **P56 POV → Media**. When an AI is available, an **AI picture** box
 appears: describe the picture (for example *a jellyfish*), choose **Still** or **Turning** and a
 **Style** (or leave it on *As described* and put the style in your words), and press **Make**. After 5–30 seconds it is in the preview, ready for **Upload**

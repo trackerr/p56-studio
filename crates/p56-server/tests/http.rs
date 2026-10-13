@@ -1036,3 +1036,71 @@ fn the_shown_picture_fades_when_it_is_not_on_the_fan() {
     s.call("control", json!({ "id": 1, "action": "off" }));
     s.wait("off: not live", live(false));
 }
+
+/// A stand-in for ComfyUI: Qwen Image 2.1 files, a queue that finishes at once, and a picture.
+/// Returns its port and the workflows it was sent.
+fn fake_comfyui() -> (u16, std::sync::Arc<std::sync::Mutex<Vec<Value>>>) {
+    let srv = tiny_http::Server::http("127.0.0.1:0").unwrap();
+    let port = srv.server_addr().to_ip().unwrap().port();
+    let sent = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let seen = sent.clone();
+    std::thread::spawn(move || {
+        for mut req in srv.incoming_requests() {
+            let mut body = String::new();
+            let _ = req.as_reader().read_to_string(&mut body);
+            let url = req.url().to_string();
+            let json_reply = |v: Value| tiny_http::Response::from_string(v.to_string());
+            let r = match url.split('?').next().unwrap_or_default() {
+                "/models/diffusion_models" => {
+                    json_reply(json!(["flux.safetensors", "qwen_image_2.1_int8.safetensors", "qwen_image_2.1_turbo_int8.safetensors"]))
+                }
+                "/models/text_encoders" => json_reply(json!(["qwen3vl_8b_int8.safetensors"])),
+                "/models/vae" => json_reply(json!(["qwen_image_2.1_vae_bf16.safetensors"])),
+                "/prompt" => {
+                    seen.lock().unwrap().push(serde_json::from_str::<Value>(&body).unwrap_or(Value::Null));
+                    json_reply(json!({ "prompt_id": "job1" }))
+                }
+                "/history/job1" => json_reply(json!({ "job1": {
+                    "status": { "status_str": "success" },
+                    "outputs": { "9": { "images": [{ "filename": "p56 1.png", "subfolder": "", "type": "temp" }] } }
+                } })),
+                "/view" if url.contains("filename=p56%201.png") && url.contains("type=temp") => tiny_http::Response::from_data(image_png()),
+                _ => tiny_http::Response::from_string("not found").with_status_code(404),
+            };
+            let _ = req.respond(r);
+        }
+    });
+    (port, sent)
+}
+
+/// AI pictures from ComfyUI (Qwen Image 2.1, the turbo model in 8 steps, the size set up); when
+/// ComfyUI cannot be reached, Home Assistant's AI makes it unless ComfyUI was asked for by name.
+#[test]
+fn ai_pictures_from_comfyui_with_home_assistant_as_fallback() {
+    let (port, sent) = fake_comfyui();
+    let comfy = format!("http://127.0.0.1:{port}");
+    let s = start_env(false, &["--comfyui", &comfy, "--comfyui-size", "500"], &[]);
+    let st = s.call("ai_status", json!({}));
+    assert_eq!(st["entities"][0]["entity_id"], "comfyui", "{st}");
+    let still = s.call("ai_image", json!({ "prompt": "a red fox", "art_style": "photo" }));
+    assert_eq!(still["frames"], 1, "{still}");
+    let graph = sent.lock().unwrap()[0]["prompt"].clone();
+    assert_eq!(graph["1"]["inputs"]["unet_name"], "qwen_image_2.1_turbo_int8.safetensors");
+    assert_eq!(graph["7"]["inputs"]["steps"], 8);
+    assert_eq!(graph["6"]["inputs"]["width"], 512, "500 rounded to a multiple of 64");
+    let words = graph["5"]["inputs"]["prompt"].as_str().unwrap().to_lowercase();
+    assert!(words.contains("a red fox") && words.contains("realistic photograph") && words.contains("black"), "{words}");
+    assert!(!words.contains("fan") && !words.contains("holographic"), "the fan itself is not described: {words}");
+    drop(s);
+
+    // ComfyUI off: Home Assistant's AI, unless ComfyUI was asked for
+    let ha = format!("http://127.0.0.1:{}", fake_home_assistant());
+    let s = start_env(false, &["--comfyui", "http://127.0.0.1:9"], &[("P56_HA_URL", &ha), ("P56_HA_TOKEN", "test-token")]);
+    let st = s.call("ai_status", json!({}));
+    assert_eq!(st["entities"].as_array().map(|e| e.len()), Some(2), "{st}");
+    let still = s.call("ai_image", json!({ "prompt": "a red fox" }));
+    assert_eq!(still["frames"], 1, "{still}");
+    let (_, v) = s.post("/api/call/ai_image", json!({ "prompt": "a red fox", "entity_id": "comfyui", "fresh": true }));
+    assert_eq!(v["ok"], false, "{v}");
+    assert!(v["error"].as_str().unwrap_or_default().contains("ComfyUI"), "{v}");
+}

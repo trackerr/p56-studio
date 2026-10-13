@@ -83,7 +83,8 @@ SHOW_AI_SCHEMA = vol.Schema(
         vol.Required("prompt"): vol.All(cv.string, vol.Length(min=1, max=1000)),
         vol.Optional("kind"): vol.In(AI_KINDS),
         vol.Optional("art_style"): vol.All(cv.string, vol.Length(max=80)),
-        vol.Optional("entity_id"): cv.entity_domain("ai_task"),
+        # "comfyui": ComfyUI on a computer in the house (add-on option comfyui_url)
+        vol.Optional("entity_id"): vol.Any("comfyui", cv.entity_domain("ai_task")),
         vol.Optional("fresh"): cv.boolean,
         # text over the AI's background (then the AI makes a background, not a subject)
         vol.Optional("text"): vol.All(cv.string, vol.Length(max=300)),

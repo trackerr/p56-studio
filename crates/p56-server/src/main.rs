@@ -59,6 +59,13 @@ struct Args {
     /// straight to this server instead of waiting for its broadcast.
     #[arg(long, default_value_t = 18988)]
     sim_udp_port: u16,
+    /// Make AI pictures with ComfyUI at this address (e.g. http://192.168.1.20:8188, with Qwen
+    /// Image 2.1 installed) instead of Home Assistant's AI; Home Assistant's is the fallback.
+    #[arg(long)]
+    comfyui: Option<String>,
+    /// Size of ComfyUI's pictures in pixels (square; a P56 shows about 344 across).
+    #[arg(long, default_value_t = 768)]
+    comfyui_size: u32,
     /// Write the HTTP and TCP ports in use to this file ({"http": …, "tcp": …}) once both are
     /// open: how tests find the ports that port 0 picked.
     #[arg(long, hide = true)]
@@ -231,6 +238,12 @@ fn busy(req: Request) {
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).format_timestamp_secs().init();
     let args = Args::parse();
+    if let Some(url) = args.comfyui.as_deref().filter(|u| !u.trim().is_empty()) {
+        match ai::use_comfyui(url, args.comfyui_size) {
+            Ok(()) => log::info!("AI pictures from ComfyUI at {}", url.trim()),
+            Err(e) => log::error!("{e}"),
+        }
+    }
     let subs: Subscribers = Arc::new(Mutex::new(Vec::new()));
     let svc = start_service(&args, subs.clone());
     let server = Server::http((Ipv4Addr::UNSPECIFIED, args.http_port)).unwrap_or_else(|e| {
@@ -428,10 +441,8 @@ fn camera_entity(id: &str) -> bool {
 fn ha_call(svc: &Arc<Service>, cmd: &str, args: &Value) -> Option<Result<Value, String>> {
     let source = args["args"]["source"].as_str().unwrap_or_default();
     if matches!(cmd, "ai_status" | "ai_image" | "show_ai") {
-        let Some((base, token)) = ha_api() else {
-            return Some(Err("AI pictures are only available in the Home Assistant add-on".into()));
-        };
-        return Some(ai_call(svc, cmd, args, &base, &token));
+        let ha = ha_api();
+        return Some(ai_call(svc, cmd, args, ha.as_ref().map(|(b, t)| (b.as_str(), t.as_str()))));
     }
     if cmd != "ha_cameras" && !(cmd == "cast_start" && source.starts_with("ha_camera:")) {
         return None;
@@ -482,15 +493,15 @@ fn ha_call(svc: &Arc<Service>, cmd: &str, args: &Value) -> Option<Result<Value, 
 ///   `text` (or `icon`) the AI makes a background and the text is written over it.
 ///
 /// The same prompt again reuses the picture made before, unless `fresh` is true.
-fn ai_call(svc: &Arc<Service>, cmd: &str, args: &Value, base: &str, token: &str) -> Result<Value, String> {
+fn ai_call(svc: &Arc<Service>, cmd: &str, args: &Value, ha: Option<(&str, &str)>) -> Result<Value, String> {
     if cmd == "ai_status" {
-        return ai::entities(base, token).map(|e| json!({ "entities": e }));
+        return ai::entities(ha).map(|e| json!({ "entities": e }));
     }
     let prompt = args["prompt"].as_str().unwrap_or_default();
     let text = cmd == "show_ai" && ["text", "icon"].iter().any(|k| args[k].as_str().is_some_and(|s| !s.trim().is_empty()));
     let kind = if text { ai::Kind::Backdrop } else { ai::Kind::parse(args["kind"].as_str().unwrap_or_default())? };
     let fresh = args["fresh"].as_bool().unwrap_or(false);
-    let (images, ms) = ai::generate(base, token, args["entity_id"].as_str(), prompt, kind, args["art_style"].as_str(), fresh)?;
+    let (images, ms) = ai::generate(ha, args["entity_id"].as_str(), prompt, kind, args["art_style"].as_str(), fresh)?;
     // a name for the fan from the prompt's first words
     let words: String = prompt.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { ' ' }).collect();
     let default_name = format!("ai {}", words.split_whitespace().collect::<Vec<_>>().join(" ")).chars().take(24).collect::<String>().trim().to_string();

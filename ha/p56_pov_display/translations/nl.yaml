@@ -26,6 +26,20 @@ configuration:
   simulate:
     name: Virtuele fan
     description: Start een gesimuleerde P56-fan, om alles zonder hardware te proberen.
+  comfyui_url:
+    name: ComfyUI-adres
+    description: >-
+      Optioneel. Maak AI-plaatjes met ComfyUI op een computer in huis, bv.
+      http://192.168.1.20:8188 (start ComfyUI met --listen; het heeft het
+      model Qwen Image 2.1 nodig). Er gaat niets je netwerk uit. Staat die
+      computer uit, dan wordt de AI Task van Home Assistant (bv. Google)
+      gebruikt.
+  comfyui_size:
+    name: Grootte ComfyUI-plaatjes
+    description: >-
+      Optioneel. Breedte en hoogte van ComfyUI's plaatjes in pixels
+      (256-1536, standaard 768). Een P56 toont zo'n 344 pixels breed, meer
+      kost alleen tijd.
   log_level:
     name: Logniveau
     description: Hoeveel de add-on in zijn log schrijft.

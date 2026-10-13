@@ -26,6 +26,13 @@ if bashio::config.has_value 'api_token'; then
 elif bashio::config.true 'lan_api'; then
     bashio::log.warning "lan_api is on without an api_token: anyone on your network can control the fans"
 fi
+# AI pictures from ComfyUI on a computer in the house (Home Assistant's AI is the fallback)
+if bashio::config.has_value 'comfyui_url'; then
+    args+=(--comfyui "$(bashio::config 'comfyui_url')")
+    if bashio::config.has_value 'comfyui_size'; then
+        args+=(--comfyui-size "$(bashio::config 'comfyui_size')")
+    fi
+fi
 # 'path' in /api/show may only read pictures from these (read-only) folders.
 args+=(--media-dir /media --media-dir /share)
 

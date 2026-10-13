@@ -156,8 +156,9 @@ adds only what the fan needs: a black background and the subject in the middle).
 shows it as it is, and `spin` turns the object round its own upright axis (as on a turntable,
 one turn in 2.4 s). `art_style` sets how it is drawn: `photo`, `3d`, `cartoon`, `anime`,
 `painting`, `watercolor`, `pixel`, `neon`, `line`, `comic`, or any words of your own; without it
-the AI follows the prompt. White margins the AI sometimes adds become black. `entity_id` picks the AI Task; by default the
-first one that can make pictures is used. The panel's Media tab has the same as an
+the AI follows the prompt. White margins the AI sometimes adds become black. `entity_id` picks the AI Task, or
+`comfyui` for ComfyUI (below); by default ComfyUI when it is set up, otherwise the first AI Task
+that can make pictures. The panel's Media tab has the same as an
 **AI picture** box. It needs `homeassistant_api` (on by default) and Home Assistant on port 8123
 with plain http on the same machine, where the add-on fetches the finished picture.
 
@@ -169,6 +170,16 @@ dark edge, with the same `color`, `icon`, `font_size` and `value` / `value_min` 
 as `show_text`. The same prompt again reuses the picture made before (the last 8 are kept
 while the add-on runs), so an automation that updates a price every quarter of an hour pays
 for a background only when its prompt changes; `fresh: true` always makes a new one.
+
+**Local AI with ComfyUI:** with the option `comfyui_url` (e.g. `http://192.168.1.20:8188`) the
+add-on makes the pictures with [ComfyUI](https://www.comfy.org) on a computer in your house, so
+nothing leaves your network. ComfyUI must listen on the network (`--listen`) and have
+**Qwen Image 2.1** (the files from its *Text to Image* template: a `qwen_image_2.1…` model in
+`diffusion_models`, the `qwen3vl…` text encoder and the `qwen_image_2.1…` VAE; the turbo model
+is preferred and needs 8 steps). `comfyui_size` sets the size (256–1536, default 768; a P56
+shows about 344 pixels across). The picture is a preview in ComfyUI, not a saved file. When
+ComfyUI cannot be reached, the AI Task of Home Assistant is used instead (unless `entity_id:
+comfyui` asked for ComfyUI only).
 
 ```yaml
 action: p56_pov.show_ai

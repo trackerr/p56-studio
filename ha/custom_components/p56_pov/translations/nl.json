@@ -403,7 +403,7 @@
         },
         "entity_id": {
           "name": "AI Task",
-          "description": "Welke AI het plaatje maakt (leeg: de eerste die het kan)."
+          "description": "Welke AI het plaatje maakt. Leeg: ComfyUI als die in de add-on is ingesteld (comfyui_url), anders de eerste AI Task die het kan; in YAML kiest comfyui voor ComfyUI."
         },
         "text": {
           "name": "Tekst",

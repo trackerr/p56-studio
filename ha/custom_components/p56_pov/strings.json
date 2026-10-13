@@ -403,7 +403,7 @@
         },
         "entity_id": {
           "name": "AI Task",
-          "description": "Which AI makes the picture (empty: the first one that can)."
+          "description": "Which AI makes the picture. Empty: ComfyUI when it is set up in the add-on (comfyui_url), otherwise the first AI Task that can; in YAML, comfyui picks ComfyUI."
         },
         "text": {
           "name": "Text",

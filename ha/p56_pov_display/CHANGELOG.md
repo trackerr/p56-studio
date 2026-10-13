@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **AI pictures from your own computer:** option `comfyui_url` (and `comfyui_size`) makes
+  `p56_pov.show_ai` and the panel's AI picture use ComfyUI with Qwen Image 2.1 in your house;
+  Home Assistant's AI Task (e.g. Google) is the fallback. `entity_id: comfyui` picks it.
+- The AI is no longer told about the fan itself, so it does not paint a fan disc or a ring
+  around the picture.
+
 ## 2.1.20
 
 p56-server 0.3.20.
