@@ -157,7 +157,9 @@ time it had left. At the end the fan returns to the file it played before the fi
 
 While a message shows, the fan repeats only that one. A fan that was off is switched on for the
 message and off again afterwards (also with `mode: cast`), so a fan that is normally off only
-lights up for messages.
+lights up for messages. It first spins up for 2.5 seconds on black, so the message is steady at
+once: on its black picture (recognised by its preview, or by the name `black`, `zwart`, `blank`
+or `leeg`), otherwise on black sent live.
 
 #### Animations: GIF and video
 

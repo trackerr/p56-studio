@@ -1120,3 +1120,42 @@ fn text_over_every_frame_of_an_animation() {
     let white = img.pixels().filter(|p| p[0] > 200 && p[1] > 200 && p[2] > 200).count();
     assert!(blue > 1000 && white > 100, "blue {blue}, white {white}");
 }
+
+/// A fan that was off first spins up on black before a message: on its black file when it has
+/// one, otherwise on black sent live.
+#[test]
+fn a_fan_that_was_off_spins_up_on_black_first() {
+    let s = start_env(false, &[], &[]);
+    let pc = std::net::SocketAddr::from((Ipv4Addr::LOCALHOST, s.tcp));
+    let fan = p56_sim::Sim::start(p56_sim::SimConfig { name: "FAN".into(), udp_port: 0, pc: Some(pc), ..Default::default() }).unwrap();
+    s.wait("fan", |v| v["devices"].as_array().is_some_and(|d| d.len() == 1 && d[0]["status"].is_object()));
+    let off = || {
+        s.call("control", json!({ "id": 1, "action": "off" }));
+        s.wait("off", |v| v["devices"][0]["status"]["power"] == false);
+    };
+    // no black file: black is sent live first
+    off();
+    let cast_before = fan.state().cast_ok;
+    let started = Instant::now();
+    show_ok(&s, json!({ "text": "hello", "name": "hello", "show_seconds": 2 }));
+    assert!(started.elapsed() >= Duration::from_millis(2500), "spun up first");
+    assert!(fan.state().cast_ok > cast_before, "black sent live");
+    s.wait("hello gone", |v| !v["playlist"].as_array().unwrap().iter().any(|f| f["name"] == "hello.mp4"));
+    // with a black file: the fan plays it first, nothing is cast
+    let black = {
+        let img = image::RgbImage::new(32, 32);
+        let mut v = Vec::new();
+        image::DynamicImage::ImageRgb8(img).write_to(&mut std::io::Cursor::new(&mut v), image::ImageFormat::Png).unwrap();
+        base64_encode(&v)
+    };
+    show_ok(&s, json!({ "data": black, "name": "nothing" }));
+    assert!(fan.state().files.iter().any(|f| f.name == "nothing.mp4"), "stored");
+    off();
+    let cast_before = fan.state().cast_ok;
+    let commands_before = fan.state().commands.len();
+    show_ok(&s, json!({ "text": "again", "name": "again", "show_seconds": 2 }));
+    let st = fan.state();
+    assert_eq!(st.cast_ok, cast_before, "nothing cast");
+    assert!(st.commands[commands_before.min(st.commands.len())..].iter().any(|c| c == "select"), "{:?}", st.commands);
+    assert!(st.protocol_errors.is_empty(), "{:?}", st.protocol_errors);
+}

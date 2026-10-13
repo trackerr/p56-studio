@@ -4,6 +4,13 @@ P56 Studio (Windows, Linux, Android), `p56` (CLI), `p56-sim` and `p56-server`.
 The Home Assistant add-on and integration have their own changelog in
 [`ha/p56_pov_display/CHANGELOG.md`](ha/p56_pov_display/CHANGELOG.md).
 
+## 0.3.23 — 2026-10-13
+
+### Added
+- A fan that is off first spins up on black for 2.5 s before something is shown, so a message
+  is steady at once: on a black file in its playlist when there is one (recognised by its
+  preview, or by the name black, zwart, blank or leeg), otherwise on black sent live.
+
 ## 0.3.22 — 2026-10-13
 
 ### Added

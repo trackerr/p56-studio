@@ -111,7 +111,7 @@ data:
 With `show_seconds` the message stays on until its time is up (the fan repeats only that one
 meanwhile), then the fan goes back to what it played before. If the fan was off, it switches on
 for the message and off again afterwards, so a fan that is normally off only lights up for
-messages. This works for stored messages and for `mode: cast` (live, nothing stored). Using the
+messages. It first spins up for 2.5 seconds on black, so the message is steady at once. This works for stored messages and for `mode: cast` (live, nothing stored). Using the
 same `name` again replaces the earlier picture instead of adding a new one.
 
 **Important messages first.** Give a message with `show_seconds` a `priority` (default 0). A

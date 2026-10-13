@@ -417,6 +417,9 @@ struct Waiting {
 const MESSAGE_WAIT: Duration = Duration::from_secs(600);
 /// An interrupted message comes back only for at least this long.
 const MESSAGE_RESUME_MIN: f64 = 2.0;
+/// A fan that was off first spins up this long on black before something is shown: the first
+/// moments after switching on the picture is not steady yet.
+const WARM_UP: Duration = Duration::from_millis(2500);
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct ColorScaleDto {
@@ -1447,6 +1450,11 @@ impl Service {
             },
             None => None,
         };
+        // a fan that is off spins up on black first, so what comes is steady at once
+        let off: Vec<u32> = ids.iter().copied().filter(|&i| l.device(i).and_then(|d| d.status).is_some_and(|s| !s.power)).collect();
+        if !off.is_empty() {
+            self.warm_up(&l, &off);
+        }
         // a message that could not be shown must not keep the others waiting
         let result = self.show_now(&l, ids, r, message);
         if result.as_ref().map_or(true, |v| v["success"] != true) {
@@ -1455,6 +1463,66 @@ impl Service {
             }
         }
         result
+    }
+
+    /// Switch fans that are off on and let them spin up for [`WARM_UP`] on black: on a black file in
+    /// their playlist when there is one (see [`Self::black_slot`]), otherwise on black sent live.
+    fn warm_up(&self, l: &Link, ids: &[u32]) {
+        let until = Instant::now() + WARM_UP;
+        wake(l, ids);
+        let mut live = Vec::new();
+        for &id in ids {
+            match self.black_slot(l, id) {
+                Some(slot) => {
+                    log::info!("fan #{id} spins up on its black file");
+                    select_and_confirm(l, id, slot);
+                }
+                None => live.push(id),
+            }
+        }
+        if live.is_empty() {
+            thread::sleep(until.saturating_duration_since(Instant::now()));
+            return;
+        }
+        log::info!("fans {live:?} spin up on black, sent live");
+        let black = image::RgbImage::new(64, 64);
+        let mut frames: Vec<(Vec<u32>, Vec<u8>)> = Vec::new();
+        for &id in &live {
+            let Ok(ft) = self.fan_type_for(Some(id)) else { continue };
+            frames.push((vec![id], transcode::encode(&black, &ft, &Placement::default()).jpeg));
+        }
+        while Instant::now() < until {
+            for (ids, jpeg) in &frames {
+                l.cast_to(ids, jpeg);
+            }
+            thread::sleep(Duration::from_millis(100));
+        }
+    }
+
+    /// The slot of a black file on fan `id`: one whose kept preview is all but black, or else one
+    /// named black, zwart, blank or leeg.
+    fn black_slot(&self, l: &Link, id: u32) -> Option<u8> {
+        let files = l.device(id)?.files;
+        let key = Self::fan_key(l, id);
+        let dark = |name: &str| {
+            let k = (key.clone(), name.to_string());
+            let mut m = self.thumbs.lock().unwrap();
+            if !m.contains_key(&k) {
+                if let Some(b) = self.thumb_path(&key, name).and_then(|p| std::fs::read(p).ok()) {
+                    m.insert(k.clone(), b);
+                }
+            }
+            m.get(&k).and_then(|b| image::load_from_memory(b).ok()).map(|img| {
+                let img = img.to_rgb8();
+                let lit = img.pixels().filter(|p| p.0.iter().any(|&c| c > 40)).count();
+                lit * 200 < (img.width() * img.height()) as usize
+            })
+        };
+        let named = |name: &str| {
+            let stem = name.trim_end_matches(".mp4").to_ascii_lowercase();
+            ["black", "zwart", "blank", "leeg"].contains(&stem.as_str())
+        };
+        files.iter().find(|(_, n)| dark(n) == Some(true)).or_else(|| files.iter().find(|(_, n)| named(n))).map(|(s, _)| *s)
     }
 
     /// Whether a temporary message for these fans may show now: `Some(its id)`, or `None` when a

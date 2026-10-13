@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/p56-core", "crates/p56-service", "crates/p56-cli", "crates/p56-sim", "crates/p56-server", "app/src-tauri"]
 
 [workspace.package]
-version = "0.3.22"
+version = "0.3.23"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/trackerr/p56-studio"

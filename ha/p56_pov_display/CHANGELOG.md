@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.1.23
+
+p56-server 0.3.23, with integration 2.25.0.
+
+- **A steady start:** a fan that was off first spins up for 2.5 seconds on black (its black
+  picture, or black sent live) before a message appears, so the message is steady at once.
+
 ## 2.1.22
 
 p56-server 0.3.22, with integration 2.24.0.
