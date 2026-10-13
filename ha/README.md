@@ -114,7 +114,7 @@ For each fan (example names for a fan called *P56*):
 | --- | --- |
 | `light.p56` | Picture on/off and brightness |
 | `switch.p56_playing` | Play / pause |
-| `switch.p56_breathing_light`, `switch.p56_start_on_power`, `switch.p56_master` | Status light (all LEDs flash in one colour to show the fan is on), start by itself on power, group master |
+| `switch.p56_breathing_light`, `switch.p56_start_on_power` | Status light (all LEDs flash in one colour to show the fan is on), start by itself on power |
 | `select.p56_file` | Choose what plays |
 | `select.p56_repeat` | Repeat all files or one |
 | `text.p56_text` | Type something, the fan shows it |

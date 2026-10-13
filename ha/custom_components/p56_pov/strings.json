@@ -109,9 +109,6 @@
       },
       "autostart": {
         "name": "Start on power"
-      },
-      "master": {
-        "name": "Master"
       }
     },
     "select": {

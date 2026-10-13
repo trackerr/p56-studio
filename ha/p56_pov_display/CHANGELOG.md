@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.1.28
+
+p56-server 0.3.28, with integration 2.30.0.
+
+- **Removed: group master.** The switch *Master* (for several fans showing one picture together)
+  is gone from the panel and from Home Assistant; it is removed with the update.
+
 ## 2.1.27
 
 p56-server 0.3.27, with integration 2.29.0.

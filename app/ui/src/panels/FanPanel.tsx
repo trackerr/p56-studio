@@ -136,7 +136,6 @@ export function FanPanel() {
   const toggles = [
     ['breath', t('fan.breath'), s?.breath, 'breath_on', 'breath_off'],
     ['autostart', t('fan.autostart'), s?.autostart, 'autostart_on', 'autostart_off'],
-    ['master', t('fan.master'), s?.master, 'master_on', 'master_off'],
   ] as const;
   return (
     <div className="space-y-10">

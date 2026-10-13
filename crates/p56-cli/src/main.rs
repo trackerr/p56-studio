@@ -109,10 +109,6 @@ enum Cmd {
     Autostart {
         state: OnOff,
     },
-    /// Group master on/off
-    Master {
-        state: OnOff,
-    },
     /// Volume 0–10 (only fans with a speaker)
     Volume {
         value: u8,
@@ -371,7 +367,6 @@ fn run(link: &Link, id: u32, ft: FanType, cmd: &Cmd) -> Result<(), String> {
         )),
         Cmd::Breath { state } => e(link.breath(id, state.b())),
         Cmd::Autostart { state } => e(link.autostart(id, state.b())),
-        Cmd::Master { state } => e(link.master(id, state.b())),
         Cmd::Volume { value } => {
             if *value > 10 {
                 return Err("volume must be 0–10".into());
@@ -417,7 +412,7 @@ fn run(link: &Link, id: u32, ft: FanType, cmd: &Cmd) -> Result<(), String> {
                     if s.repeat_all { "all" } else { "one" }
                 );
                 println!(
-                    "  brightness {}/16  angle {}°  colour {}  breathing {}  autostart {}  master {}",
+                    "  brightness {}/16  angle {}°  colour {}  breathing {}  autostart {}",
                     s.brightness,
                     s.angle as i32 - 180,
                     match s.color_mode {
@@ -427,8 +422,7 @@ fn run(link: &Link, id: u32, ft: FanType, cmd: &Cmd) -> Result<(), String> {
                         _ => "not reported",
                     },
                     s.breath,
-                    s.autostart,
-                    s.master
+                    s.autostart
                 );
             }
             if d.files.is_empty() {

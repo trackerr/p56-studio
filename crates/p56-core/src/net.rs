@@ -766,9 +766,6 @@ impl Link {
     pub fn autostart(&self, id: u32, on: bool) -> Result<(), Error> {
         self.cmd(id, &proto::autostart(on))
     }
-    pub fn master(&self, id: u32, on: bool) -> Result<(), Error> {
-        self.cmd(id, &proto::master(on))
-    }
     pub fn volume(&self, id: u32, v: u8) -> Result<(), Error> {
         self.cmd(id, &proto::volume(v))
     }

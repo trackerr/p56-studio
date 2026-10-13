@@ -4,7 +4,7 @@
 import { t } from '@/lib/i18n';
 
 export type Status = {
-  power: boolean; playing: boolean; repeat_all: boolean; breath: boolean; autostart: boolean; master: boolean;
+  power: boolean; playing: boolean; repeat_all: boolean; breath: boolean; autostart: boolean;
   play_index: number; brightness: number; color_mode: number; angle: number; fan_type: number;
 };
 export type Device = {
@@ -299,7 +299,7 @@ export function grab(v: HTMLVideoElement, c: HTMLCanvasElement, side = 720): str
 // ---------------------------------------------------------------------------
 const demoFan: Device = {
   id: 1, ip: '192.168.4.1', name: 'DEMO-P56', mac: '02:e0:e0:56:00:01', hotspot: 'DEMO-P56-AP', router: '',
-  status: { power: true, playing: true, repeat_all: true, breath: false, autostart: true, master: false, play_index: 1, brightness: 16, color_mode: 2, angle: 0, fan_type: 8 },
+  status: { power: true, playing: true, repeat_all: true, breath: false, autostart: true, play_index: 1, brightness: 16, color_mode: 2, angle: 0, fan_type: 8 },
   files: [[1, t('demo.file1')], [2, 'logo.mp4']], last_error: null, volume: null, model: 'P56', support: 'jpeg',
 };
 let demoMedia = 0;
@@ -359,7 +359,7 @@ async function demo(cmd: string, a: any): Promise<unknown> {
       const m: Record<string, () => void> = {
         on: () => (s.power = true), off: () => (s.power = false), play: () => { s.playing = true; s.power = true; }, pause: () => (s.playing = false),
         repeat_all: () => (s.repeat_all = true), repeat_one: () => (s.repeat_all = false), breath_on: () => (s.breath = true), breath_off: () => (s.breath = false),
-        autostart_on: () => (s.autostart = true), autostart_off: () => (s.autostart = false), master_on: () => (s.master = true), master_off: () => (s.master = false),
+        autostart_on: () => (s.autostart = true), autostart_off: () => (s.autostart = false),
         format: () => (demoFan.files = []), reset: () => { s.brightness = 16; s.angle = 0; },
         refresh: () => {},
       };

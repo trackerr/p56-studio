@@ -36,7 +36,7 @@ are sometimes padded to 5 (Holoscope.exe: `3E`, Holoscope.apk: `00`).
 | 18 / 19 | Bluetooth scan / disconnect | `5A 18 18 F5` / `5A 19 19 F5` — not used by P56 Studio, see below |
 | 1A / 1B | Bluetooth on / off | `5A 1A 1A F5` / `5A 1B 1B F5` — not used by P56 Studio, see below |
 | 1C | request machine info | `5A 1C 1C F5` → `8D` |
-| 1F / 20 | group master on / off | `5A 1F 1F F5` / `5A 20 20 F5` |
+| 1F / 20 | group master on / off (several fans showing one picture together); **not used** by P56 Studio, see below | `5A 1F 1F F5` / `5A 20 20 F5` |
 | 23 | select this fan in its group | `5A 23 23 F5`, sent to that fan (`stitchselectdevice`) |
 | 26 | start live cast (Holoscope.exe `samescreen`) | `5A 26 26 F5` → fan answers `5A 29 29 F5`; see §7 |
 | 28 | live cast frame | `5A 28 <jpeg> 00… 55 F5`, always 20480 B |
@@ -76,6 +76,12 @@ off (2026-10-12). P56 Studio, `p56`, `p56-server` and the Home Assistant integra
 never send these commands, and the simulator treats them like any other unknown command. The
 `8F` report is still read, because it is the only place the fan reports the speaker volume.
 
+**Group master (`1F`, `20`) is not used by P56 Studio either.** In Holoscope a group of fans can
+show one picture together, with one fan as master (status bit 1, `0x02`, reports it). P56 Studio
+supports one fan per picture, so the app, `p56`, `p56-server` and Home Assistant offer no master
+switch and never send these commands; the simulator treats them as unknown. Documented here for
+whoever wants to build group display.
+
 ## 4. Replies fan → app
 | Op | Meaning | Layout |
 |---|---|---|
@@ -98,7 +104,7 @@ never send these commands, and the simulator treats them like any other unknown 
 | 4 (0x10) | breathing light |
 | 3 (0x08) | playing (otherwise paused) |
 | 2 (0x04) | repeat whole list (otherwise current file) |
-| 1 (0x02) | group master |
+| 1 (0x02) | group master (not read by P56 Studio) |
 
 `slot` is the playing file **0-based** (0 = the first file), while `SHOW (87 n)`, delete and
 rename count from 1: Holoscope selects list position + 1 and compares the status value with its

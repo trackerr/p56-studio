@@ -17,9 +17,6 @@
       },
       "autostart": {
         "default": "mdi:power-plug"
-      },
-      "master": {
-        "default": "mdi:crown"
       }
     },
     "select": {

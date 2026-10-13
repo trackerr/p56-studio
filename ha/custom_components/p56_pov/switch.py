@@ -33,10 +33,6 @@ SWITCHES: tuple[P56SwitchDescription, ...] = (
         key="autostart", translation_key="autostart", field="autostart", on="autostart_on", off="autostart_off",
         entity_category=EntityCategory.CONFIG,
     ),
-    P56SwitchDescription(
-        key="master", translation_key="master", field="master", on="master_on", off="master_off",
-        entity_category=EntityCategory.CONFIG, entity_registry_enabled_default=False,
-    ),
 )
 
 

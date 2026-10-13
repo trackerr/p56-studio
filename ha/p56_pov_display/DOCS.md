@@ -72,7 +72,7 @@ Add it, and every fan that connects becomes a device:
 | --- | --- |
 | `light.<fan>` | Picture on/off and brightness (16 steps) |
 | `switch.<fan>_playing` | Play / pause |
-| `switch.<fan>_breathing_light`, `switch.<fan>_start_on_power`, `switch.<fan>_master` | The fan's status light (all LEDs light up in one colour now and then, to show that the fan is on), starting by itself when it gets power, and group master |
+| `switch.<fan>_breathing_light`, `switch.<fan>_start_on_power` | The fan's status light (all LEDs light up in one colour now and then, to show that the fan is on), and starting by itself when it gets power |
 | `select.<fan>_file` | What plays (the playlist) |
 | `select.<fan>_repeat` | Repeat all files or one |
 | `number.<fan>_picture_angle` | Rotate the picture (−180 … 180°) |

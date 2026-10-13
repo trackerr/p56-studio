@@ -4,6 +4,13 @@ P56 Studio (Windows, Linux, Android), `p56` (CLI), `p56-sim` and `p56-server`.
 The Home Assistant add-on and integration have their own changelog in
 [`ha/p56_pov_display/CHANGELOG.md`](ha/p56_pov_display/CHANGELOG.md).
 
+## 0.3.28 — 2026-10-13
+
+### Removed
+- **Group master** (`1F`/`20`, for several fans showing one picture together): no switch in the
+  app, no `p56 master`, no `master_on`/`master_off` control, no `master` in the status. P56
+  Studio supports one fan per picture; PROTOCOL.md still documents the commands.
+
 ## 0.3.27 — 2026-10-13
 
 ### Fixed

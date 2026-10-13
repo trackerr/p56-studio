@@ -136,9 +136,8 @@ fn settings_roundtrip_through_status() {
     r.link.color_mode(r.id, ColorMode::True).unwrap();
     r.link.breath(r.id, true).unwrap();
     r.link.autostart(r.id, false).unwrap();
-    r.link.master(r.id, true).unwrap();
     r.link.volume(r.id, 4).unwrap();
-    r.wait_dev(|d| d.status.as_ref().is_some_and(|s| s.brightness == 7 && s.angle == 300 && s.color_mode == 1 && s.breath && !s.autostart && s.master));
+    r.wait_dev(|d| d.status.as_ref().is_some_and(|s| s.brightness == 7 && s.angle == 300 && s.color_mode == 1 && s.breath && !s.autostart));
     r.wait_sim(|s| s.volume == 4);
     r.link.color_mode(r.id, ColorMode::Bright).unwrap();
     r.link.angle(r.id, 0).unwrap();

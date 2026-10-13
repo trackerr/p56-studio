@@ -59,8 +59,6 @@ pub mod op {
     // Bluetooth share one radio, and with a Bluetooth receiver connected the fan cannot rejoin
     // the home Wi-Fi (see PROTOCOL.md).
     pub const GET_MACHINE: u8 = 0x1C;
-    pub const MASTER_ON: u8 = 0x1F;
-    pub const MASTER_OFF: u8 = 0x20;
     /// Fan → PC: transfer step acknowledged / continue.
     pub const TRANS_CONTINUE: u8 = 0x21;
     /// Fan → PC: transfer aborted by the fan.
@@ -146,9 +144,6 @@ pub fn trans_cancel() -> Vec<u8> {
 }
 pub fn get_machine() -> Vec<u8> {
     simple(op::GET_MACHINE)
-}
-pub fn master(on: bool) -> Vec<u8> {
-    simple(if on { op::MASTER_ON } else { op::MASTER_OFF })
 }
 pub fn angle_align(start: bool) -> Vec<u8> {
     simple(if start { op::ANGLE_ALIGN_START } else { op::ANGLE_ALIGN_STOP })
@@ -393,7 +388,6 @@ pub struct Status {
     pub repeat_all: bool,
     pub breath: bool,
     pub autostart: bool,
-    pub master: bool,
     /// Slot of the playing file, 1-based like every slot (`select`, the playlist). The fan sends
     /// it 0-based: Holoscope compares it with its 0-based list positions and selects with
     /// position + 1 (verified in Holoscope.apk `DeviceInterface::playindex` and its QML).
@@ -422,7 +416,6 @@ impl Status {
             breath: f & 0x10 != 0,
             playing: f & 0x08 != 0,
             repeat_all: f & 0x04 != 0,
-            master: f & 0x02 != 0,
             play_index: body[1].saturating_add(1),
             brightness: body[2],
             color_mode: body[3] >> 4,
@@ -450,9 +443,6 @@ impl Status {
         }
         if self.repeat_all {
             f |= 0x04
-        }
-        if self.master {
-            f |= 0x02
         }
         let a = self.angle.min(0x0FFF);
         vec![
@@ -791,7 +781,6 @@ mod tests {
         assert_eq!(format_card(), [0x5A, 0x07, 0x07, 0xF5]);
         assert_eq!(breath(false), [0x5A, 0x0A, 0x0A, 0xF5]);
         assert_eq!(autostart(true), [0x5A, 0x0B, 0x0B, 0xF5]);
-        assert_eq!(master(true), [0x5A, 0x1F, 0x1F, 0xF5]);
         assert_eq!(color_mode(ColorMode::Bright), [0x5A, 0x2D, 0x2D, 0xF5]);
         assert_eq!(select(3), [0x5A, 0x87, 3, 3, 0xF5]);
         assert_eq!(brightness(40), [0x5A, 0x81, 16, 16, 0xF5]);
@@ -850,7 +839,6 @@ mod tests {
             repeat_all: true,
             breath: false,
             autostart: true,
-            master: false,
             play_index: 2,
             brightness: 12,
             color_mode: 2,

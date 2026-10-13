@@ -76,7 +76,6 @@ pub struct SimState {
     pub repeat_all: bool,
     pub breath: bool,
     pub autostart: bool,
-    pub master: bool,
     pub brightness: u8,
     pub color_mode: u8,
     pub angle: u16,
@@ -128,7 +127,6 @@ impl SimState {
             repeat_all: true,
             breath: false,
             autostart: true,
-            master: false,
             brightness: 16,
             color_mode: 2,
             angle: 180,
@@ -198,7 +196,6 @@ impl SimState {
             repeat_all: self.repeat_all,
             breath: self.breath,
             autostart: self.autostart,
-            master: self.master,
             play_index: self.current,
             brightness: self.brightness,
             color_mode: self.color_mode,
@@ -508,8 +505,6 @@ fn command_len(b: &[u8]) -> Option<Result<usize, ()>> {
         | op::HEARTBEAT
         | op::TRANS_CANCEL
         | op::GET_MACHINE
-        | op::MASTER_ON
-        | op::MASTER_OFF
         | op::SELECT_DEVICE
         | op::ANGLE_ALIGN_START
         | op::ANGLE_ALIGN_STOP
@@ -544,8 +539,6 @@ fn op_name(o: u8) -> String {
         op::HEARTBEAT => "heartbeat",
         op::TRANS_CANCEL => "cancel",
         op::GET_MACHINE => "get_machine",
-        op::MASTER_ON => "master_on",
-        op::MASTER_OFF => "master_off",
         op::SELECT_DEVICE => "select_device",
         op::CAST_FRAME => "cast",
         op::ANGLE_ALIGN_START => "align_start",
@@ -948,11 +941,6 @@ fn handle(sh: &Shared, out: &mut Out, pkt: &[u8], ft: u8, just_uploaded: &mut bo
             }
             out.send(&sh.info().to_packet());
             out.send(&files(sh));
-            out.send(&status(sh));
-        }
-        op::MASTER_ON | op::MASTER_OFF => {
-            set(&|g| g.master = o == op::MASTER_ON);
-            out.ready();
             out.send(&status(sh));
         }
         op::SELECT_DEVICE => {

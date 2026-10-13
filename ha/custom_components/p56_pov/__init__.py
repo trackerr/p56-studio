@@ -46,6 +46,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: P56ConfigEntry) -> bool:
     server = dr.async_get(hass).async_get_or_create(config_entry_id=entry.entry_id, **server_device_info(coordinator))
     coordinator.server_device_id = server.id
     _remove_pages(hass, entry)
+    _remove_master(hass, entry)
     entry.async_create_background_task(hass, coordinator.async_listen(), f"{DOMAIN} events {api.base}")
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_options_updated))
@@ -62,6 +63,14 @@ def _remove_pages(hass: HomeAssistant, entry: P56ConfigEntry) -> None:
         for domain in ("switch", "sensor"):
             if entity_id := registry.async_get_entity_id(domain, DOMAIN, f"{entry.entry_id}_{key}"):
                 registry.async_remove(entity_id)
+
+
+def _remove_master(hass: HomeAssistant, entry: P56ConfigEntry) -> None:
+    """The group master switch is gone (2.30.0): only one fan is supported."""
+    registry = er.async_get(hass)
+    for e in er.async_entries_for_config_entry(registry, entry.entry_id):
+        if e.domain == "switch" and e.unique_id.endswith("_master"):
+            registry.async_remove(e.entity_id)
 
 
 async def _options_updated(hass: HomeAssistant, entry: P56ConfigEntry) -> None:

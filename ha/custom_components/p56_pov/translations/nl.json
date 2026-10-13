@@ -109,9 +109,6 @@
       },
       "autostart": {
         "name": "Starten bij stroom"
-      },
-      "master": {
-        "name": "Master"
       }
     },
     "select": {

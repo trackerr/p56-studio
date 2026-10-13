@@ -49,7 +49,7 @@ The round dial is the fan.
 - **Power**, **pause / play** and **refresh** are the round buttons below.
 - On the right (below on a phone): **repeat** the whole list or one file, the
   breathing light (a status light: all LEDs light up in one colour now and then, to show that the
-  fan is on), start automatically at power-on, group master (for fans used together),
+  fan is on), start automatically at power-on,
   volume (only on fans with a speaker) and,
   under maintenance, **format** (erases all files) and **factory settings**.
 
