@@ -120,19 +120,19 @@ important one interrupts, and the interrupted message comes back for the time it
 So the doorbell (`priority: 10`) interrupts the weather (`priority: 0`), and an alarm
 (`priority: 20`) is never pushed away by the doorbell.
 
-**Rain on the way: the rain radar with a text over it** (with the Buienradar integration; turn
-on its sensor *Precipitation forecast total*)
+**It starts raining: the rain radar with a text over it** (with the Buienradar integration, which
+offers `camera.buienradar` and a weather entity)
 
 ```yaml
 triggers:
-  - trigger: numeric_state
-    entity_id: sensor.twente_precipitation_forecast_total   # your own Buienradar sensor
-    above: 0.2
+  - trigger: state
+    entity_id: weather.home                     # your own weather entity
+    to: [rainy, pouring, lightning-rainy]
 actions:
   - action: p56_pov.show_image
     data:
       camera: camera.buienradar
-      text: "Rain: {{ states('sensor.twente_precipitation_forecast_total') }} mm"
+      text: "Rain · {{ state_attr('weather.home', 'temperature') | round(0) | int }}°"
       mode: cast
       show_seconds: 30
 ```

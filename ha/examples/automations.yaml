@@ -102,17 +102,17 @@
         # interrupts less important messages (they come back afterwards)
         priority: 10
 
-- alias: "P56 - rain radar when rain is coming"
+- alias: "P56 - rain radar when it starts raining"
   triggers:
-    - trigger: numeric_state
-      # Buienradar's "Precipitation forecast total" (turn the sensor on first)
-      entity_id: sensor.precipitation_forecast_total
-      above: 0.2
+    - trigger: state
+      entity_id: weather.home
+      to: [rainy, pouring, lightning-rainy]
   actions:
     - action: p56_pov.show_image
       data:
+        # the animated radar of the Buienradar integration, with a text over every frame
         camera: camera.buienradar
-        text: "Rain: {{ states('sensor.precipitation_forecast_total') }} mm"
+        text: "Rain · {{ state_attr('weather.home', 'temperature') | round(0) | int }}°"
         mode: cast
         show_seconds: 30
         priority: 3

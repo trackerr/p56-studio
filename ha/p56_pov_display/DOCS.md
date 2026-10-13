@@ -172,7 +172,7 @@ every frame of an animation, on a darkened band so it stays readable:
 action: p56_pov.show_image
 data:
   camera: camera.buienradar          # the animated rain radar of the Buienradar integration
-  text: "Rain: {{ states('sensor.twente_precipitation_forecast_total') }} mm"
+  text: "Rain · {{ state_attr('weather.home', 'temperature') | round(0) | int }}°"
   mode: cast
   show_seconds: 30
 ```
