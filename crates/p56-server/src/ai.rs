@@ -86,13 +86,15 @@ pub fn instructions(prompt: &str, kind: Kind, style: Option<&str>) -> String {
     let body = match kind {
         Kind::Still => format!("A square image {LOOK}\nSubject: {prompt}"),
         Kind::Spin => format!("A square image, the subject seen straight from the front, {LOOK}\nSubject: {prompt}"),
-        // the theme inside the sentence: at the end Qwen Image drew random objects around it
+        // A whole picture: the text is written over it, on a darkened band. The theme sits inside
+        // the sentence (at the end Qwen Image drew random things) but not in quotes (then it
+        // writes it out), and the background is darker, not dark (dark everywhere shows nothing).
         Kind::Backdrop => format!(
-            "A square background picture on pure black (#000000) about \"{prompt}\". Around the edge, like a \
-             wreath, a few bold, clean, brightly coloured objects that belong to \"{prompt}\", so anyone sees at \
-             once what it is about. The middle stays dark and empty, because large text will be written over it. \
-             Little fine detail, pure black elsewhere up to every edge of the image, no white margin, no screen or \
-             device, no text, letters or numbers."
+            "A square illustration without any writing that fills the whole image from edge to edge. It shows \
+             one simple, bold scene with the things that belong to this situation: {prompt}. Those things are \
+             large, bright and vivid, in rich colours, and fill most of the image; around them a darker \
+             background. Not busy, little fine detail, no white areas. There are no letters, words, numbers, \
+             signs or labels anywhere in the picture."
         ),
         Kind::Anim => format!(
             "A square sprite sheet that fills the whole image on pure black, with no white or coloured margin, \
@@ -545,9 +547,11 @@ mod tests {
         assert!(instructions("fox", Kind::Still, Some("photo")).ends_with("Style: a realistic photograph"));
         assert!(instructions("fox", Kind::Still, Some(" Van Gogh ")).ends_with("Style: Van Gogh"));
         assert!(!instructions("fox", Kind::Still, Some("free")).contains("Style"));
-        // a background behind text (notifications, prices): simple, about the theme, empty middle
+        // a background behind text (notifications, prices): a whole simple picture about the theme,
+        // without writing (and without the theme in quotes, which Qwen Image writes out)
         let b = instructions("cheap power", Kind::Backdrop, None);
-        assert!(b.contains("Little fine detail") && b.contains("belong to \"cheap power\"") && b.contains("middle stays dark"), "{b}");
+        assert!(b.contains("little fine detail") && b.contains("situation: cheap power.") && b.contains("no letters"), "{b}");
+        assert!(!b.contains("\"cheap power\""), "{b}");
     }
 
     #[test]

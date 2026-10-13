@@ -15,9 +15,9 @@ The Home Assistant add-on and integration have their own changelog in
 - The instructions for AI pictures no longer describe the fan itself (Qwen Image painted a fan
   disc or a ring of light around the subject): only a black background, a lit subject in the
   middle, and no frame, ring or device.
-- A background behind text names its theme in the sentence itself and asks for objects that
-  belong to it, so a notification gets a fitting wreath (a washing machine for the laundry)
-  instead of random shapes.
+- A background behind text is a whole picture of its theme (a washing machine for "the laundry
+  is done"), bright on a darker background and without any writing, instead of a dark middle
+  with shapes around the edge; the text goes over it on a darkened band as before.
 
 ## 0.3.20 — 2026-10-13
 

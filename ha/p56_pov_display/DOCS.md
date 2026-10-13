@@ -162,8 +162,9 @@ that can make pictures. The panel's Media tab has the same as an
 **AI picture** box. It needs `homeassistant_api` (on by default) and Home Assistant on port 8123
 with plain http on the same machine, where the add-on fetches the finished picture.
 
-With `text` (or `icon`), the AI makes a **background** instead: calm and dark in the middle,
-the theme around the edge in a few simple, bold shapes (not busy, so the text stands out).
+With `text` (or `icon`), the AI makes a **background** instead: a whole, simple picture of the
+prompt (bright things on a darker background, little detail, no writing). The add-on darkens it
+behind the letters, so the text stands out.
 Over an AI background only the text is shown; an `icon` is left out (without AI, `show_text`
 shows icon and text). The text is then written over it by the add-on, sharp and with a
 dark edge, with the same `color`, `icon`, `font_size` and `value` / `value_min` / `value_max`

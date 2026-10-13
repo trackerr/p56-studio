@@ -9,8 +9,9 @@ p56-server 0.3.21.
   Home Assistant's AI Task (e.g. Google) is the fallback. `entity_id: comfyui` picks it.
 - The AI is no longer told about the fan itself, so it does not paint a fan disc or a ring
   around the picture.
-- A background behind text shows objects that belong to its prompt (a washing machine for
-  "the laundry is done"), so every notification can get its own fitting picture.
+- A background behind text is now a whole picture of its prompt (a washing machine for "the
+  laundry is done"), bright on a darker background, instead of a dark middle with shapes around
+  the edge; so every notification can get its own fitting picture.
 
 ## 2.1.20
 
