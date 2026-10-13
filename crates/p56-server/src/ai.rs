@@ -22,10 +22,11 @@ const SPIN_MS: u32 = 100;
 /// A drawn animation: a 4×4 sheet of frames.
 const SHEET: u32 = 4;
 const SHEET_MS: u32 = 125;
-/// A real 3D model: views round it, 6° apart (one turn in 3.6 s; 24 looked like a slideshow), and
+/// A real 3D model: views round it, 6° apart (24 looked like a slideshow), one turn in 6 s (3.6 s
+/// turned too fast on the real fan), and
 /// how long making one may take (about 2 minutes on a laptop graphics card).
 const REAL3D_VIEWS: u32 = 60;
-const REAL3D_MS: u32 = 60;
+const REAL3D_MS: u32 = 100;
 const REAL3D_SIZE: u32 = 384;
 const REAL3D_TIMEOUT: Duration = Duration::from_secs(600);
 

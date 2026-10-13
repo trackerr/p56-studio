@@ -4,6 +4,12 @@ P56 Studio (Windows, Linux, Android), `p56` (CLI), `p56-sim` and `p56-server`.
 The Home Assistant add-on and integration have their own changelog in
 [`ha/p56_pov_display/CHANGELOG.md`](ha/p56_pov_display/CHANGELOG.md).
 
+## 0.3.26 — 2026-10-13
+
+### Changed
+- A real 3D model turns more slowly: one turn in 6 s instead of 3.6 s (100 ms per view), as
+  liked on the real fan. Models made before turn at the new pace too.
+
 ## 0.3.25 — 2026-10-13
 
 ### Added

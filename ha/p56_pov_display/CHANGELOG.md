@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.1.26
+
+p56-server 0.3.26, with integration 2.28.0.
+
+- A real 3D model turns more slowly and calmer: one turn in 6 seconds instead of 3.6.
+
 ## 2.1.25
 
 p56-server 0.3.25, with integration 2.27.0.
