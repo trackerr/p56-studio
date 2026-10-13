@@ -165,6 +165,18 @@ lights up for messages.
 into frames with the ffmpeg that comes with Home Assistant (`fps`, default 10; `max_frames`,
 default 100). The fan plays it in a loop; with `mode: cast` it plays live for `show_seconds`.
 
+With `text` (and optionally `color`, `font_size`) the text is written over the picture, over
+every frame of an animation, on a darkened band so it stays readable:
+
+```yaml
+action: p56_pov.show_image
+data:
+  camera: camera.buienradar          # the animated rain radar of the Buienradar integration
+  text: "Rain: {{ states('sensor.twente_precipitation_forecast_total') }} mm"
+  mode: cast
+  show_seconds: 30
+```
+
 #### AI pictures
 
 `p56_pov.show_ai` has an AI draw a picture from `prompt`: ComfyUI on a computer in your house

@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.1.22
+
+p56-server 0.3.22, with integration 2.24.0.
+
+- **Text over a picture or animation:** `p56_pov.show_image` takes `text` (and `color`,
+  `font_size`): written over every frame, e.g. "Rain in 15 minutes" over the Buienradar radar.
+
 ## 2.1.21
 
 p56-server 0.3.21, with integration 2.23.0 (needed for `entity_id: comfyui`).

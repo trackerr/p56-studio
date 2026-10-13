@@ -132,6 +132,23 @@ show_image:
           accept:
             - image/*
             - video/*
+    text:
+      example: Rain in 15 minutes
+      selector:
+        text:
+    color:
+      advanced: true
+      example: "#ffffff"
+      selector:
+        color_rgb:
+    font_size:
+      advanced: true
+      selector:
+        number:
+          min: 0
+          max: 400
+          unit_of_measurement: px
+          mode: box
     show_seconds:
       selector:
         number:

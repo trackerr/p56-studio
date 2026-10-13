@@ -339,6 +339,18 @@
           "name": "Media",
           "description": "Picture, GIF or video from the media library."
         },
+        "text": {
+          "name": "Text",
+          "description": "Text written over the picture (over every frame of an animation), e.g. \"Rain in 15 minutes\" over a rain radar; the picture is darkened behind the letters."
+        },
+        "color": {
+          "name": "Text colour",
+          "description": "Colour of the text (default white)."
+        },
+        "font_size": {
+          "name": "Maximum font size",
+          "description": "Cap in pixels (0: as large as fits)."
+        },
         "show_seconds": {
           "name": "Duration",
           "description": "A message: shown this many seconds, the fan repeats only this meanwhile and then returns to what it played; a fan that was off goes off again. 0: keep (live: 10 s)."

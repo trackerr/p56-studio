@@ -1611,25 +1611,40 @@ impl Service {
         let max_frames = r.max_frames.unwrap_or(200).clamp(1, 600);
         let has_text = r.text.as_deref().is_some_and(|t| !t.trim().is_empty());
         let has_icon = r.icon.as_deref().is_some_and(|i| !i.trim().is_empty() && i.trim() != "none");
+        // a picture or animation sent along: (frames, ms per frame)
+        let picture = || -> Result<Option<(Vec<image::RgbImage>, u64)>, String> {
+            if let Some(fr) = r.frames.as_ref().filter(|f| !f.is_empty()) {
+                let imgs = fr.iter().take(max_frames).map(|f| decode_source(&b64(f)?)).collect::<Result<Vec<_>, String>>()?;
+                return Ok(Some((imgs, r.frame_ms.unwrap_or(100))));
+            }
+            let bytes = match (&r.data, &r.path) {
+                (Some(d), _) => b64(d)?,
+                (None, Some(p)) => std::fs::read(self.media_path(p)?).map_err(|e| format!("{p}: {e}"))?,
+                _ => return Ok(None),
+            };
+            let fr = transcode::decode_frames(&bytes, max_frames).map_err(|e| format!("cannot read image: {e}"))?;
+            let ms = r.frame_ms.unwrap_or_else(|| fr.first().map(|(_, d)| *d as u64).filter(|d| *d > 0).unwrap_or(100));
+            Ok(Some((fr.into_iter().map(|(img, _)| transcode::fit(img, MAX_SIDE)).collect(), ms)))
+        };
         // (pictures, ms per frame when casting)
         let (images, frame_ms): (Vec<image::RgbImage>, u64) = if let Some(m) = text::Motion::parse(r.motion.as_deref().unwrap_or(""))?.filter(|_| has_text) {
             // moving text: one frame per 50 ms, the fan's own rate
             let card = card_for(&r)?;
             (text::render_motion(&card.text, m, card.fg, card.bg, r.speed.unwrap_or(1.0), r.reverse.unwrap_or(false)), 50)
-        } else if has_text || has_icon || (r.style.is_some() && r.data.is_none() && r.path.is_none() && r.frames.is_none()) {
+        } else if has_text || has_icon {
+            let card = card_for(&r)?;
+            let rendered = text::render_card(&card);
+            match picture()? {
+                // text over every frame of a picture or animation sent along (e.g. a rain radar)
+                Some((frames, ms)) => (frames.iter().map(|p| text::over_backdrop(&rendered, p, card.bg)).collect(), ms),
+                None => (vec![rendered], 100),
+            }
+        } else if let Some(p) = picture()? {
+            p
+        } else if r.style.is_some() {
             (vec![text::render_card(&card_for(&r)?)], 100)
-        } else if let Some(fr) = r.frames.as_ref().filter(|f| !f.is_empty()) {
-            let imgs = fr.iter().take(max_frames).map(|f| decode_source(&b64(f)?)).collect::<Result<Vec<_>, String>>()?;
-            (imgs, r.frame_ms.unwrap_or(100))
         } else {
-            let bytes = match (&r.data, &r.path) {
-                (Some(d), _) => b64(d)?,
-                (None, Some(p)) => std::fs::read(self.media_path(p)?).map_err(|e| format!("{p}: {e}"))?,
-                _ => return Err("provide 'text', 'icon', 'data', 'path' or 'frames'".into()),
-            };
-            let fr = transcode::decode_frames(&bytes, max_frames).map_err(|e| format!("cannot read image: {e}"))?;
-            let ms = r.frame_ms.unwrap_or_else(|| fr.first().map(|(_, d)| *d as u64).filter(|d| *d > 0).unwrap_or(100));
-            (fr.into_iter().map(|(img, _)| transcode::fit(img, MAX_SIDE)).collect(), ms)
+            return Err("provide 'text', 'icon', 'data', 'path' or 'frames'".into());
         };
         // text over a picture
         let images = match r.backdrop.as_deref().filter(|b| !b.is_empty() && (has_text || has_icon)) {

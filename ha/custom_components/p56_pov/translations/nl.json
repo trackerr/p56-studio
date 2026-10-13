@@ -339,6 +339,18 @@
           "name": "Media",
           "description": "Afbeelding, GIF of video uit de mediabibliotheek."
         },
+        "text": {
+          "name": "Tekst",
+          "description": "Tekst over het plaatje heen (over elk beeldje van een animatie), bv. \"Regen over 15 minuten\" over een regenradar; achter de letters wordt het plaatje donkerder."
+        },
+        "color": {
+          "name": "Tekstkleur",
+          "description": "Kleur van de tekst (standaard wit)."
+        },
+        "font_size": {
+          "name": "Maximale lettergrootte",
+          "description": "Grens in pixels (0: zo groot als past)."
+        },
         "show_seconds": {
           "name": "Duur",
           "description": "Een melding: zoveel seconden te zien, de fan herhaalt intussen alleen deze en gaat daarna terug naar wat hij speelde; een fan die uit stond gaat weer uit. 0: laten staan (live: 10 s)."

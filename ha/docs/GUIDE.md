@@ -120,6 +120,23 @@ important one interrupts, and the interrupted message comes back for the time it
 So the doorbell (`priority: 10`) interrupts the weather (`priority: 0`), and an alarm
 (`priority: 20`) is never pushed away by the doorbell.
 
+**Rain on the way: the rain radar with a text over it** (with the Buienradar integration; turn
+on its sensor *Precipitation forecast total*)
+
+```yaml
+triggers:
+  - trigger: numeric_state
+    entity_id: sensor.twente_precipitation_forecast_total   # your own Buienradar sensor
+    above: 0.2
+actions:
+  - action: p56_pov.show_image
+    data:
+      camera: camera.buienradar
+      text: "Rain: {{ states('sensor.twente_precipitation_forecast_total') }} mm"
+      mode: cast
+      show_seconds: 30
+```
+
 **A meter ring.** With `gauge: true` and `value`, `value_min`, `value_max`, a ring along the
 rim fills like a meter, clockwise from the top, in the colour of the value: a battery, the
 solar power or the price at a glance.

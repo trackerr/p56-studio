@@ -1104,3 +1104,19 @@ fn ai_pictures_from_comfyui_with_home_assistant_as_fallback() {
     assert_eq!(v["ok"], false, "{v}");
     assert!(v["error"].as_str().unwrap_or_default().contains("ComfyUI"), "{v}");
 }
+
+/// Text over an animation (e.g. a rain radar): every frame keeps its picture, with the text over
+/// it, instead of the text alone.
+#[test]
+fn text_over_every_frame_of_an_animation() {
+    let s = start(true);
+    s.wait("virtual fan", |v| v["devices"].as_array().is_some_and(|d| !d.is_empty() && d[0]["status"].is_object()));
+    let anim = base64_encode(&gif(&[[0, 0, 200], [0, 200, 0], [200, 0, 0]]));
+    let r = show_ok(&s, json!({ "data": anim, "text": "Rain", "mode": "cast", "show_seconds": 2 }));
+    assert_eq!(r["frames"], 3, "{r}");
+    // the preview is the first frame: blue (darkened behind the letters), with white text over it
+    let img = shown_png(&s);
+    let blue = img.pixels().filter(|p| p[2] > 80 && p[0] < 40 && p[1] < 40).count();
+    let white = img.pixels().filter(|p| p[0] > 200 && p[1] > 200 && p[2] > 200).count();
+    assert!(blue > 1000 && white > 100, "blue {blue}, white {white}");
+}

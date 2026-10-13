@@ -102,6 +102,21 @@
         # interrupts less important messages (they come back afterwards)
         priority: 10
 
+- alias: "P56 - rain radar when rain is coming"
+  triggers:
+    - trigger: numeric_state
+      # Buienradar's "Precipitation forecast total" (turn the sensor on first)
+      entity_id: sensor.precipitation_forecast_total
+      above: 0.2
+  actions:
+    - action: p56_pov.show_image
+      data:
+        camera: camera.buienradar
+        text: "Rain: {{ states('sensor.precipitation_forecast_total') }} mm"
+        mode: cast
+        show_seconds: 30
+        priority: 3
+
 - alias: "P56 - display off at night"
   triggers:
     - trigger: time

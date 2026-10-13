@@ -202,7 +202,7 @@ data:
 | Action | Fields |
 | --- | --- |
 | `p56_pov.show_text` | `text`, `style`, `icon`, `value` + `value_min` + `value_max`, `gauge`, `color`, `background`, `icon_color`, `ring`, `font_size`, `show_seconds`, `priority`, `mode`, `name`, `device_id` |
-| `p56_pov.show_image` | one of `path` / `url` / `camera` / `media` (pictures, GIFs, videos), plus `show_seconds`, `priority`, `mode`, `name`, `fps`, `max_frames`, `scale`, `x_offset`, `y_offset`, `mirror`, `device_id` |
+| `p56_pov.show_image` | one of `path` / `url` / `camera` / `media` (pictures, GIFs, videos), plus `text` (over every frame, with `color`, `font_size`), `show_seconds`, `priority`, `mode`, `name`, `fps`, `max_frames`, `scale`, `x_offset`, `y_offset`, `mirror`, `device_id` |
 | `p56_pov.show_ai` | `prompt`, plus `kind` (`still` / `spin`), `art_style` (`photo`, `3d`, `cartoon`, `painting`, … or your own words), `entity_id` (`comfyui` or an AI Task; default ComfyUI when set up, otherwise the first AI Task that makes pictures), `text` (written over a whole AI background, with `color`, `font_size`, `value` + `value_min` + `value_max`, `invert_colors`, `gauge`), `icon` (only without text), `fresh`, `show_seconds`, `priority`, `mode`, `name`, `device_id` |
 | `p56_pov.play_file` | `device_id` and `slot` or `name` |
 | `p56_pov.delete_file` | `device_id` and `slot` or `name` |

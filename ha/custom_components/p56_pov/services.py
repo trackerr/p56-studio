@@ -74,6 +74,10 @@ SHOW_IMAGE_SCHEMA = vol.Schema(
         vol.Optional("mirror"): cv.boolean,
         vol.Optional("max_frames"): vol.All(vol.Coerce(int), vol.Range(min=1, max=600)),
         vol.Optional("fps"): vol.All(vol.Coerce(float), vol.Range(min=1, max=30)),
+        # text over the picture (every frame of an animation), e.g. over a rain radar
+        vol.Optional("text"): vol.All(cv.string, vol.Length(max=300)),
+        vol.Optional("color"): COLOR,
+        vol.Optional("font_size"): vol.All(vol.Coerce(float), vol.Range(min=0, max=400)),
     }
 )
 
@@ -204,9 +208,11 @@ async def _show_image(call: ServiceCall) -> ServiceResponse:
         payload["frame_ms"] = round(1000 / fps)
     else:
         payload["data"] = b64(data)
-    for key in ("show_seconds", "mode", "name", "max_frames", "priority"):
+    for key in ("show_seconds", "mode", "name", "max_frames", "priority", "text", "font_size"):
         if key in call.data:
             payload[key] = call.data[key]
+    if "color" in call.data:
+        payload["color"] = color_value(call.data["color"])
     if any(k in call.data for k in ("scale", "x_offset", "y_offset", "mirror")):
         payload["placement"] = {
             "scale": call.data.get("scale", 1.0),

@@ -4,6 +4,13 @@ P56 Studio (Windows, Linux, Android), `p56` (CLI), `p56-sim` and `p56-server`.
 The Home Assistant add-on and integration have their own changelog in
 [`ha/p56_pov_display/CHANGELOG.md`](ha/p56_pov_display/CHANGELOG.md).
 
+## 0.3.22 — 2026-10-13
+
+### Added
+- `/api/show` with `text` (or `icon`) and a picture or animation (`data`, `path`, `frames`):
+  the text is written over every frame, on a darkened band, instead of the text alone. For
+  example "Rain in 15 minutes" over a moving rain radar.
+
 ## 0.3.21 — 2026-10-13
 
 ### Added
