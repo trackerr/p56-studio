@@ -15,7 +15,10 @@ type DesktopWindow = { id: number; title: string; app: string };
 
 // this device's camera: only where the browser offers it (not on a plain-http page, such as
 // Home Assistant opened without https)
-const hasCamera = () => !!navigator.mediaDevices?.getUserMedia;
+// The camera of this device; not in the Home Assistant panel, where the cameras are Home
+// Assistant's own (the device looking at the panel is not the point there).
+const inHaPanel = !isTauri && location.pathname.includes('/hassio_ingress/');
+const hasCamera = () => !inHaPanel && !!navigator.mediaDevices?.getUserMedia;
 // Screen sharing through the webview's own picker (a screen or window): for the P56 Studio app
 // when it controls the fan through a P56 server or Home Assistant, whose engine cannot capture
 // this screen. Not in a plain browser, such as the Home Assistant panel.
@@ -44,7 +47,14 @@ export function CastPanel() {
   const loadWins = () => invoke<DesktopWindow[]>('windows').then((w) => setWins(w ?? [])).catch(() => setWins([]));
   useEffect(() => { if (src === 'screen') loadWins(); }, [src]);
   useEffect(() => {
-    invoke<HaCamera[]>('ha_cameras').then((c) => { setHaCams(c); setHaCam((cur) => cur || c[0]?.entity_id || ''); }).catch(() => setHaCams(null));
+    // in the Home Assistant panel ask again while Home Assistant is still starting (up to 30 s)
+    let tries = inHaPanel ? 6 : 1;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const load = () => invoke<HaCamera[]>('ha_cameras')
+      .then((c) => { setHaCams(c); setHaCam((cur) => cur || c[0]?.entity_id || ''); })
+      .catch(() => { setHaCams(null); if (--tries > 0) timer = setTimeout(load, 5000); });
+    load();
+    return () => clearTimeout(timer);
   }, []);
 
   useEffect(() => onEvent((e) => {

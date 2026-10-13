@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.1.24
+
+p56-server 0.3.24, with integration 2.26.0.
+
+- The panel's **Cast** tab shows only your Home Assistant cameras, no longer the camera of the
+  phone or computer you look at the panel with.
+- Right after Home Assistant starts, the Cast tab now finds your cameras by itself (it asks
+  again for up to 30 seconds) instead of only after reopening the panel.
+
 ## 2.1.23
 
 p56-server 0.3.23, with integration 2.25.0.

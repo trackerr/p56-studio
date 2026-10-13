@@ -4,6 +4,16 @@ P56 Studio (Windows, Linux, Android), `p56` (CLI), `p56-sim` and `p56-server`.
 The Home Assistant add-on and integration have their own changelog in
 [`ha/p56_pov_display/CHANGELOG.md`](ha/p56_pov_display/CHANGELOG.md).
 
+## 0.3.24 — 2026-10-13
+
+### Changed
+- Web app in the Home Assistant panel: the Cast tab no longer offers the camera of the device you
+  look at the panel with, only Home Assistant's cameras.
+
+### Fixed
+- Home Assistant panel: when Home Assistant was still starting, the Cast tab showed no Home
+  Assistant cameras until the panel was opened again; it now asks again (up to 30 s).
+
 ## 0.3.23 — 2026-10-13
 
 ### Added
