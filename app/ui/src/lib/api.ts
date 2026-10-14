@@ -23,6 +23,8 @@ export type P56Event = { type: string; data: any };
 
 const T: any = (window as any).__TAURI__;
 export const isTauri = !!T?.core?.invoke;
+/** The app's own version (Tauri only). Through a p56-server, `platform` reports the server's. */
+export const appVersion: Promise<string | null> = isTauri ? T.core.invoke('plugin:app|version').catch(() => null) : Promise.resolve(null);
 
 // ---- API token for p56-server (LAN clients may have to send one) ----
 // Taken from `?token=` in the page URL (then removed from the address bar) or from localStorage.

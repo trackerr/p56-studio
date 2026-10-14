@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.1.30
+
+p56-server 0.3.30, with integration 2.32.0.
+
+- P56 Studio on a phone or computer that goes through Home Assistant shows its own version and the
+  add-on's version apart (App tab), instead of the add-on's as its own.
+
 ## 2.1.29
 
 p56-server 0.3.29, with integration 2.31.0.

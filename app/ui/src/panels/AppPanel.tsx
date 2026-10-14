@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Choice, Section } from '@/components/bits';
-import { invoke, isTauri, lastServer, pingServer, rememberServer, remoteServer, serverUrl, setRemoteServer } from '@/lib/api';
+import { appVersion, invoke, isTauri, lastServer, pingServer, rememberServer, remoteServer, serverUrl, setRemoteServer } from '@/lib/api';
 import { LangSwitch, useT } from '@/lib/i18n';
 import { useP56 } from '@/state';
 
@@ -15,6 +15,9 @@ const lsSet = (k: string, v: string) => { try { localStorage.setItem(k, v); } ca
 export function AppPanel() {
   const { fanTypes, log, restartLink, platform, localIp, viaServer } = useP56();
   const { t } = useT();
+  // the app's own version: through a p56-server, `platform` is the server's
+  const [own, setOwn] = useState<string | null>(null);
+  useEffect(() => { appVersion.then(setOwn); }, []);
   const [type, setType] = useState(ls('p56.type') || '0');
   const [ip, setIp] = useState(ls('p56.ip'));
   const [targets, setTargets] = useState(ls('p56.targets'));
@@ -73,7 +76,11 @@ export function AppPanel() {
 
       <Section title={t('app.log')} className="lg:col-span-2">
         <pre ref={logRef} data-testid="log" className="h-60 overflow-auto whitespace-pre-wrap border border-border bg-black p-3 font-mono text-[11px] leading-relaxed text-muted-foreground">{log.join('\n') || '—'}</pre>
-        <p className="mt-3 text-xs text-muted-foreground">P56 Studio {platform.version} · {platform.os || (isTauri ? '' : t('app.browserDemo'))}</p>
+        <p className="mt-3 text-xs text-muted-foreground" data-testid="app-version">
+          {own && remoteServer
+            ? <>P56 Studio {own} · {t('app.serverVersion', { version: platform.version, os: platform.os })}</>
+            : <>P56 Studio {platform.version} · {platform.os || (isTauri ? '' : t('app.browserDemo'))}</>}
+        </p>
       </Section>
     </div>
   );
