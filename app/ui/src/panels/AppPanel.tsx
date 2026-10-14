@@ -13,7 +13,7 @@ const ls = (k: string) => { try { return localStorage.getItem(k) || ''; } catch 
 const lsSet = (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* private mode */ } };
 
 export function AppPanel() {
-  const { fanTypes, log, restartLink, platform, localIp } = useP56();
+  const { fanTypes, log, restartLink, platform, localIp, viaServer } = useP56();
   const { t } = useT();
   const [type, setType] = useState(ls('p56.type') || '0');
   const [ip, setIp] = useState(ls('p56.ip'));
@@ -56,13 +56,14 @@ export function AppPanel() {
       {isTauri && <ServerMode />}
 
       {!remoteServer && <Section title={t('app.connection')}>
-        <div className="space-y-4">
+        {/* the server's link is shared by every device: its IP / fan addresses come from the server's options */}
+        {viaServer ? <p data-testid="net-server" className="text-xs leading-relaxed text-muted-foreground">{t('app.connectionServer')}</p> : <div className="space-y-4">
           <div className="space-y-1.5"><Label className="text-xs text-muted-foreground" htmlFor="set-ip">{t('app.ipLabel')}</Label>
             <Input id="set-ip" value={ip} placeholder={t('app.example', { value: '192.168.4.2' })} onChange={(e) => setIp(e.target.value)} /></div>
           <div className="space-y-1.5"><Label className="text-xs text-muted-foreground" htmlFor="set-targets">{t('app.targetsLabel')}</Label>
             <Input id="set-targets" value={targets} placeholder={t('app.example', { value: '192.168.1.50' })} onChange={(e) => setTargets(e.target.value)} /></div>
           <Button data-testid="apply-net" onClick={async () => { lsSet('p56.ip', ip.trim()); lsSet('p56.targets', targets.trim()); await restartLink(); toast.success(t('app.reconnected')); }}>{t('app.apply')}</Button>
-        </div>
+        </div>}
         <pre className="mt-4 overflow-auto font-mono text-[11px] leading-relaxed text-muted-foreground">{linkInfo}</pre>
       </Section>}
 

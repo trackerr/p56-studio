@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { t } from '@/lib/i18n';
-import { DEFAULT_PLACEMENT, invoke, remoteServer, onEvent, type Device, type FanTypeInfo, type MediaInfo, type Picked, type Placement } from '@/lib/api';
+import { DEFAULT_PLACEMENT, invoke, remoteServer, transport, onEvent, type Device, type FanTypeInfo, type MediaInfo, type Picked, type Placement } from '@/lib/api';
 
 export type CurrentMedia = MediaInfo & { picked?: Picked };
 type Platform = { os: string; screen: boolean; version: string };
@@ -29,6 +29,8 @@ type Ctx = {
   /** Run a backend call for the selected fan with error toast. */
   run: <R>(label: string, f: (id: number) => Promise<R>) => Promise<R | undefined>;
   restartLink: () => Promise<void>;
+  /** Through a p56-server (its own web panel, or the app as its client): the link is the server's, shared by every device. */
+  viaServer: boolean;
 };
 
 const C = createContext<Ctx | null>(null);
@@ -57,6 +59,7 @@ export function P56Provider({ children }: { children: ReactNode }) {
   const [placement, setPlacement] = useState<Placement>(DEFAULT_PLACEMENT);
   const [media, setMedia] = useState<CurrentMedia | null>(null);
   const [picked, setPicked] = useState<Picked | null>(null);
+  const [viaServer, setViaServer] = useState(!!remoteServer);
   const started = useRef(false);
 
   const addLog = useCallback((m: string) => {
@@ -74,7 +77,8 @@ export function P56Provider({ children }: { children: ReactNode }) {
   }, []);
 
   const startLink = useCallback(async () => {
-    const s = settings();
+    // a p56-server's link runs with the server's own settings, never this browser's
+    const s = (await transport) === 'server' ? { ip: '', targets: [] as string[] } : settings();
     try {
       const ip = await invoke<string>('start_link', { ip: s.ip || null, targets: s.targets });
       setLocalIp(ip);
@@ -90,7 +94,7 @@ export function P56Provider({ children }: { children: ReactNode }) {
 
   const restartLink = useCallback(async () => {
     // through a p56-server: never stop its link (other devices use it too)
-    if (remoteServer) { await refresh(); return; }
+    if ((await transport) === 'server') { await refresh(); return; }
     await invoke('stop_link').catch(() => {});
     setDevices([]);
     await startLink();
@@ -99,6 +103,7 @@ export function P56Provider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (started.current) return;
     started.current = true;
+    transport.then((tr) => setViaServer(tr === 'server'));
     invoke<Platform>('platform').then(setPlatform).catch(() => {});
     invoke<FanTypeInfo[]>('fan_types').then(setFanTypes).catch(() => {});
     startLink().then(refresh);
@@ -141,7 +146,7 @@ export function P56Provider({ children }: { children: ReactNode }) {
 
   const value: Ctx = {
     devices, fan, selectFan: setSel, linkState, linkError, localIp, discovered, log, addLog, platform, fanTypes,
-    placement, setPlacement, media, setMedia, picked, setPicked, refresh, run, restartLink,
+    placement, setPlacement, media, setMedia, picked, setPicked, refresh, run, restartLink, viaServer,
   };
   return <C.Provider value={value}>{children}</C.Provider>;
 }

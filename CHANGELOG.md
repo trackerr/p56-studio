@@ -4,6 +4,15 @@ P56 Studio (Windows, Linux, Android), `p56` (CLI), `p56-sim` and `p56-server`.
 The Home Assistant add-on and integration have their own changelog in
 [`ha/p56_pov_display/CHANGELOG.md`](ha/p56_pov_display/CHANGELOG.md).
 
+## 0.3.29 — 2026-10-14
+
+### Fixed
+- The server's own web page (also the Home Assistant panel) could stop and restart the server's
+  fan link with the IP and fan addresses stored in that browser (App tab → *Save and reconnect*),
+  changing the link for every device until the server restarted. Through a server the App tab
+  now only says that these are set in the server's options, and the page never stops the link or
+  sends its own settings. The app with its own engine works as before.
+
 ## 0.3.28 — 2026-10-13
 
 ### Removed

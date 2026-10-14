@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.1.29
+
+p56-server 0.3.29, with integration 2.31.0.
+
+- The panel's **App** tab no longer offers *Save and reconnect* with the IP and fan addresses of
+  your browser, which could change the add-on's fan connection for every device. These are set in
+  the add-on's options (*Advertised IP address*, *Fan IP addresses*).
+
 ## 2.1.28
 
 p56-server 0.3.28, with integration 2.30.0.
