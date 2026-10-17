@@ -1006,7 +1006,7 @@ impl Link {
     fn cast_one(&self, id: u32, frame: &[u8]) -> bool {
         let (Some(tx), Ok(mut s)) = (self.tx(id), self.stream(id)) else { return false };
         let _g = tx.lock().unwrap();
-        if !self.since_cast(id).is_some_and(|d| d < CAST_SESSION) {
+        if self.since_cast(id).is_none_or(|d| d >= CAST_SESSION) {
             let mark = self.packet_seq(id);
             if s.write_all(&proto::cast_start()).is_err() {
                 return false;
@@ -1036,3 +1036,4 @@ impl Link {
         sent
     }
 }
+

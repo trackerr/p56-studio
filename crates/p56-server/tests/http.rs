@@ -500,12 +500,13 @@ fn timed_cast_stops_and_is_replaced() {
     s.call("cast_stop", json!({}));
     std::thread::sleep(Duration::from_millis(600));
     assert_eq!(rate(), 0, "cast_stop ends a timed cast");
-    // two timed casts in a row: only the second one sends (one frame per 200 ms, not two)
+    // two timed casts in a row: only the second one sends. A still is repeated every 100 ms so
+    // the real P56 never falls out of live mode (it starts falling back after roughly 130 ms).
     s.post("/api/show", json!({ "text": "A", "mode": "cast", "show_seconds": 60 }));
     s.post("/api/show", json!({ "text": "B", "mode": "cast", "show_seconds": 60 }));
     std::thread::sleep(Duration::from_millis(600));
     let n = rate();
-    assert!((3..=10).contains(&n), "one session at ~5 frames/s, got {n} frames in 1.5 s");
+    assert!((10..=20).contains(&n), "one session at ~10 frames/s, got {n} frames in 1.5 s");
     s.call("cast_stop", json!({}));
     assert!(fan.state().protocol_errors.is_empty(), "{:?}", fan.state().protocol_errors);
 }
@@ -687,7 +688,7 @@ fn lan_ip() -> Option<Ipv4Addr> {
     let s = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).ok()?;
     s.connect("8.8.8.8:80").ok()?;
     match s.local_addr().ok()?.ip() {
-        std::net::IpAddr::V4(ip) if !ip.is_loopback() && !ip.is_unspecified() && !(ip.octets()[0] == 172 && ip.octets()[1] == 30) => Some(ip),
+        std::net::IpAddr::V4(ip) if !(ip.is_loopback() || ip.is_unspecified() || ip.octets()[0] == 172 && ip.octets()[1] == 30) => Some(ip),
         _ => None,
     }
 }
@@ -1202,3 +1203,4 @@ fn a_real_3d_model_from_comfyui_is_kept() {
     assert_eq!(v["ok"], false, "{v}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+

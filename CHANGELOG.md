@@ -4,6 +4,13 @@ P56 Studio (Windows, Linux, Android), `p56` (CLI), `p56-sim` and `p56-server`.
 The Home Assistant add-on and integration have their own changelog in
 [`ha/p56_pov_display/CHANGELOG.md`](ha/p56_pov_display/CHANGELOG.md).
 
+## 0.3.31 — 2026-10-17
+
+### Fixed
+- A still picture or slow animation shown live could briefly fall back to black or the playlist,
+  because frames arrived every 200 ms while a real P56 may leave live mode after roughly 130 ms.
+  Timed casts now repeat the current picture every 100 ms; animations keep their intended speed.
+
 ## 0.3.30 — 2026-10-14
 
 ### Fixed
@@ -433,3 +440,4 @@ The Home Assistant add-on and integration have their own changelog in
 - First public version: protocol worked out from Holoscope, P56 Studio for Windows and
   Android, `p56` CLI, `p56-sim` simulator with a gauntlet of tests, `p56-server` and the Home
   Assistant add-on and integration.
+

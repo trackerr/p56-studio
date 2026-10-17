@@ -419,6 +419,28 @@ const MESSAGE_RESUME_MIN: f64 = 2.0;
 /// A fan that was off first spins up this long on black before something is shown: the first
 /// moments after switching on the picture is not steady yet.
 const WARM_UP: Duration = Duration::from_millis(2500);
+/// Keep a live cast comfortably inside the real P56's roughly 130 ms fallback window. Slow
+/// animations repeat their current picture at this rate; their visual frame time stays intact.
+const CAST_KEEPALIVE: Duration = Duration::from_millis(100);
+
+fn timed_cast_frame_duration(frame_ms: u64) -> Duration {
+    Duration::from_millis(frame_ms.clamp(20, 2000))
+}
+
+fn timed_cast_send_period(frames: usize, frame_ms: u64) -> Duration {
+    if frames > 1 {
+        timed_cast_frame_duration(frame_ms).min(CAST_KEEPALIVE)
+    } else {
+        CAST_KEEPALIVE
+    }
+}
+
+fn timed_cast_frame(elapsed: Duration, frames: usize, frame_ms: u64) -> usize {
+    if frames <= 1 {
+        return 0;
+    }
+    ((elapsed.as_millis() / timed_cast_frame_duration(frame_ms).as_millis()) % frames as u128) as usize
+}
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct ColorScaleDto {
@@ -1743,7 +1765,7 @@ impl Service {
             }
             let dur = if secs > 0.0 { secs } else { 10.0 };
             let n = images.len();
-            let period = Duration::from_millis(if n > 1 { frame_ms.clamp(20, 2000) } else { 200 });
+            let period = timed_cast_send_period(n, frame_ms);
             let fans: usize = groups.iter().map(|(_, g, _)| g.len()).sum();
             // a timed cast is a session like any other: it ends the running one and is ended by the next
             let session = self.cast_session.fetch_add(1, Ordering::SeqCst) + 1;
@@ -1760,15 +1782,16 @@ impl Service {
                     wake(&l, &groups.iter().flat_map(|(_, g, _)| g.clone()).collect::<Vec<_>>());
                 }
                 let end = Instant::now() + Duration::from_secs_f64(dur);
-                let mut i = 0;
+                let started = Instant::now();
                 while Instant::now() < end && me.cast_session.load(Ordering::SeqCst) == session {
+                    let tick = Instant::now();
+                    let i = timed_cast_frame(started.elapsed(), n, frame_ms);
                     if let Ok(l) = me.link() {
                         for (_, gids, jpegs) in &groups {
-                            l.cast_to(gids, &jpegs[i % jpegs.len()]);
+                            l.cast_to(gids, &jpegs[i]);
                         }
                     }
-                    i += 1;
-                    thread::sleep(period);
+                    thread::sleep(period.saturating_sub(tick.elapsed()));
                 }
                 // what Home Assistant shows as on the fan is not any more
                 me.emit("shown", json!({ "ids": groups.iter().flat_map(|(_, g, _)| g.clone()).collect::<Vec<_>>() }));
@@ -1906,6 +1929,34 @@ mod fan_rate_tests {
 }
 
 #[cfg(test)]
+mod timed_cast_tests {
+    use super::*;
+
+    #[test]
+    fn still_picture_is_kept_alive_ten_times_per_second() {
+        assert_eq!(timed_cast_send_period(1, 5000), Duration::from_millis(100));
+        assert_eq!(timed_cast_frame(Duration::from_secs(10), 1, 5000), 0);
+    }
+
+    #[test]
+    fn slow_animation_repeats_frames_without_speeding_up() {
+        assert_eq!(timed_cast_send_period(3, 500), Duration::from_millis(100));
+        assert_eq!(timed_cast_frame(Duration::from_millis(0), 3, 500), 0);
+        assert_eq!(timed_cast_frame(Duration::from_millis(400), 3, 500), 0);
+        assert_eq!(timed_cast_frame(Duration::from_millis(500), 3, 500), 1);
+        assert_eq!(timed_cast_frame(Duration::from_millis(1000), 3, 500), 2);
+        assert_eq!(timed_cast_frame(Duration::from_millis(1500), 3, 500), 0);
+    }
+
+    #[test]
+    fn fast_animation_keeps_its_own_frame_rate() {
+        assert_eq!(timed_cast_send_period(4, 50), Duration::from_millis(50));
+        assert_eq!(timed_cast_frame(Duration::from_millis(150), 4, 50), 3);
+        assert_eq!(timed_cast_frame(Duration::from_millis(200), 4, 50), 0);
+    }
+}
+
+#[cfg(test)]
 mod preview_tests {
     use super::*;
 
@@ -1926,3 +1977,4 @@ mod preview_tests {
         }
     }
 }
+

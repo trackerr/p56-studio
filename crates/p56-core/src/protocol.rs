@@ -1006,7 +1006,7 @@ mod tests {
             assert_eq!(u32::from_le_bytes(head.try_into().unwrap()), STILL_MS);
             let mut payload = j.clone();
             payload.push(0);
-            while payload.len() % 4 != 0 {
+            while !payload.len().is_multiple_of(4) {
                 payload.push(0);
             }
             let mut want = ((UPLOAD_PCM + payload.len()) as u32).to_le_bytes().to_vec();
@@ -1016,3 +1016,4 @@ mod tests {
         }
     }
 }
+

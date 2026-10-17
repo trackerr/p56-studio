@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/p56-core", "crates/p56-service", "crates/p56-cli", "crates/p56-sim", "crates/p56-server", "app/src-tauri"]
 
 [workspace.package]
-version = "0.3.30"
+version = "0.3.31"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/trackerr/p56-studio"
@@ -19,3 +19,4 @@ opt-level = 3
 lto = "thin"
 codegen-units = 1
 strip = true
+
