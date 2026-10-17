@@ -2,7 +2,7 @@
 
 ## 2.1.31
 
-p56-server 0.3.31, with integration 2.32.0.
+p56-server 0.3.31, with integration 2.33.0.
 
 - A still camera picture or slow animation cast from Home Assistant no longer briefly drops back
   to black or the playlist. The current picture is repeated fast enough to keep a real P56 in
