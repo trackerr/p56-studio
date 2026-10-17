@@ -440,4 +440,3 @@ The Home Assistant add-on and integration have their own changelog in
 - First public version: protocol worked out from Holoscope, P56 Studio for Windows and
   Android, `p56` CLI, `p56-sim` simulator with a gauntlet of tests, `p56-server` and the Home
   Assistant add-on and integration.
-

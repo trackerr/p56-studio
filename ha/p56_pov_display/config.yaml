@@ -39,4 +39,3 @@ schema:
   comfyui_url: url?
   comfyui_size: int(256,1536)?
   log_level: list(trace|debug|info|warn|error)
-

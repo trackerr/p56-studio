@@ -364,4 +364,3 @@ Security and reliability fixes.
 ## 1.0.0
 
 - First local add-on (Python).
-

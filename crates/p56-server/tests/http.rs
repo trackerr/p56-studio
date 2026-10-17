@@ -1203,4 +1203,3 @@ fn a_real_3d_model_from_comfyui_is_kept() {
     assert_eq!(v["ok"], false, "{v}");
     let _ = std::fs::remove_dir_all(&dir);
 }
-
