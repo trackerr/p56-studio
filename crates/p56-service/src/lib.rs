@@ -419,6 +419,9 @@ const MESSAGE_RESUME_MIN: f64 = 2.0;
 /// A fan that was off first spins up this long on black before something is shown: the first
 /// moments after switching on the picture is not steady yet.
 const WARM_UP: Duration = Duration::from_millis(2500);
+/// After a message, "off" is sent once more this much later: a fan that reported off may still
+/// be turning.
+const OFF_AGAIN_AFTER: Duration = Duration::from_secs(3);
 /// Keep a live cast comfortably inside the real P56's roughly 130 ms fallback window. Slow
 /// animations repeat their current picture at this rate; their visual frame time stays intact.
 const CAST_KEEPALIVE: Duration = Duration::from_millis(100);
@@ -1648,6 +1651,13 @@ impl Service {
         if !self.fan_taken(&key, hand) {
             let _ = l.off(id);
             self.confirm_off(l, id, &key, hand);
+            // A real P56 now and then reports "off" after a message but keeps turning (seen
+            // 2026-10-21/22); a second "off" a little later stopped it. Harmless when it is off.
+            thread::sleep(OFF_AGAIN_AFTER);
+            if !self.fan_taken(&key, hand) {
+                log::info!("fan #{id}: off once more, to be sure");
+                let _ = l.off(id);
+            }
         }
     }
 

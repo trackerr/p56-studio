@@ -76,6 +76,10 @@ off (2026-10-12). P56 Studio, `p56`, `p56-server` and the Home Assistant integra
 never send these commands, and the simulator treats them like any other unknown command. The
 `8F` report is still read, because it is the only place the fan reports the speaker volume.
 
+**OFF is not always obeyed.** Now and then (2026-10-21/22) a P56 answered `02` with a status
+that says off, but kept turning with a black picture; a second `02` a few seconds later stopped
+it. P56 Studio therefore sends "off" once more 3 s after switching a fan off after a message.
+
 **Group master (`1F`, `20`) is not used by P56 Studio either.** In Holoscope a group of fans can
 show one picture together, with one fan as master (status bit 1, `0x02`, reports it). P56 Studio
 supports one fan per picture, so the app, `p56`, `p56-server` and Home Assistant offer no master

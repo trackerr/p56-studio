@@ -4,6 +4,13 @@ P56 Studio (Windows, Linux, Android), `p56` (CLI), `p56-sim` and `p56-server`.
 The Home Assistant add-on and integration have their own changelog in
 [`ha/p56_pov_display/CHANGELOG.md`](ha/p56_pov_display/CHANGELOG.md).
 
+## 0.3.32 — 2026-10-22
+
+### Fixed
+- A fan that was off now and then kept turning (black) after a message although it reported
+  "off". After switching it off again, the server now sends "off" once more 3 s later (not when
+  a new message or a hand on/off came in between); that second "off" stopped it on the real fan.
+
 ## 0.3.31 — 2026-10-17
 
 ### Fixed

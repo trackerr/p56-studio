@@ -984,8 +984,12 @@ fn a_fan_that_was_off_goes_off_again_after_a_message() {
         wait("off", &|| !fan.state().power);
         let (_, v) = s.post("/api/show", json!({ "text": "INTRUDER", "name": "alarm", "mode": mode, "show_seconds": 3, "priority": 10 }));
         assert_eq!(v["success"], true, "{mode}: {v}");
+        let offs = || fan.state().commands.iter().filter(|c| *c == "off").count();
+        let before = offs();
         wait("on for the message", &|| fan.state().power);
         wait("off again afterwards", &|| !fan.state().power && !fan.state().files.iter().any(|f| f.name == "alarm.mp4"));
+        // and once more a little later: a real P56 sometimes reports off but keeps turning
+        wait("a second off", &|| offs() >= before + 2);
     }
     // a fan that was on stays on
     s.call("control", json!({ "id": 1, "action": "on" }));

@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.1.32
+
+p56-server 0.3.32, with integration 2.34.0.
+
+- A fan that was off sometimes kept turning (black) after a message, although it reported off.
+  The add-on now sends "off" once more a few seconds later.
+
 ## 2.1.31
 
 p56-server 0.3.31, with integration 2.33.0.
