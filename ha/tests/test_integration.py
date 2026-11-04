@@ -371,6 +371,35 @@ def test_video_helpers() -> None:
     stream = b"\xff\xd8aaa\xff\xd9" + b"\xff\xd8bb\xff\xd9" + b"\xff\xd8c"
     assert split_jpegs(stream) == [b"\xff\xd8aaa\xff\xd9", b"\xff\xd8bb\xff\xd9"]
 
+def test_media_paths_stay_inside_their_folder(tmp_path: Path) -> None:
+    from custom_components.p56_pov.show import _inside_folder  # noqa: PLC0415
+
+    (tmp_path / "media").mkdir()
+    (tmp_path / "media" / "pic.png").write_bytes(b"x")
+    (tmp_path / "secret.png").write_bytes(b"x")
+    base = str(tmp_path / "media")
+    assert _inside_folder(base, "pic.png") == str((tmp_path / "media" / "pic.png").resolve())
+    assert _inside_folder(base, "../secret.png") is None
+    assert _inside_folder(base, "") is None
+
+
+async def test_file_from_the_media_library(hass: HomeAssistant, tmp_path: Path) -> None:
+    """A local media folder is read straight from disk, off the event loop."""
+    from custom_components.p56_pov.show import media_image  # noqa: PLC0415
+
+    (tmp_path / "my pic.png").write_bytes(png())
+    hass.config.media_dirs = {"local": str(tmp_path)}
+    hass.config.allowlist_external_dirs = {str(tmp_path.resolve())}
+    assert await media_image(hass, "media-source://media_source/local/my%20pic.png") == png()
+
+
+async def test_ffmpeg_from_the_path_when_the_integration_is_not_set_up(hass: HomeAssistant, monkeypatch) -> None:
+    from custom_components.p56_pov import show as show_mod  # noqa: PLC0415
+
+    monkeypatch.setattr(show_mod.shutil, "which", lambda name: f"/usr/bin/{name}")
+    assert await show_mod._ffmpeg_binary(hass) == "/usr/bin/ffmpeg"
+
+
 async def test_video_becomes_an_animation(hass: HomeAssistant, p56_server, tmp_path: Path, monkeypatch) -> None:
     """A video goes through ffmpeg (faked here) and reaches the fan as frames."""
     from PIL import Image  # noqa: PLC0415
@@ -395,7 +424,10 @@ async def test_video_becomes_an_animation(hass: HomeAssistant, p56_server, tmp_p
         calls["args"] = args
         return FakeProc()
 
-    monkeypatch.setattr(show_mod, "_ffmpeg_binary", lambda hass: "ffmpeg")
+    async def fake_binary(hass):
+        return "ffmpeg"
+
+    monkeypatch.setattr(show_mod, "_ffmpeg_binary", fake_binary)
     monkeypatch.setattr(show_mod.asyncio, "create_subprocess_exec", fake_exec)
     entry = await setup(hass, p56_server)
     video = tmp_path / "clip.mp4"

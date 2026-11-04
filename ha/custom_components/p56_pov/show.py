@@ -55,10 +55,9 @@ def _invalid(key: str, **placeholders: str) -> ServiceValidationError:
 
 
 async def read_file(hass: HomeAssistant, path: str) -> bytes:
-    if not hass.config.is_allowed_path(path):
-        raise _invalid("path_not_allowed", path=path)
-
     def _read() -> bytes:
+        if not hass.config.is_allowed_path(path):
+            raise _invalid("path_not_allowed", path=path)
         p = Path(path)
         if not p.is_file():
             raise _invalid("file_not_found", path=path)
@@ -101,6 +100,13 @@ async def camera_image(hass: HomeAssistant, entity_id: str) -> bytes:
     return image.content
 
 
+def _inside_folder(base: str, rel: str) -> str | None:
+    """The real path of `rel` under the folder `base`, or None when it lies outside it (touches the disk)."""
+    root = Path(base).resolve()
+    full = (root / rel).resolve()
+    return str(full) if root in full.parents else None
+
+
 async def media_image(hass: HomeAssistant, media: Mapping[str, Any] | str) -> bytes:
     """A file from the media library (media selector or media-source:// id)."""
     content_id = media if isinstance(media, str) else media.get("media_content_id", "")
@@ -112,9 +118,9 @@ async def media_image(hass: HomeAssistant, media: Mapping[str, Any] | str) -> by
         source_dir, _, rel = content_id[len(prefix):].partition("/")
         base = hass.config.media_dirs.get(source_dir)
         if base:
-            full = (Path(base) / unquote(rel)).resolve()
-            if Path(base).resolve() in full.parents:
-                return await read_file(hass, str(full))
+            full = await hass.async_add_executor_job(_inside_folder, base, unquote(rel))
+            if full:
+                return await read_file(hass, full)
     from homeassistant.components import media_source  # noqa: PLC0415
     from homeassistant.components.media_player import async_process_play_media_url  # noqa: PLC0415
 
@@ -152,13 +158,13 @@ def is_video(data: bytes) -> bool:
     return head[4:8] == b"ftyp" or head[:4] == b"\x1a\x45\xdf\xa3" or (head[:4] == b"RIFF" and head[8:12] == b"AVI ")
 
 
-def _ffmpeg_binary(hass: HomeAssistant) -> str | None:
+async def _ffmpeg_binary(hass: HomeAssistant) -> str | None:
     try:
         from homeassistant.components.ffmpeg import get_ffmpeg_manager  # noqa: PLC0415
 
         return get_ffmpeg_manager(hass).binary
     except Exception:  # noqa: BLE001 - ffmpeg integration not set up: try the PATH
-        return shutil.which("ffmpeg")
+        return await hass.async_add_executor_job(shutil.which, "ffmpeg")
 
 
 def split_jpegs(stream: bytes) -> list[bytes]:
@@ -175,7 +181,7 @@ def split_jpegs(stream: bytes) -> list[bytes]:
 
 async def video_frames(hass: HomeAssistant, data: bytes, fps: float, max_frames: int) -> list[bytes]:
     """Frames of a video as JPEGs (720 px), with the ffmpeg that comes with Home Assistant."""
-    binary = _ffmpeg_binary(hass)
+    binary = await _ffmpeg_binary(hass)
     if not binary:
         raise HomeAssistantError(translation_domain=DOMAIN, translation_key="video_needs_ffmpeg")
 
