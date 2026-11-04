@@ -8,7 +8,7 @@
 hologram fan, straight from Home Assistant. Local, no vendor app, no cloud.**
 
 [![Validate](https://github.com/trackerr/home-assistant-p56/actions/workflows/validate.yml/badge.svg)](https://github.com/trackerr/home-assistant-p56/actions/workflows/validate.yml)
-[![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/docs/faq/custom_repositories)
+[![HACS Default](https://img.shields.io/badge/HACS-Default-41BDF5.svg)](https://hacs.xyz)
 ![Home Assistant 2026.8+](https://img.shields.io/badge/Home%20Assistant-2026.8%2B-18BCF2?logo=homeassistant&logoColor=white)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -60,9 +60,15 @@ entities and actions). Both are in this repository.
 
 [![Open this repository in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=trackerr&repository=home-assistant-p56&category=integration)
 
-1. Click the button above (or in **HACS → ⋮ → Custom repositories** add this repository with type
-   **Integration**).
-2. Download **P56 POV Display** and **restart Home Assistant**.
+1. In **HACS**, search for **P56 POV Display** (or click the button above).
+2. Download it and **restart Home Assistant**.
+
+<details>
+<summary>Not found in HACS?</summary>
+
+In **HACS → ⋮ → Custom repositories**, add `https://github.com/trackerr/home-assistant-p56` with
+type **Integration**, then download it as above.
+</details>
 
 <details>
 <summary>Without HACS</summary>
